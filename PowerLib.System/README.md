@@ -1,568 +1,1750 @@
 # **PowerLib v2**
 
-This solution contains the following projects:
+This solution contains now the following projects:
 
 * **[PowerLib.System](#PowerLib.System)**
 
 ---
-## PowerLib.System
+# PowerLib.System
 
 Contains many classes, structures, interfaces and extension methods that expedite and optimize the development process. All of them are divided into the following sections:
 
-
-
-
-### Validation
-
-
-### Reflection
-
-
-
-### Collections
-
-
-#### List extensions
-
-
-### LINQ extensions
-
-
-### Arrays
-
-For working with arrays jagged and regular (one-dimensional, multidimensional), there are many classes and extension methods. For example, the following are the extension methods for working with regular arrays.
-```csharp
-// Creates regular array with specified lengths and lowerBounds.
-public static Array CreateAsRegular<T>(int[] lengths, int[] lowerBounds = null);
-
-// Enumerates regular array elements.
-public static IEnumerable<T> EnumerateAsRegular<T>(this Array array, bool zeroBased = false, Range? range = null, params Range[] ranges);
-
-// Creates a shallow copy of the regular array.
-public static Array CloneAsRegular(this Array array);
-
-// Returns a regular array from its string representation.
-public static Array ParseAsRegular<T>(string s, Func<string, int, int[], T> itemParser, string itemPattern, char[] delimitChars, char[] spaceChars, char[] escapeChars, char[] openingChars, char[] closingChars);
-
-// Converts a regular array to its string representation.
-public static string FormatAsRegular<T>(this Array array, Func<T, int, int[], string> itemFormatter, Func<int, string> itemDelimiter, Func<int, string> openBracket, Func<int, string> closeBracket, int[] indices = null, bool zeroBased = false, Range? range = null, params Range[] ranges);
-
-// Enumerates a regular array elements and projects each element of the array into a new form.
-public static IEnumerable<TResult> SelectAsRegular<TSource, TResult>(this Array array, Func<TSource, int, int[], TResult> selector, int[] indices = null, bool zeroBased = false, Range? range = null, params Range[] ranges);
-
-// Enumerates a regular array elements and filters elements based on a predicate.
-public static IEnumerable<T> WhereAsRegular<T>(this Array array, Func<T, int, int[], bool> predicate, int[] indices = null, bool zeroBased = false, Range? range = null, params Range[] ranges);
-
-// Apply action to elements of a regular array.
-public static void ApplyAsRegular<T>(this Array array, Action<T, int, int[]> action, int[] indices = null, bool zeroBased = false, Range? range = null, params Range[] ranges);
-
-// Initialize elements of a regular array.
-public static void FillAsRegular<T>(this Array array, Func<int, int[], T> valuator, int[] indices = null, bool zeroBased = false, Range? range = null, params Range[] ranges);
-
-// Converts one regular array to another with the possibility of applying transposition and the conversion of the values of the elements.
-public static Array ConvertAsRegular<TSource, TResult>(this Array array, Func<TSource, int, int[], int, int[], TResult> converter, int[] transposition = null, int[] lowerBounds = null, int[] targetIndices = null, int[] sourceIndices = null, bool zeroBased = false, Range? range = null, params Range[] ranges);
-
-// 
-public static Array RangeAsRegular(this Array array, int[] transposition = null, int[] lowerBounds = null, bool zeroBased = false, Range? range = null, params Range[] ranges);
-```
-The following are the extension methods for working with jagged arrays.
-```csharp
-// Creates jagged array with specified structures.
-public static Array CreateAsJagged<T>(int[] ranks, Func<int, int[], int[][], int[]> lensGetter, int[] bandedIndices = null, int[][] rankedIndices = null);
-
-// Enumerate jagged array elements
-public static IEnumerable<T> EnumerateAsJagged<T>(this Array array, int[] bandedIndices = null, int[][] rankedIndices = null, bool zeroBased = false, Func<int, int[], int[][], bool, Range[]> ranger = null);
-
-// Converts a jagged array to its string representation.
-public static string FormatAsJagged<T>(this Array array, Func<T, int, int[], int[][], string> itemFormatter, Func<int, string> nullFormatter, Func<int, int, int, string> itemDelimiter, Func<int, int, int, string> openBracket, Func<int, int, int, string> closeBracket, int[] bandedIndices = null, int[][] rankedIndices = null, bool zeroBased = false, Func<int, int[], int[][], bool, Range[]> ranger = null);
-
-// Enumerates a jagged array elements and projects each element of the array into a new form.
-public static IEnumerable<TResult> SelectAsJagged<TSource, TResult>(this Array array, Func<TSource, int, int[], int[][], TResult> selector, int[] bandedIndices = null, int[][] rankedIndices = null, bool zeroBased = false, Func<int, int[], int[][], bool, Range[]> ranger = null);
-
-// Enumerates a jagged array elements and filters elements based on a predicate.
-public static IEnumerable<T> WhereAsJagged<T>(this Array array, Func<T, int, int[], int[][], bool> predicate, int[] bandedIndices = null, int[][] rankedIndices = null, bool zeroBased = false, Func<int, int[], int[][], bool, Range[]> ranger = null);
-
-// Initialize elements of a jagged array.
-public static void FillAsJagged<T>(this Array array, Func<int, int[], int[][], T> valuator, int[] bandedIndices = null, int[][] rankedIndices = null, bool zeroBased = false, Func<int, int[], int[][], bool, Range[]> ranger = null);
-
-// Apply action to elements of a jagged array.
-public static void ApplyAsJagged<T>(this Array array, Action<T, int, int[], int[][]> action, int[] bandedIndices = null, int[][] rankedIndices = null, bool zeroBased = false, Func<int, int[], int[][], bool, Range[]> ranger = null);
-
-// Converts one jagged array to another with conversion of the values of the elements.
-public static Array ConvertAsJagged<TSource, TResult>(this Array array, Func<TSource, int, int[], int[][], TResult> converter, int[] bandedIndices = null, int[][] rankedIndices = null, bool zeroBased = false, Func<int, int[], int[][], bool, Range[]> ranger = null);
-```
-The following simple code shows the enumeration of the jagged array elements
-```csharp
-  var ja = new int[][][,]
-  {
-    new[]
-    {
-      new int[,]
-      {
-        { 1, 2 },
-        { 3, 4 },
-        { 5, 6 },
-        { 7, 8 },
-      },
-      new int[,]
-      {
-        { 11, 12, 13, 14 },
-        { 21, 22, 23, 24 },
-        { 31, 32, 33, 34 },
-      }
-    },
-    new[]
-    {
-      new int[,]
-      {
-        { 111, 112, 113, 114, 115 },
-        { 121, 122, 123, 124, 125 },
-        { 131, 132, 133, 134, 135 },
-      }
-    }
-  };
-  
-  Console.WriteLine(string.Join(",", ja.EnumerateAsJagged<int>()));
-```
-and produces the following result:
-```
-1,2,3,4,5,6,7,8,11,12,13,14,21,22,23,24,31,32,33,34,111,112,113,114,115,121,122,123,124,125,131,132,133,134,135
-```
-### Collections
-
-The **ListExtension** class contains a number of extension methods for working with lists.
-
-#### Lists
-
-**PowerLib.System.Collection.PwrList\<T>** - A list whose operation with an internal buffer is based on the round-robin algorithm. It implements the memory allocation and deallocation management interfaces and contains many methods for working with its elements.
-
-**PowerLib.System.Collection.PwrSortedList\<T>** - Sorted list based on the comparator of elements represented by the interface *IComparer\<T>* or the delegate *Comparison\<T>*. The values of the elements participating in the comparison must be unchanged during the storage in the list. The list can be restricted by storing only unique values. There are also options that control the addition of duplicate values: to the beginning of the chain, to the end, or arbitrarily.
-
-**PowerLib.System.Collection.PwrKeySortedList\<K, T>** - Sorted list based on the element key comparator represented by the *IComparer\<K>* interface or the *Comparison\<K>* delegate. The key extraction is specified by the delegate *Func\<T, K>*. The key values of the elements participating in the comparison must be unchanged during the storage in the list. The list can be restricted by storing only unique values. There are also options that control the addition of duplicate values: to the beginning of the chain, to the end, or arbitrarily.
-
-#### Stacks
-
-**PowerLib.System.Collection.PwrStack\<T>** - A general stack with additional range operations.
-**PowerLib.System.Collection.PwrSortedStack\<T>** - A sorted stack (priority stack).
-**PowerLib.System.Collection.PwrKeySortedStack\<T>** - A key sorted stack (priority stack).
-
-#### Queues
-
-**PowerLib.System.Collection.PwrQueue\<T>** - A general queue with additional range operations.
-**PowerLib.System.Collection.PwrSortedQueue\<T>** - A sorted queue (priority queue).
-**PowerLib.System.Collection.PwrKeySortedQueue\<T>** - A key sorted queue (priority queue).
-
-#### Deques
-
-**PowerLib.System.Collection.PwrDeque\<T>** - A general deque with additional range operations.
-**PowerLib.System.Collection.PwrSortedDeque\<T>** - A sorted deque (priority deque).
-**PowerLib.System.Collection.PwrKeySortedDeque\<T>** - A key sorted deque (priority deque).
-
-#### Bitwise
-...
-#### Linked list
-...
-#### Trees
-...
-#### Graphs
-...
-#### Matching
-There are many classes in namespace **PowerLib.System.Collection.Matching** for working with items matching and comparison.
-
-### IO
-#### Streaming
-...
-#### Filesystem
-
-To work with the file system, the **PowerLib.System.IO.FileSystemInfoExtension** class exists, which allows you to display hierarchical information about the file structure using flexible filtering and sorting capabilities. Also, group operations for deleting and moving (renaming) files by condition are supported. For example, search files with max depth: 2 (0 - unrestricted depth), file extension: "\***.csproj**", directory starts with: "**PowerLib.**" and output by directory name *descending order* and file name *ascending order*.
-```csharp
-  foreach (var item in new DirectoryInfo(@"D:\Projects\Github\PowerLib\").EnumerateFiles("*", 2, FileSystemTraversalOptions.ExcludeStart | FileSystemTraversalOptions.ExcludeEmpty, 
-    fi => fi.Extension == ".csproj", (x, y) => Comparable.Compare(x.Name, y.Name, false),
-    di => di.Name.StartsWith(@"PowerLib."), (x, y) => Comparable.Compare(x.Name, y.Name, false) * -1))
-    Console.WriteLine("{0}", Path.Combine(item.DirectoryName, item.Name));
-```
-Console output:
-```
-D:\Projects\Github\PowerLib\PowerLib.System.Data.SqlTypes\PowerLib.System.Data.SqlTypes.csproj
-D:\Projects\Github\PowerLib\PowerLib.System.Data.Linq\PowerLib.System.Data.Linq.csproj
-D:\Projects\Github\PowerLib\PowerLib.System.Data\PowerLib.System.Data.csproj
-D:\Projects\Github\PowerLib\PowerLib.System.ComponentModel.DataAnnotations\PowerLib.System.ComponentModel.DataAnnotations.csproj
-D:\Projects\Github\PowerLib\PowerLib.System\PowerLib.System.csproj
-D:\Projects\Github\PowerLib\PowerLib.SqlServer\PowerLib.SqlServer.csproj
-D:\Projects\Github\PowerLib\PowerLib.SqlClr.Deploy.Utility\PowerLib.SqlClr.Deploy.Utility.csproj
-D:\Projects\Github\PowerLib\PowerLib.SqlClr.Deploy\PowerLib.SqlClr.Deploy.csproj
-D:\Projects\Github\PowerLib\PowerLib.EntityFramework\PowerLib.EntityFramework.csproj
-```
-Below are the prototypes of functions for working with the elements of the file system with the most complete number of arguments:
-```csharp
-//	Enumerate abstract filesystem items
-public static IEnumerable<FileSystemInfo> EnumerateFileSystemInfos<DI>(this DI diParent, int maxDepth, FileSystemTraversalOptions traversalOptions, Func<FileSystemInfo, bool> predicate, Comparison<FileSystemInfo> comparison, Func<DI, IEnumerable<FileSystemInfo>> getChildren, Func<FileSystemInfo, bool> hasChildren)
-where DI : FileSystemInfo;
-
-//	Enumerate filesystem items
-public static IEnumerable<FileSystemInfo> EnumerateFileSystemInfos(this DirectoryInfo diStart, string searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions, Func<FileSystemInfo, bool> predicate, Comparison<FileSystemInfo> comparison);
-
-//	Enumerate files
-public static IEnumerable<FileInfo> EnumerateFiles(this DirectoryInfo diStart, string searchPattern, int maxDepth, bool direction, Func<FileInfo, bool> filePredicate, Comparison<FileInfo> fileComparison, Func<DirectoryInfo, bool> dirPredicate, Comparison<DirectoryInfo> dirComparison);
-
-//	Enumerate directories
-public static IEnumerable<DirectoryInfo> EnumerateDirectories(this DirectoryInfo diStart, string searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions, Func<DirectoryInfo, bool> predicate, Comparison<DirectoryInfo> comparer);
-
-// Move (rename) filesystem items
-public static int MoveTo(this DirectoryInfo diStart, string searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,  Func<FileSystemInfo, bool> predicate, Func<FileSystemInfo, string> replacing);
-
-// Delete filesytem items
-public static int Delete(this DirectoryInfo diStart, string searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions, Func<FileSystemInfo, bool> predicate, bool recursive);
-```
-There are also functions with a predicate, the parameter of which, together with the element, is the context of the hierarchy of type IHierarchicalContext\<DirectoryInfo\> containing the list of ancestors:
-```csharp
-//	Enumerate abstract filesystem items
-public static IEnumerable<FileSystemInfo> EnumerateFileSystemInfos<DI>(this DI diParent, int maxDepth, FileSystemTraversalOptions traversalOptions, HierarchicalContext<DI> context, Func<ElementContext<FileSystemInfo, IHierarchicalContext<DI>>, bool> predicate, Comparison<FileSystemInfo> comparison, Func<DI, IEnumerable<FileSystemInfo>> getChildren, Func<FileSystemInfo, bool> hasChildren) where DI : FileSystemInfo;
-
-//	Enumerate files
-public static IEnumerable<FileInfo> EnumerateFiles(this DirectoryInfo diStart, string searchPattern, int maxDepth, bool direction, Func<ElementContext<FileInfo, IHierarchicalContext<DirectoryInfo>>, bool> filePredicate, IComparer<FileInfo> fileComparer, Func<ElementContext<DirectoryInfo, IHierarchicalContext<DirectoryInfo>>, bool> dirPredicate, Comparison<DirectoryInfo> dirComparison);
-
-//	Enumerate directories
-public static IEnumerable<DirectoryInfo> EnumerateDirectories(this DirectoryInfo diStart, string searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions, Func<ElementContext<DirectoryInfo, IHierarchicalContext<DirectoryInfo>>, bool> predicate, Comparison<DirectoryInfo> comparison);
-
-// Move (rename) filesystem items
-public static int MoveTo(this DirectoryInfo diStart, string searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions, Func<ElementContext<FileSystemInfo, IHierarchicalContext<DirectoryInfo>>, bool> predicate, Func<FileSystemInfo, string> replacing);
-            
-// Delete filesytem items
-public static int Delete(this DirectoryInfo diStart, string searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions, Func<ElementContext<FileSystemInfo, IHierarchicalContext<DirectoryInfo>>, bool> predicate, bool recursive);
-```
-
-### Builders
-
-Also, in namespace **PowerLib.System.Linq.Builders** there are classes that allow you to build complex predicative expressions, comparison expressions, access (initializetion, copy, call) expressions to fields, properties, and methods. Very useful for compiling predicative Queryable expressions depending on the current runtime filtering conditions. For example, predicate expression with anonymous type:
-```csharp
-  DateTime? birthday = new DateTime(1990, 1, 1);
-  var predicate = PredicateBuilder
-    .Matching(() => new { id = default(int), name = default(string), birthday = default(DateTime?) })
-    .Match(t => t.name == "Mike");
-  if (birthday.HasValue)
-    predicate = predicate.And(t => t.birthday.HasValue && t.birthday.Value >= birthday.Value);
-  dc.Persons
-    .Select(t => new { id = t.Id, name = t.Name, birthday = t.Birthday })
-    .Where(predicate.Expression)
-    .ToArray();
-```
-The following example demonstrates how to create complex comparer using ComparerBuilder class:
-```csharp
-  public class Person
-  {
-    private int id;
-    public string Name { get; set; }
-    public DateTime Birthday { get; set; }
-    public double GetSalary(int year);
-  }
-
-  var comparer = ComparerBuilder.Comparison<Person>()
-    .Descend(t => t.Birthday)
-    .Ascend(t => t.Name)
-    .Descend(ReflectionBuilder.InstancePropertyAccess<Person, int>(pi => pi.Name == "id"))
-    .Comparer(); //	result is IComparer<Person> type
-
-  int year;
-
-  var comparison = ComparerBuilder.Comparison<Person>()
-    .Descend(t => t.GetSalary(year))
-    .Ascend(t => t.Name)
-    .Comparison(); // Comparison<Person> with external variable parameter 
-```
-The following example demonstrates how to create an object and call its private method using the Reflection Builder class:
-```csharp
-  public class MyExpr
-  {
-    private int _factor;
-
-    private MyExpr(int factor)
-    {
-      _factor = factor;
-    }
-
-    private string Method(int x, int y)
-    {
-      return ((x + y) * _factor).ToString();
-    }
-  }
-  
-  public string Test()
-  {
-    var arguments = Tuple.Create(7, 8, 3);
-
-    var factory = ReflectionBuilder
-      .Construct<MyExpr>(ci => ci.GetParameters().Length == 1, c => c.ByVal(pi => pi.Position == 0, arguments.Item3))
-      .Compile();
-
-    var action = ReflectionBuilder
-      .InstanceMethodCall(mi => mi.Name == "Method" && mi.IsPrivate,
-        Call<MyExpr>.Expression(call => call.ByVal(pi => pi.Position == 0, arguments.Item1).ByVal(pi => pi.Position == 1, arguments.Item2).Return<string>()))
-        .Compile();
-
-    return action(factory());
-  }
-```
-Continued...
-
 ---
-## PowerLib.System.Data
+### **General**
 
-Contains code to working with data objects.
-The DataTypeAdapter class is intended to organize the conversion between the storage type and the representation type of data object. The class is abstract and declares two public properties: StoreValue - for the value on the storage side and ViewValue - for the value on the view side. Conversion between values is carried out on demand. The following classes are derived from the DataTypeAdapter:
-* __BytesBinaryFormatterAdapter__
-* __BytesBinarySerializeAdapter\<T\>__
-* __StreamedCollectionAdapter\<T, V\>__
-* __StringXmlSerializableAdapter\<T\>__
-* __StringXmlSerializerAdapter__
-* __XElementXmlSerializableAdapter\<T\>__
-* __XElementXmlSerializerAdapter__
+Below is information about some of the classes from the `PowerLib.System` namespace.
 
-The PowerLib.SqlServer library provides a functional that allows you to work with regular (one-dimensional or multidimensional) arrays or collections of simple data types stored in a binary data type. On the client side, work with these types of data can be done either by calling the functions of the PowerLib.SqlServer library through EntityFramework or LINQ2SQL, or by converting to the representing type and vice versa. The following example shows the use of the StreamedCollectionAdapter for these purposes.
+#### **`TryOut`**
+
+There is a `TryOut<T>` structure that is designed to pass a value along with its validity flag and `TryOut` static class with methods for creating this structure. Used in methods to return value when it is impossible to use in output parameter.
+
+<details><summary>Definition</summary>
+
 ```csharp
-public class SampleEntity
+public readonly struct TryOut<T> : IEquatable<TryOut<T>>
 {
-    private StreamedCollectionAdapter<int?, int[]> _indicesAdapter = new StreamedCollectionAdapter<int?, int[]>(null, null, false,
-      s => new NulInt32StreamedArray(s, false, false), c => c.Select(t => t.Value).ToArray(),
-      (s, c) => new NulInt32StreamedArray(s, SizeEncoding.B1, true, c.Select(v => (int?)v).Counted(c.Length), false, false));
+  public static readonly TryOut<T> Failed;
 
-    [Column("DimIndices")]
-    public Byte[] RawIndices
-    {
-      get { return _indicesAdapter.StoreValue; }
-      set { _indicesAdapter.StoreValue = value; }
-    }
+  public T? Value { get; }
 
-    [NotMapped]
-    public int[] DimIndices
-    {
-      get { return _indicesAdapter.ViewValue; }
-      set { _indicesAdapter.ViewValue = value; }
-    }
+  public bool Success { get; }
+}
+
+public static class TryOut
+{
+  public static ref readonly TryOut<T> Failure<T>()
+    => ref TryOut<T>.Failed;
+
+  public static TryOut<T> Success<T>(T? value)
+    => new(value);
 }
 ```
 
----
-## PowerLib.System.Data.Linq
+</details><p/>
 
-Extends LINQ to SQL for working with functions from the PowerLib.SqlServer assembly. Simply inherit your DataContext from PowerLib.System.Data.Linq.PwrDataContext.
+#### **`Variable`**
 
-Samples:
+Static class `Variable` contains methods for replacing values by reference. Well suited for use in inline expressions.
 
-1. Getting an entity person who has a phone number in XML containing three digits `555` before the four end digits. All filtering actions are performed on the SQL server side.
+<details><summary>Definition</summary>
 
 ```csharp
-  using (var dc = new MyDataContext())
-  {
-    var ns = @"def=http://schemas.microsoft.com/sqlserver/2004/07/adventure-works/ContactInfo"
-           + @";crm=http://schemas.microsoft.com/sqlserver/2004/07/adventure-works/ContactRecord"
-           + @";act=http://schemas.microsoft.com/sqlserver/2004/07/adventure-works/ContactTypes";
-    var persons = dc.Person
-      .Where(t => dc.regexIsMatch(dc.xmlEvaluateAsString(t.AdditionalContactInfo, "/def:AdditionalContactInfo/crm:ContactRecord/act:telephoneNumber/act:number/text()", ns), @"555-\d{4}$", RegexOptions.None) == true)
-      .ToArray();
-    }
+public static class Variable
+{
+  // Sets a new value to a variable passed by reference and returns the previous value.
+  public static T? Replace<T>(ref T? variable, T? value);
+
+  // Returns the value of the variable passed by reference and sets it to the default value.
+  public static T? Take<T>(ref T? variable);
+}
 ```
-Continued...
 
----
-## PowerLib.EntityFramework
+</details><p/>
 
-Extends EntityFramework for working with MSSQL server functions and stored procedures, and for working with functions from the PowerLib.SqlServer assembly. In CodeFirst inherit your DbContext from PowerLib.System.Data.Entity.PwrDbContext with same name, but in other namespace. In method OnModelCreating call this method base class implementation.
+#### **`Range`** and **`LongRange`**
 
-Samples:
+The `Range` and `LongRange` structures are used to work with elements ranges. They contain start index and element count properties and some methods.
 
-1. Getting an entity person who has a phone number in XML containing three digits `555` before the four end digits. All filtering actions are performed on the SQL server side.
+Will be described a little later...
+
+#### **`PwrEnum`**
+
+A static class `PwrEnum` contains methods and extensions to work with values of enumerated types.
+
+<details><summary>Definition</summary>
 
 ```csharp
-  using (var dc = new PwrDbContext())
+public static class PwrEnum
+{
+  // Convert Byte to TEnum
+  public static TEnum ToEnum<TEnum>(byte value)
+    where TEnum : struct, Enum, IComparable, IConvertible, IFormattable;
+
+  // Convert UInt16 to TEnum
+  public static TEnum ToEnum<TEnum>(ushort value)
+    where TEnum : struct, Enum, IComparable, IConvertible, IFormattable;
+
+  // Convert UInt32 to TEnum
+  public static TEnum ToEnum<TEnum>(uint value)
+    where TEnum : struct, Enum, IComparable, IConvertible, IFormattable;
+
+  // Convert UInt64 to TEnum
+  public static TEnum ToEnum<TEnum>(ulong value)
+    where TEnum : struct, Enum, IComparable, IConvertible, IFormattable;
+
+  // Convert SByte to TEnum
+  public static TEnum ToEnum<TEnum>(sbyte value)
+    where TEnum : struct, Enum, IComparable, IConvertible, IFormattable;
+
+  // Convert Int16 to TEnum
+  public static TEnum ToEnum<TEnum>(short value)
+    where TEnum : struct, Enum, IComparable, IConvertible, IFormattable;
+
+  // Convert Int32 to TEnum
+  public static TEnum ToEnum<TEnum>(int value)
+    where TEnum : struct, Enum, IComparable, IConvertible, IFormattable;
+
+  // Convert Int64 to TEnum
+  public static TEnum ToEnum<TEnum>(long value)
+    where TEnum : struct, Enum, IComparable, IConvertible, IFormattable;
+
+  // Convert object to TEnum
+  public static TEnum ToEnum<TEnum>(object value)
+    where TEnum : struct, Enum, IComparable, IConvertible, IFormattable;
+
+  // Convert TEnum to value of underlying type
+  public static object ToUnderlying<TEnum>(TEnum value)
+    where TEnum : struct, Enum, IComparable, IConvertible, IFormattable;
+
+  // Parse TEnum flags from separated string.
+  // If item prefixed with '+' then flag added to value,
+  // if item prefixed with '-' then flag removed from value,
+  // if item prefixed with '!' then flag inverted in value.
+  public static TEnum ParseFlags<TEnum>(this TEnum value, string input, bool ignoreCase, params char[] separators)
+    where TEnum : struct, Enum, IComparable, IConvertible, IFormattable;
+
+  // Add flags to value
+  public static TEnum CombineFlags<TEnum>(this TEnum value, params TEnum[] flags)
+    where TEnum : struct, Enum, IComparable, IConvertible, IFormattable;
+
+  // Overlap flags with value
+  public static TEnum OverlapFlags<TEnum>(this TEnum value, params TEnum[] flags)
+    where TEnum : struct, Enum, IComparable, IConvertible, IFormattable;
+
+  // Remove flags from value
+  public static TEnum RemoveFlags<TEnum>(this TEnum value, params TEnum[] flags)
+    where TEnum : struct, Enum, IComparable, IConvertible, IFormattable;
+
+  // Inverse flags in value
+  public static TEnum InverseFlags<TEnum>(this TEnum value, TEnum mask)
+    where TEnum : struct, Enum, IComparable, IConvertible, IFormattable;
+
+  // Match two flags values
+  public static FlagsMatchResult MatchFlags<TEnum>(this TEnum xValue, TEnum yValue)
+    where TEnum : struct, Enum, IComparable, IConvertible, IFormattable;
+
+  // Determines whether the values of the flags parameter are set in the value.
+  public static bool IsFlagsSet<TEnum>(this TEnum value, TEnum flags)
+    where TEnum : struct, Enum, IComparable, IConvertible, IFormattable;
+
+  // Determines whether the values of the flags parameter are overlapped with the value.
+  public static bool IsFlagsOverlapped<TEnum>(this TEnum value, TEnum flags)
+    where TEnum : struct, Enum, IComparable, IConvertible, IFormattable;
+}
+
+public enum FlagsMatchResult
+{
+    NonOverlap,
+    Overlap,
+    Equal,
+    Belong,
+    Enclose
+}
+```
+
+</details><p/>
+
+#### **`DateTimeInterval`**
+
+A read only struct `DateTimeInterval` contains the start date with time and interval duration. It allso contains some methods for working with values of this type.
+
+<details><summary>Definition</summary>
+
+```csharp
+public readonly struct DateTimeInterval : IEquatable<DateTimeInterval>
+{
+  public DateTimeInterval(DateTime dateTime, TimeSpan timeSpan);
+
+  public DateTimeInterval(DateTime dateTimeStart, DateTime dateTimeEnd);
+
+  public DateTime DateTimeStart { get; }
+
+  public DateTime DateTimeEnd { get; }
+
+  public DateTime DateTime { get; }
+
+  public TimeSpan TimeSpan { get; }
+
+  public DateTimeInterval Shift(TimeSpan shift);
+
+  public DateTimeInterval Shift(TimeSpan shiftStart, TimeSpan shiftEnd);
+
+  public DateTimeIntervalMatchResult Match(DateTimeInterval dateTimeInterval);
+
+  public static DateTimeIntervalMatchResult Match(DateTimeInterval dateTimeFirst, DateTimeInterval dateTimeSecond);
+}
+
+public enum DateTimeIntervalMatchResult
+{
+  Before,
+  After,
+  OverlapBefore,
+  OverlapAfter,
+  Equal,
+  Belong,
+  Enclose,
+}
+```
+
+</details><p/>
+
+#### **`Safe`**
+
+Methods of the Safe class are for doing actions with the suppression of the exceptions that occur.
+The Invoke methods call the passed delegates. The predicate passed as a parameter determines which types of exceptions will be suppressed. Also, one of the parameters is a delegate that will be called in case of exception suppression (can be used for logging). There are exception filtering methods that can be used in the suppression predicate.
+
+<details><summary>Definition</summary>
+
+```csharp
+public static class Safe
+{
+  public static IEnumerable<Exception> EnumerateExceptions(Exception exception, int maxDepth = -1);
+
+  public static bool SuppressException(Exception exception, bool suppress, bool strong, params Type[] exceptionTypes);
+
+  public static bool SuppressExceptions(IEnumerable<Exception> exceptions, bool suppress, bool strong, params Type[] exceptionTypes);
+
+  public static void Invoke(Action action, Predicate<Exception>? suppressPredicate = null, Action<Exception>? suppressAction = null);
+
+  public static T? Invoke<T>(Func<T?> functor, T? defaultResult = default, Predicate<Exception>? suppressPredicate = null, Action<Exception>? suppressAction = null);
+
+  public static T? Invoke<T>(Func<T?> functor, Predicate<Exception>? suppressPredicate = default, Func<Exception, T?>? suppressFunctor = default);
+}
+```
+
+</details>
+
+---
+### **Reflection**
+
+The static *Reflector* class from namespace *PowerLib.System.Reflection* implements methods for both getting and setting field and property values, and calling methods or constructors using reflection. The peculiarity of this functionality is that the search for the desired member (field, property, method, class) is performed by its name, access specifiers and the signature of the types of parameters and arguments, as well as by the value for fields and properties or the return value for methods. All methods are divided into several categories.
+The first category is determined by where the member is defined: instance or type. To work with static members, the type is used as the first parameter or generic method argument. To work with instance members, an instance of the required type specified by the first parameter is used. The second category determines whether the method must be performed on the member. If a required member is not found or the required functionality is not available for direct methods an exception is thrown. Methods with optional performing return a Boolean value indicating the success of the required operation, and their name begins with the ***Try*** prefix.
+All member access methods require the MemberAccessibility enum parameter to be set, which specifies flags that specify how the required member is to be found:
+
+> *`IgnoreCase`* - specifies that the case of the member name should not be considered when member searching;<br/>
+  *`DeclaredOnly`* - specifies that only members declared at the level of the supplied type's hierarchy should be considered. Inherited members are not considered;<br/>
+  *`FlattenHierarchy`* - specifies that public and protected static members up the hierarchy should be returned. Private static members in inherited classes are not returned;<br/>
+  *`Family`* - specifies that members with family access are to be included in the search;<br/>
+  *`Assembly`* - specifies that members with assembly access are to be included in the search;<br/>
+  *`FamilyOrAssembly`* - specifies that members with family or assembly access are to be included in the search;<br/>
+  *`FamilyAndAssembly`* - specifies that members with family and assembly access are to be included in the search;<br/>
+  *`Private`* - specifies that private members are to be included in the search;<br/>
+  *`Public`* - specifies that public members are to be included in the search;<br/>
+  *`NonPublic`* - specifies that non-public members are to be included in the search;<br/>
+  *`AnyAccess`* - specifies that any access members are to be included in the search.<br/>
+
+Also, for all members except for constructors, it is required to specify its name.
+All member methods allow a typed stub value of the TypedValue type, in which, along with the value, its type is specified. A *Type* can be a real *Value* type, any of its base types, or any interface it implements.
+For static type members with generic arguments, they can be specified in the typeArguments parameter. This list is required when specifying a generic type definition as the type containing the required member. The length of this list must be equal to the number of generic type arguments. Although the values of the arguments that can be specified via the parameters or the specified value or type of the member can be omitted by padding its position with a null value. For members of generic methods, arguments can be specified in the methodArguments parameter. If the type of the argument can be inferred from the parameters or the return value, then the value at the corresponding position can be filled with a null value. Passing empty lists in the above parameters indicates that the type or method is not generic. If the above argument lists are not specified, then control over this parameter is passed to the framework.
+For method members, constructors, and indexed properties, it is possible to set parameter values in two collections. The positionalParameterValues list contains the values of the positional parameters. The namedParameterValues dictionary contains the values of the named parameters. Parameters with default values may not be specified. If any parameters in the original method are returned or passed by reference, then, accordingly, after the method call, there will be new values in the position of these parameters of the corresponding collections.
+There are also methods that support calling asynchronous methods through reflection.
+Reflector can generate two expected errors: a member may not be found, or it may be found ambiguously.
+
+- **Methods for working with fields**
+  + Instance fields methods
+
+    <details><summary>Try methods</summary>
+
+    ```csharp
+    public static bool TryGetField(object source, string name, MemberAccessibility memberAccessibility, Type? valueType, out object? value);
+
+    public static bool TryGetField<TValue>(object source, string name, MemberAccessibility memberAccessibility, out TValue? value);
+
+    public static bool TryGetField<TSource>(TSource source, string name, MemberAccessibility memberAccessibility, Type? valueType, out object? value);
+
+    public static bool TryGetField<TSource, TValue>(TSource source, string name, MemberAccessibility memberAccessibility, out TValue? value);
+
+    public static bool TrySetField(object source, string name, MemberAccessibility memberAccessibility, object? value);
+
+    public static bool TrySetField<TValue>(object source, string name, MemberAccessibility memberAccessibility, TValue? value);
+
+    public static bool TrySetField<TSource>(TSource source, string name, MemberAccessibility memberAccessibility, object? value);
+
+    public static bool TrySetField<TSource, TValue>(TSource source, string name, MemberAccessibility memberAccessibility, TValue? value);
+
+    public static bool TryReplaceField(object source, string name, MemberAccessibility memberAccessibility, object? newValue, out object? oldValue);
+
+    public static bool TryReplaceField<TValue>(object source, string name, MemberAccessibility memberAccessibility, TValue? newValue, out TValue? oldValue);
+
+    public static bool TryReplaceField<TSource>(TSource source, string name, MemberAccessibility memberAccessibility, object? newValue, out object? oldValue);
+
+    public static bool TryReplaceField<TSource, TValue>(TSource source, string name, MemberAccessibility memberAccessibility, TValue? newValue, out TValue? oldValue);
+
+    public static bool TryExchangeField(object source, string name, MemberAccessibility memberAccessibility, ref object? value);
+
+    public static bool TryExchangeField<TValue>(object source, string name, MemberAccessibility memberAccessibility, ref TValue? value);
+
+    public static bool TryExchangeField<TSource>(TSource source, string name, MemberAccessibility memberAccessibility, ref object? value);
+
+    public static bool TryExchangeField<TSource, TValue>(TSource source, string name, MemberAccessibility memberAccessibility, ref TValue? value);
+    ```
+
+    </details>
+    <details><summary>Direct methods</summary>
+  
+    ```csharp
+    public static object? GetField(object source, string name, MemberAccessibility memberAccessibility, Type? valueType);
+
+    public static TValue? GetField<TValue>(object source, string name, MemberAccessibility memberAccessibility);
+
+    public static object? GetField<TSource>(TSource source, string name, MemberAccessibility memberAccessibility, Type? valueType);
+
+    public static TValue? GetField<TSource, TValue>(TSource source, string name, MemberAccessibility memberAccessibility);
+
+    public static void SetField(object source, string name, MemberAccessibility memberAccessibility, object? value);
+
+    public static void SetField<TValue>(object source, string name, MemberAccessibility memberAccessibility, TValue? value);
+
+    public static void SetField<TSource>(TSource source, string name, MemberAccessibility memberAccessibility, object? value);
+
+    public static void SetField<TSource, TValue>(TSource source, string name, MemberAccessibility memberAccessibility, TValue? value);
+
+    public static object? ReplaceField(object source, string name, MemberAccessibility memberAccessibility, object? value);
+
+    public static TValue? ReplaceField<TValue>(object source, string name, MemberAccessibility memberAccessibility, TValue? value);
+
+    public static object? ReplaceField<TSource>(TSource source, string name, MemberAccessibility memberAccessibility, object? value);
+
+    public static TValue? ReplaceField<TSource, TValue>(TSource source, string name, MemberAccessibility memberAccessibility, TValue? value);
+
+    public static void ExchangeField(object source, string name, MemberAccessibility memberAccessibility, ref object? value);
+
+    public static void ExchangeField<TValue>(object source, string name, MemberAccessibility memberAccessibility, ref TValue? value);
+
+    public static void ExchangeField<TSource>(TSource source, string name, MemberAccessibility memberAccessibility, ref object? value);
+
+    public static void ExchangeField<TSource, TValue>(TSource source, string name, MemberAccessibility memberAccessibility, ref TValue? value);
+    ```
+
+    </details>
+
+  + Static fields methods
+
+    <details><summary>Try methods</summary>
+  
+    ```csharp
+    public static bool TryGetField(Type type, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, Type? valueType, out object? value);
+
+    public static bool TryGetField<TValue>(Type type, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, out TValue? value);
+
+    public static bool TryGetField<TSource>(string name, MemberAccessibility memberAccessibility, Type? valueType, out object? value);
+
+    public static bool TryGetField<TSource, TValue>(string name, MemberAccessibility memberAccessibility, out TValue? value);
+
+    public static bool TrySetField(Type type, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, object? value);
+
+    public static bool TrySetField<TValue>(Type type, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, TValue? value);
+
+    public static bool TrySetField<TSource>(string name, MemberAccessibility memberAccessibility, object? value);
+
+    public static bool TrySetField<TSource, TValue>(string name, MemberAccessibility memberAccessibility, TValue? value);
+
+    public static bool TryReplaceField(Type type, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, object? newValue, out object? oldValue);
+
+    public static bool TryReplaceField<TValue>(Type type, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, TValue? newValue, out TValue? oldValue);
+
+    public static bool TryReplaceField<TSource>(string name, MemberAccessibility memberAccessibility, object? newValue, out object? oldValue);
+
+    public static bool TryReplaceField<TSource, TValue>(string name, MemberAccessibility memberAccessibility, TValue? newValue, out TValue? oldValue);
+
+    public static bool TryExchangeField(Type type, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, ref object? value);
+
+    public static bool TryExchangeField<TValue>(Type type, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, ref TValue? value);
+
+    public static bool TryExchangeField<TSource>(string name, MemberAccessibility memberAccessibility, ref object? value);
+
+    public static bool TryExchangeField<TSource, TValue>(string name, MemberAccessibility memberAccessibility, ref TValue? value);
+    ```
+
+    </details>
+    <details><summary>Direct methods</summary>
+  
+    ```csharp
+    public static object? GetField(Type type, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, Type? valueType);
+
+    public static TValue? GetField<TValue>(Type type, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments);
+
+    public static object? GetField<TSource>(string name, MemberAccessibility memberAccessibility, Type? valueType);
+
+    public static TValue? GetField<TSource, TValue>(string name, MemberAccessibility memberAccessibility);
+
+    public static void SetField(Type type, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, object? value);
+
+    public static void SetField<TValue>(Type type, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, TValue? value);
+
+    public static void SetField<TSource>(string name, MemberAccessibility memberAccessibility, object? value);
+
+    public static void SetField<TSource, TValue>(string name, MemberAccessibility memberAccessibility, TValue? value);
+
+    public static object? ReplaceField(Type type, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, object? value);
+
+    public static TValue? ReplaceField<TValue>(Type type, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, TValue? value);
+
+    public static object? ReplaceField<TSource>(string name, MemberAccessibility memberAccessibility, object? value);
+
+    public static TValue? ReplaceField<TSource, TValue>(string name, MemberAccessibility memberAccessibility, TValue? value);
+
+    public static void ExchangeField(Type type, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, ref object? value);
+
+    public static void ExchangeField<TValue>(Type type, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, ref TValue? value);
+
+    public static void ExchangeField<TSource>(string name, MemberAccessibility memberAccessibility, ref object? value);
+
+    public static void ExchangeField<TSource, TValue>(string name, MemberAccessibility memberAccessibility, ref TValue? value);
+    ```
+
+    </details>
+- **Methods for working with properties**
+  + Methods for instance properties without indices
+
+    <details><summary>Try methods</summary>
+
+    ```csharp
+    public static bool TryGetProperty(object source, string name, MemberAccessibility memberAccessibility, Type? valueType, out object? value);
+
+    public static bool TryGetProperty<TValue>(object source, string name, MemberAccessibility memberAccessibility, out TValue? value);
+
+    public static bool TryGetProperty<TSource>(TSource source, string name, MemberAccessibility memberAccessibility, Type? valueType, out object? value);
+
+    public static bool TryGetProperty<TSource, TValue>(TSource source, string name, MemberAccessibility memberAccessibility, out TValue? value);
+
+    public static bool TrySetProperty(object source, string name, MemberAccessibility memberAccessibility, object? value);
+
+    public static bool TrySetProperty<TValue>(object source, string name, MemberAccessibility memberAccessibility, TValue? value);
+
+    public static bool TrySetProperty<TSource>(TSource source, string name, MemberAccessibility memberAccessibility, object? value);
+
+    public static bool TrySetProperty<TSource, TValue>(TSource source, string name, MemberAccessibility memberAccessibility, TValue? value);
+
+    public static bool TryReplaceProperty(object source, string name, MemberAccessibility memberAccessibility, object? newValue, out object? oldValue);
+
+    public static bool TryReplaceProperty<TValue>(object source, string name, MemberAccessibility memberAccessibility, TValue? newValue, out TValue? oldValue);
+
+    public static bool TryReplaceProperty<TSource>(TSource source, string name, MemberAccessibility memberAccessibility, object? newValue, out object? oldValue);
+
+    public static bool TryReplaceProperty<TSource, TValue>(TSource source, string name, MemberAccessibility memberAccessibility, TValue? newValue, out TValue? oldValue);
+
+    public static bool TryExchangeProperty(object source, string name, MemberAccessibility memberAccessibility, ref object? value);
+
+    public static bool TryExchangeProperty<TValue>(object source, string name, MemberAccessibility memberAccessibility, ref TValue? value);
+
+    public static bool TryExchangeProperty<TSource>(TSource source, string name, MemberAccessibility memberAccessibility, ref object? value);
+
+    public static bool TryExchangeProperty<TSource, TValue>(TSource source, string name, MemberAccessibility memberAccessibility, ref TValue? value);
+    ```
+
+    </details>
+    <details><summary>Direct methods</summary>
+  
+    ```csharp
+    public static object? GetProperty(object source, string name, MemberAccessibility memberAccessibility, Type? valueType);
+
+    public static TValue? GetProperty<TValue>(object source, string name, MemberAccessibility memberAccessibility);
+
+    public static object? GetProperty<TSource>(TSource source, string name, MemberAccessibility memberAccessibility, Type? valueType);
+
+    public static TValue? GetProperty<TSource, TValue>(TSource source, string name, MemberAccessibility memberAccessibility);
+
+    public static void SetProperty(object source, string name, MemberAccessibility memberAccessibility, object? value);
+
+    public static void SetProperty<TValue>(object source, string name, MemberAccessibility memberAccessibility, TValue? value);
+
+    public static void SetProperty<TSource>(TSource source, string name, MemberAccessibility memberAccessibility, object? value);
+
+    public static void SetProperty<TSource, TValue>(TSource source, string name, MemberAccessibility memberAccessibility, TValue? value);
+
+    public static object? ReplaceProperty(object source, string name, MemberAccessibility memberAccessibility, object? value);
+
+    public static TValue? ReplaceProperty<TValue>(object source, string name, MemberAccessibility memberAccessibility, TValue? value);
+
+    public static object? ReplaceProperty<TSource>(TSource source, string name, MemberAccessibility memberAccessibility, object? value);
+
+    public static TValue? ReplaceProperty<TSource, TValue>(TSource source, string name, MemberAccessibility memberAccessibility, TValue? value);
+
+    public static void ExchangeProperty(object source, string name, MemberAccessibility memberAccessibility, ref object? value);
+
+    public static void ExchangeProperty<TValue>(object source, string name, MemberAccessibility memberAccessibility, ref TValue? value);
+
+    public static void ExchangeProperty<TSource>(TSource source, string name, MemberAccessibility memberAccessibility, ref object? value);
+
+    public static void ExchangeProperty<TSource, TValue>(TSource source, string name, MemberAccessibility memberAccessibility, ref TValue? value);
+    ```
+
+    </details>
+
+  + Methods for instance properties with indices
+
+    <details><summary>Try methods</summary>
+
+    ```csharp
+    public static bool TryGetProperty(object source, string name, MemberAccessibility memberAccessibility, IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, Type? valueType, out object? value);
+
+    public static bool TryGetProperty<TValue>(object source, string name, MemberAccessibility memberAccessibility, IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, out TValue? value);
+
+    public static bool TryGetProperty<TSource>(TSource source, string name, MemberAccessibility memberAccessibility, IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, Type? valueType, out object? value);
+
+    public static bool TryGetProperty<TSource, TValue>(TSource source, string name, MemberAccessibility memberAccessibility, IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, out TValue? value);
+
+    public static bool TrySetProperty(object source, string name, MemberAccessibility memberAccessibility, IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, object? value);
+
+    public static bool TrySetProperty<TValue>(object source, string name, MemberAccessibility memberAccessibility, IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, TValue? value);
+
+    public static bool TrySetProperty<TSource>(TSource source, string name, MemberAccessibility memberAccessibility, IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, object? value);
+
+    public static bool TrySetProperty<TSource, TValue>(TSource source, string name, MemberAccessibility memberAccessibility, IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, TValue? value);
+
+    public static bool TryReplaceProperty(object source, string name, MemberAccessibility memberAccessibility, IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, object? newValue, out object? oldValue);
+
+    public static bool TryReplaceProperty<TValue>(object source, string name, MemberAccessibility memberAccessibility, IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, TValue? newValue, out TValue? oldValue);
+
+    public static bool TryReplaceProperty<TSource>(TSource source, string name, MemberAccessibility memberAccessibility, IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, object? newValue, out object? oldValue);
+
+    public static bool TryReplaceProperty<TSource, TValue>(TSource source, string name, MemberAccessibility memberAccessibility, IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, TValue? newValue, out TValue? oldValue);
+
+    public static bool TryExchangeProperty(object source, string name, MemberAccessibility memberAccessibility, IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, ref object? value);
+
+    public static bool TryExchangeProperty<TValue>(object source, string name, MemberAccessibility memberAccessibility, IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, ref TValue? value);
+
+    public static bool TryExchangeProperty<TSource>(TSource source, string name, MemberAccessibility memberAccessibility, IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, ref object? value);
+
+    public static bool TryExchangeProperty<TSource, TValue>(TSource source, string name, MemberAccessibility memberAccessibility, IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, ref TValue? value);
+    ```
+
+    </details>
+    <details><summary>Direct methods</summary>
+  
+    ```csharp
+    public static object? GetProperty(object source, string name, MemberAccessibility memberAccessibility, IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, Type? valueType);
+
+    public static TValue? GetProperty<TValue>(object source, string name, MemberAccessibility memberAccessibility, IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues);
+
+    public static object? GetProperty<TSource>(TSource source, string name, MemberAccessibility memberAccessibility, IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, Type? valueType);
+
+    public static TValue? GetProperty<TSource, TValue>(TSource source, string name, MemberAccessibility memberAccessibility, IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues);
+
+    public static void SetProperty(object source, string name, MemberAccessibility memberAccessibility, IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, object? value);
+
+    public static void SetProperty<TValue>(object source, string name, MemberAccessibility memberAccessibility, IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, TValue? value);
+
+    public static void SetProperty<TSource>(TSource source, string name, MemberAccessibility memberAccessibility, IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, object? value);
+
+    public static void SetProperty<TSource, TValue>(TSource source, string name, MemberAccessibility memberAccessibility, IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, TValue? value);
+
+    public static object? ReplaceProperty(object source, string name, MemberAccessibility memberAccessibility, IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, object? value);
+
+    public static TValue? ReplaceProperty<TValue>(object source, string name, MemberAccessibility memberAccessibility, IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, TValue? value);
+
+    public static object? ReplaceProperty<TSource>(TSource source, string name, MemberAccessibility memberAccessibility, IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, object? value);
+
+    public static TValue? ReplaceProperty<TSource, TValue>(TSource source, string name, MemberAccessibility memberAccessibility, IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, TValue? value);
+
+    public static void ExchangeProperty(object source, string name, MemberAccessibility memberAccessibility, IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, ref object? value);
+
+    public static void ExchangeProperty<TValue>(object source, string name, MemberAccessibility memberAccessibility, IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, ref TValue? value);
+
+    public static void ExchangeProperty<TSource>(TSource source, string name, MemberAccessibility memberAccessibility, IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, ref object? value);
+
+    public static void ExchangeProperty<TSource, TValue>(TSource source, string name, MemberAccessibility memberAccessibility, IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, ref TValue? value);
+    ```
+
+    </details>
+
+  + Methods for static properties without indices
+
+    <details><summary>Try methods</summary>
+
+    ```csharp
+    public static bool TryGetProperty(Type type, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, Type? valueType, out object? value);
+
+    public static bool TryGetProperty<TValue>(Type type, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, out TValue? value);
+
+    public static bool TryGetProperty<TSource>(string name, MemberAccessibility memberAccessibility, Type? valueType, out object? value);
+
+    public static bool TryGetProperty<TSource, TValue>(string name, MemberAccessibility memberAccessibility, out TValue? value);
+
+    public static bool TrySetProperty(Type type, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, object? value);
+
+    public static bool TrySetProperty<TValue>(Type type, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, TValue? value);
+
+    public static bool TrySetProperty<TSource>(string name, MemberAccessibility memberAccessibility, object? value);
+
+    public static bool TrySetProperty<TSource, TValue>(string name, MemberAccessibility memberAccessibility, TValue? value);
+
+    public static bool TryReplaceProperty(Type type, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, object? newValue, out object? oldValue);
+
+    public static bool TryReplaceProperty<TValue>(Type type, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, TValue? newValue, out TValue? oldValue);
+
+    public static bool TryReplaceProperty<TSource>(string name, MemberAccessibility memberAccessibility, object? newValue, out object? oldValue);
+
+    public static bool TryReplaceProperty<TSource, TValue>(string name, MemberAccessibility memberAccessibility, TValue? newValue, out TValue? oldValue);
+
+    public static bool TryExchangeProperty(Type type, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, ref object? value);
+
+    public static bool TryExchangeProperty<TValue>(Type type, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, ref TValue? value);
+
+    public static bool TryExchangeProperty<TSource>(string name, MemberAccessibility memberAccessibility, ref object? value);
+
+    public static bool TryExchangeProperty<TSource, TValue>(string name, MemberAccessibility memberAccessibility, ref TValue? value);
+    ```
+
+    </details>
+    <details><summary>Direct methods</summary>
+  
+    ```csharp
+    public static object? GetProperty(Type type, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, Type? valueType);
+
+    public static TValue? GetProperty<TValue>(Type type, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments);
+
+    public static object? GetProperty<TSource>(string name, MemberAccessibility memberAccessibility, Type? valueType);
+
+    public static TValue? GetProperty<TSource, TValue>(string name, MemberAccessibility memberAccessibility);
+
+    public static void SetProperty(Type type, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, object? value);
+
+    public static void SetProperty<TValue>(Type type, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, TValue? value);
+
+    public static void SetProperty<TSource>(string name, MemberAccessibility memberAccessibility, object? value);
+
+    public static void SetProperty<TSource, TValue>(string name, MemberAccessibility memberAccessibility, TValue? value);
+
+    public static object? ReplaceProperty(Type type, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, object? value);
+
+    public static TValue? ReplaceProperty<TValue>(Type type, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, TValue? value);
+
+    public static object? ReplaceProperty<TSource>(string name, MemberAccessibility memberAccessibility, object? value);
+
+    public static TValue? ReplaceProperty<TSource, TValue>(string name, MemberAccessibility memberAccessibility, TValue? value);
+
+    public static void ExchangeProperty(Type type, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, ref object? value);
+
+    public static void ExchangeProperty<TValue>(Type type, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, ref TValue? value);
+
+    public static void ExchangeProperty<TSource>(string name, MemberAccessibility memberAccessibility, ref object? value);
+
+    public static void ExchangeProperty<TSource, TValue>(string name, MemberAccessibility memberAccessibility, ref TValue? value);
+    ```
+
+    </details>
+
+  + Methods for static properties with indices
+
+    <details><summary>Try methods</summary>
+
+    ```csharp
+    public static bool TryGetProperty(Type type, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, Type? valueType, out object? value);
+
+    public static bool TryGetProperty<TValue>(Type type, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, out TValue? value);
+
+    public static bool TryGetProperty<TSource>(string name, MemberAccessibility memberAccessibility, IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, Type? valueType, out object? value);
+
+    public static bool TryGetProperty<TSource, TValue>(string name, MemberAccessibility memberAccessibility, IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, out TValue? value);
+
+    public static bool TrySetProperty(Type type, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, object? value);
+
+    public static bool TrySetProperty<TValue>(Type type, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, TValue? value);
+
+    public static bool TrySetProperty<TSource>(string name, MemberAccessibility memberAccessibility, IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, object? value);
+
+    public static bool TrySetProperty<TSource, TValue>(string name, MemberAccessibility memberAccessibility, IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, TValue? value);
+
+    public static bool TryReplaceProperty(Type type, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, object? newValue, out object? oldValue);
+
+    public static bool TryReplaceProperty<TValue>(Type type, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, TValue? newValue, out TValue? oldValue);
+
+    public static bool TryReplaceProperty<TSource>(string name, MemberAccessibility memberAccessibility, IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, object? newValue, out object? oldValue);
+
+    public static bool TryReplaceProperty<TSource, TValue>(string name, MemberAccessibility memberAccessibility, IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, TValue? newValue, out TValue? oldValue);
+
+    public static bool TryExchangeProperty(Type type, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, ref object? value);
+
+    public static bool TryExchangeProperty<TValue>(Type type, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, ref TValue? value);
+
+    public static bool TryExchangeProperty<TSource>(string name, MemberAccessibility memberAccessibility, IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, ref object? value);
+
+    public static bool TryExchangeProperty<TSource, TValue>(string name, MemberAccessibility memberAccessibility, IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, ref TValue? value);
+    ```
+
+    </details>
+    <details><summary>Direct methods</summary>
+  
+    ```csharp
+    public static object? GetProperty(Type type, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, Type? valueType);
+
+    public static TValue? GetProperty<TValue>(Type type, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues);
+
+    public static object? GetProperty<TSource>(string name, MemberAccessibility memberAccessibility, IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, Type? valueType);
+
+    public static TValue? GetProperty<TSource, TValue>(string name, MemberAccessibility memberAccessibility, IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues);
+
+    public static void SetProperty(Type type, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, object? value);
+
+    public static void SetProperty<TValue>(Type type, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, TValue? value);
+
+    public static void SetProperty<TSource>(string name, MemberAccessibility memberAccessibility, IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, object? value);
+
+    public static void SetProperty<TSource, TValue>(string name, MemberAccessibility memberAccessibility, IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, TValue? value);
+
+    public static object? ReplaceProperty(Type type, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, object? value);
+
+    public static TValue? ReplaceProperty<TValue>(Type type, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, TValue? value);
+
+    public static object? ReplaceProperty<TSource>(string name, MemberAccessibility memberAccessibility, IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, object? value);
+
+    public static TValue? ReplaceProperty<TSource, TValue>(string name, MemberAccessibility memberAccessibility, IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, TValue? value);
+
+    public static void ExchangeProperty(Type type, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, ref object? value);
+
+    public static void ExchangeProperty<TValue>(Type type, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, ref TValue? value);
+
+    public static void ExchangeProperty<TSource>(string name, MemberAccessibility memberAccessibility, IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, ref object? value);
+
+    public static void ExchangeProperty<TSource, TValue>(string name, MemberAccessibility memberAccessibility, IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, ref TValue? value);
+    ```
+
+    </details>
+
+- **Methods for working with methods**
+  + Methods for instance methods
+
+    <details><summary>Try methods</summary>
+
+    ```csharp
+    public static bool TryCallMethod(object source, string name, MemberAccessibility memberAccessibility, IList<Type?>? methodArguments, IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues);
+
+    public static bool TryCallMethod<TSource>(TSource source, string name, MemberAccessibility memberAccessibility, IList<Type?>? methodArguments, IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues);
+
+    public static bool TryCallMethod(object source, string name, MemberAccessibility memberAccessibility, IList<Type?>? methodArguments, IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues, Type? returnType, out object? result);
+
+    public static bool TryCallMethod<TSource>(TSource source, string name, MemberAccessibility memberAccessibility, IList<Type?>? methodArguments, IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues, Type? returnType, out object? result);
+
+    public static async Task<bool> TryCallMethodAsync(object source, string name, MemberAccessibility memberAccessibility, IList<Type?>? methodArguments, IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues);
+
+    public static async Task<bool> TryCallMethodAsync<TSource>(TSource source, string name, MemberAccessibility memberAccessibility, IList<Type?>? methodArguments, IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues);
+
+    public static async Task<TryOut<object>> TryCallMethodAsync(object source, string name, MemberAccessibility memberAccessibility, IList<Type?>? methodArguments, IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues, Type? returnType);
+
+    public static async Task<TryOut<object>> TryCallMethodAsync<TSource>(TSource source, string name, MemberAccessibility memberAccessibility, IList<Type?>? methodArguments, IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues, Type? returnType);
+    ```
+
+    </details>
+    <details><summary>Direct methods</summary>
+
+    ```csharp
+    public static void CallMethod(object source, string name, MemberAccessibility memberAccessibility, IList<Type?>? methodArguments, IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues);
+
+    public static void CallMethod<TSource>(TSource source, string name, MemberAccessibility memberAccessibility, IList<Type?>? methodArguments, IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues);
+
+    public static object? CallMethod(object source, string name, MemberAccessibility memberAccessibility, IList<Type?>? methodArguments, IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues, Type? returnType);
+
+    public static object? CallMethod<TSource>(TSource source, string name, MemberAccessibility memberAccessibility, IList<Type?>? methodArguments, IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues, Type? returnType);
+
+    public static async Task CallMethodAsync(object source, string name, MemberAccessibility memberAccessibility, IList<Type?>? methodArguments, IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues);
+
+    public static async Task CallMethodAsync<TSource>(TSource source, string name, MemberAccessibility memberAccessibility, IList<Type?>? methodArguments, IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues);
+
+    public static async Task<object?> CallMethodAsync(object source, string name, MemberAccessibility memberAccessibility, IList<Type?>? methodArguments, IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues, Type? returnType);
+
+    public static async Task<object?> CallMethodAsync<TSource>(TSource source, string name, MemberAccessibility memberAccessibility, IList<Type?>? methodArguments, IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues, Type? returnType);
+    ```
+
+    </details>
+
+  + Methods for static methods
+
+    <details><summary>Try methods</summary>
+
+    ```csharp
+    public static bool TryCallMethod(Type type, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, IList<Type?>? methodArguments, IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues);
+
+    public static bool TryCallMethod<TSource>(string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, IList<Type?>? methodArguments, IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues);
+
+    public static bool TryCallMethod(Type type, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, IList<Type?>? methodArguments, IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues, Type? returnType, out object? result);
+
+    public static bool TryCallMethod<TSource>(string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, IList<Type?>? methodArguments, IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues, Type? returnType, out object? result);
+
+    public static async Task<bool> TryCallMethodAsync(Type type, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, IList<Type?>? methodArguments, IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues);
+
+    public static async Task<bool> TryCallMethodAsync<TSource>(string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, IList<Type?>? methodArguments, IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues);
+
+    public static async Task<TryOut<object>> TryCallMethodAsync(Type type, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, IList<Type?>? methodArguments, IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues, Type? returnType);
+
+    public static async Task<TryOut<object>> TryCallMethodAsync<TSource>(string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, IList<Type?>? methodArguments, IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues, Type? returnType);
+    ```
+
+    </details>
+    <details><summary>Direct methods</summary>
+
+    ```csharp
+    public static void CallMethod(Type type, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, IList<Type?>? methodArguments, IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues);
+
+    public static void CallMethod<TSource>(string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, IList<Type?>? methodArguments, IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues);
+
+    public static object? CallMethod(Type type, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, IList<Type?>? methodArguments, IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues, Type? returnType);
+
+    public static object? CallMethod<TSource>(string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, IList<Type?>? methodArguments, IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues, Type? returnType);
+
+    public static async Task CallMethodAsync(Type type, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, IList<Type?>? methodArguments, IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues);
+
+    public static async Task CallMethodAsync<TSource>(string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, IList<Type?>? methodArguments, IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues);
+
+    public static async Task<object?> CallMethodAsync(Type type, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, IList<Type?>? methodArguments, IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues, Type? returnType);
+
+    public static async Task<object?> CallMethodAsync<TSource>(string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, IList<Type?>? methodArguments, IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues, Type? returnType);
+    ```
+
+    </details>
+
+- **Methods for working with constructors**
+
+  <details><summary>Try methods</summary>
+
+  ```csharp
+  public static bool TryConstruct(Type type, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, out object? result);
+
+  public static bool TryConstruct<TSource>(MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, out object? result);
+  ```
+
+  </details>
+  <details><summary>Direct methods</summary>
+
+  ```csharp
+  public static object Construct(Type type, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues);
+
+  public static object Construct<TSource>(MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues);
+  ```
+
+  </details>
+
+<details><summary>Sample</summary>
+
+```csharp
+using System;
+using System.Collections.Generic;
+using PowerLib.System.Reflection;
+
+namespace ReflectorTestApp;
+
+internal class A<T>
+{
+  protected readonly T _default;
+
+  protected A(T value)
   {
-    var ns = @"def=http://schemas.microsoft.com/sqlserver/2004/07/adventure-works/ContactInfo"
-           + @";crm=http://schemas.microsoft.com/sqlserver/2004/07/adventure-works/ContactRecord"
-           + @";act=http://schemas.microsoft.com/sqlserver/2004/07/adventure-works/ContactTypes";
-    var persons = dc.Person
-      .Where(t => dc.regexIsMatch(dc.xmlEvaluateAsString(t.AdditionalContactInfo,  "/def:AdditionalContactInfo/crm:ContactRecord/act:telephoneNumber/act:number/text()", ns), @"555-\d{4}$", RegexOptions.None) == true)
-      .ToArray();
+    _default = value;
   }
+}
+
+internal class B<T> : A<T>
+{
+  protected B(T value)
+    : base(value)
+  { }
+
+  public B()
+    : base(default)
+  { }
+
+  public T Default
+    => _default;
+
+  public void AddItem<L>(L list, T item)
+    where L : IList<T>
+    => list.Add(item is null ? Default : item);
+
+  public void GetItem<L>(L list, int index, out T result)
+    where L : IList<T>
+    => result = list[index];
+
+  private bool ExchangeItem<L>(L list, int index, ref T item, bool reserved = false, bool skipOutOfRange = false)
+    where L : List<T>
+  {
+    if (skipOutOfRange && index >= list.Count)
+      return false;
+    var curr = list[index];
+    list[index] = item;
+    item = curr;
+    return true;
+  }
+}
+
+internal static class ReflectorTest
+{
+  internal static void Test()
+  {
+    var list = new List<double>();
+
+    //  Create instance of class B<T>.
+    var posParams_1 = new object[] { 99.5d };
+    var typeArgs_1 = new Type[] { null };
+    var inst_B = Reflector.Construct(typeof(B<>), MemberAccessibility.Family, typeArgs_1, posParams_1, null);
+    //var inst_B = Reflector.Construct(typeof(B<double>), MemberAccessibility.Family, null, posParams_1, null);
+    //var inst_B = Reflector.Construct<B<double>>(MemberAccessibility.Family, null, posParams_1, null);
+    //var inst_B = Reflector.Construct(typeof(B<>), MemberAccessibility.Public, new[] { typeof(double) }, null, null);
+    //var inst_B = Reflector.Construct(typeof(B<double>), MemberAccessibility.Public, null, null, null);
+    // inst_B instance of B<double>, typeArgs_1[0] == typeof(double)
+
+    //  Add value 678.99d to empty list.
+    var posParams_2 = new object?[] { list, 678.99d };
+    Reflector.CallMethod(inst_B, "AddItem", MemberAccessibility.Public, null, posParams_2, null);
+    // list[0] == 678.99
+
+    // Get list item at index 0 via output parameter and detect method argument type.
+    var posParams_3 = new object[] { list, 0, null };
+    var methodArgs_3 = new Type[] { null };
+    Reflector.CallMethod(inst_B, "GetItem", MemberAccessibility.Public, methodArgs_3, posParams_3, null);
+    // methodArgs_3[0] == typeof(List<double>), posParams_3[2] == 678.99
+
+    // Exchange list item at index 0 via value reference.
+    var posParams_4 = new object[] { list, 0, -56789.1234d };
+    var namedParams_4 = new Dictionary<string, object>() { { "SKIPOUTOFRANGE", true } };
+    var result_4 = Reflector.CallMethod(inst_B, "ExchangeITEM", MemberAccessibility.Private | MemberAccessibility.IgnoreCase, null, posParams_4, namedParams_4, typeof(bool));
+    //var result_4 = Reflector.CallMethod(inst_B, "ExchangeITEM", MemberAccessibility.Private | MemberAccessibility.IgnoreCase, null, posParams_4, namedParams_4, null);
+    // result_4 == true, posParams_4[2] == 678.99, list[0] == -56789.1234
+
+    //  Get internal '_default' field and 'Default' property.
+    var field_5 = Reflector.GetField(inst_B, "_default", MemberAccessibility.Family, null);
+    var prop_5 = Reflector.GetProperty<double>(inst_B, "Default", MemberAccessibility.Public);
+    // field_5 == 99.5, prop_5 == 99.5
+  }
+}
 ```
 
-Continued...
+</details>
 
 ---
-## PowerLib.System.Data.SqlTypes
+### **Resources**
 
-Contains several dozens of user-defined types (UDTs) and functions:
+There are several simple and useful classes for mapping keys of a specified type to resources. The main base class is the `ResourceAccessor<TKey>` abstract class from the PowerLib.System.Resources namespace. It provides public methods for getting resources (strings, streams, or other objects). Classes that inherit from it must ensure that the key value is converted to a string representation of the resource identifier. Resource access methods contain a formatProvider parameter of type IFormatProvider. If it can be cast to or through a CultureInfo object, then the requested resource is looked up in the appropriate locale. If it was not possible to get the CultureInfo, then the default CultureInfo will be used.
+The `CustomResourceAccessor<TKey>` class inherits the `ResourceAccessor<TKey>` class, one of its constructor parameters is a delegate that maps the generic TKey type to a resource identifier. Another class, `EnumResourceAccessor<TKey>`, accepts only an enumerated type as a TKey key type, and its name is a resource identifier. If no resource source is specified in the constructor, then the resource manager will attempt to load the resources attached to the TKey.
+To work with such a mapper for resource files (.resx), it is necessary to remove the wrapper class generation in the Custom Tool property, because it is no longer required.
 
-- __SqlRegex__ - Represents a regular expression (System.Text.RegularExpressions.Regex type) to be stored in or retrieved from a database and and having its methods and properties.
-- __SqlBigInteger__ - Represents a big integer (System.Numerics.BigInteger type) to be stored in or retrieved from a database and and having its methods and properties.
-- __SqlComplex__ - Represents a complex number (System.Numerics.Complex type) to be stored in or retrieved from a database and and having its methods and properties.
-- __SqlGradAngle__ - Represents a grad angle (PowerLib.System.Numerics.GradAngle type) to be stored in or retrieved from a database and and having its methods and properties.
-- __SqlHourAngle__ - Represents a hour angle (PowerLib.System.Numerics.HourAngle type) to be stored in or retrieved from a database and and having its methods and properties.
-- __SqlSexagesimalAngle__ - Represents a sexagesimal angle (PowerLib.System.Numerics.SexagesimalAngle type) to be stored in or retrieved from a database and and having its methods and properties.
-- __SqlZipArchive__ - Represents a zip archive (System.IO.Compression.ZipArchive type) to be stored in or retrieved from a database and and having its methods and properties.
-- __SqlRange__ - Represents a range - integer index and count (PowerLib.System.Range type) to be stored in or retrieved from a database and and having its methods and properties.
-- __SqlLongRange__ - Represents a long range - long integer index and count (PowerLib.System.Range type) to be stored in or retrieved from a database and and having its methods and properties.
-- __SqlUri__ - Represents an uri - Uniform Resource Identifier (URI) value (System.Uri type) to be stored in or retrieved from a database and and having its methods and properties.
-- __SqlFileInfo__ - Represents a file path value to be stored in or retrieved from a database and and having methods and properties to work with file located at path.
-- __SqlDirectoryInfo__ - Represents a directory path value to be stored in or retrieved from a database and and having methods and properties to work with directory located at path.
-- __SqlNameValueCollection__ - Represents collection of associated string keys and string values that can be accessed either with the key or with the index.
-- __Sql__<*ClrType*>__Collection__ - Represents collection items of <*Type*> type to be stored in or retrieved from a database. In SQL server collection names as <*DbType*>__Collection__.
-- __Sql__<*ClrType*>__Array__ - Represents single dimension array of <*Type*> item type to be stored in or retrieved from a database. In SQL server single dimension array names as <*DbType*>__Array__.
-- __Sql__<*ClrType*>__RegularArray__ - Represents multiple dimensions array of <*Type*> item type to be stored in or retrieved from a database. In SQL server multiple dimensions array names as <*DbType*>__RegularArray__.
+<details><summary>Methods to access resources</summary>
+  
+```csharp
+public string FormatString(TKey key, params object[] args);
 
-The following table shows the mapping of names in the assembly and names in the SQL Server.
+public string FormatString(IFormatProvider? formatProvider, TKey key, params object?[] args);
 
-*ClrType* | *DbType*
----|---
-BigInteger|HugeInt
-Binary|Binary
-Boolean|Bit
-Byte|TinyInt
-Complex|Complex
-DateTime|DateTime
-Double|DoubleFloat
-GradAngle|GradAngle
-Guid|Uid
-HourAngle|HourAngle
-Int16|SmallInt
-Int32|Int
-Int64|BigInt
-Range|Range
-LongRange|BigRange
-SexagesimalAngle|SexagesimalAngle
-Single|SingleFloat
-String|String
+public string? GetString(TKey key);
 
-To deploy the assembly on an MSSQL server, use the sqlclrdu.exe utility described below. For example,
-```
->sqlclrdu.exe create -permission:unsafe -script:script.sql -schema:pwrlib -connection:"Data Source=MASTER\MSSQLSERVER2016;Initial Catalog=AdventureWorks2016;Integrated Security=True;Connect Timeout=15;" "PowerLib.System.Data.SqlTypes.dll"
-```
-Dependent assemblies without sqlclr contents are installed with the -invisible option. Assemblies from GAC deploy by strong assembly name with -strong option. For example,
-```
->sqlclrdu.exe create -invisible -strong -script:test.sql "System.Runtime.Serialization, version=4.0.0.0, culture=neutral, publickeytoken=b77a5c561934e089"
+public string? GetString(TKey key, IFormatProvider? formatProvider);
+
+public Stream? GetStream(TKey key);
+
+public Stream? GetStream(TKey key, IFormatProvider? formatProvider);
+
+public object? GetObject(TKey key);
+
+public object? GetObject(TKey key, IFormatProvider? formatProvider);
 ```
 
-Continued...
+</details>
+
+<details><summary>EnumResourceAccessor constructors</summary>
+
+```csharp
+public EnumResourceAccessor();
+
+public EnumResourceAccessor(CultureInfo? cultureInfo);
+
+public EnumResourceAccessor(Type resourceSource);
+
+public EnumResourceAccessor(Type resourceSource, CultureInfo? cultureInfo);
+
+public EnumResourceAccessor(ResourceManager resourceManager);
+
+public EnumResourceAccessor(ResourceManager resourceManager, CultureInfo? cultureInfo);
+```
+
+</details>
+<details><summary>CustomResourceAccessor constructors</summary>
+
+```csharp
+public CustomResourceAccessor(Func<TKey, string> keySelector);
+
+public CustomResourceAccessor(Func<TKey, string> keySelector, CultureInfo? cultureInfo);
+
+public CustomResourceAccessor(Type resourceSource, Func<TKey, string> keySelector);
+
+public CustomResourceAccessor(Type resourceSource, Func<TKey, string> keySelector, CultureInfo? cultureInfo);
+
+public CustomResourceAccessor(ResourceManager resourceManager, Func<TKey, string> keySelector);
+
+public CustomResourceAccessor(ResourceManager resourceManager, Func<TKey, string> keySelector, CultureInfo? cultureInfo);
+```
+
+</details>
 
 ---
-## PowerLib.SqlServer
+### **Arrays**
 
-Contains more than a thousand functions that integrates into the SQL server. All functions can be divided into several categories: binary type manipulation, text manipulation (regular expression support), compression, cryptography, xml type manipulation (xpath query, xsl transformation, convert to and from json) and base types collections, single and multiple dimensions array support. All functions integrate into LINQ to SQL and EntityFramework.
-
-To deploy the assembly on an MSSQL server, use the sqlclrdu.exe utility described below. For example,
-```
-sqlclrdu.exe create -permission:unsafe -script:script.sql -schema:pwrlib -map:"PowerLib.System.Data.map" -connection:"Data Source=MASTER\MSSQLSERVER2016;Initial Catalog=AdventureWorks2016;Integrated Security=True;Connect Timeout=15;" "PowerLib.SqlServer.dll"
-```
-Dependent assemblies without sqlclr contents are installed with the -invisible option. Assemblies from GAC deploy by strong assembly name with -strong option. For example,
-```
->sqlclrdu.exe create -invisible -strong -script:test.sql "System.Runtime.Serialization, version=4.0.0.0, culture=neutral, publickeytoken=b77a5c561934e089"
-```
-
-Continued...
-
-## PowerLib.SqlServer.Web
-
-Contains functions for working with web services that integrates into the SQL server.
-
-Functions for web queries have the following forms:
-
-__webQueryGet__<*DataType*> - function request web service and receive data of <*DataType*> type.
-
-__webQueryPut__<*DataType*> - function request web service and send data of <*DataType*> type.
-
-__webQueryPut__<*DataType*>__Get__<*DataType*> - function request web service, send data of <*DataType*> type and receive of <*DataType*>.
-
-__webQueryGet__<*DataType*>__Ext__ - stored procedure request web service and receive data of <*DataType*> type.
-
-__webQueryPut__<*DataType*>__Ext__ - stored procedure request web service and send data of <*DataType*> type.
-
-__webQueryPut__<*DataType*>__Get__<*DataType*>__Ext__ - stored procedure request web service, send data of <*DataType*> type and receive of <*DataType*>.
-
-
-where <*DataType*> = __Xml__ | __Text__ | __Binary__
-
-Also, the following data conversion functions are defined in this assembly (schema __pwrlib__):
-
-__webHtmlDecode__,
-__webHtmlEncode__,
-__webUrlDecode__,
-__webUrlEncode__,
-__webUrlDecodeBinary__,
-__webUrlEncodeBinary__,
-__webDateTimeToString__,
-__webDateTimeParse__.
-
-Web query example:
-```sql
-declare @html nvarchar(max);
-declare @headers_get pwrlib.NameValueCollection;
-declare @attrs_get pwrlib.NameValueCollection;
---  NameValueCollection initialization
---  Initialize collection response property names to retrieve (properties to request object prefixied by 'request:')
-set @attrs_get = pwrlib.nvCollCreate()
-  .AddItem('response:StatusCode', null)
-  .AddItem('response:CharacterSet', null)
-  .AddItem('response:LastModified', null)
-  .AddItem('response:Method', null)
-  .AddItem('response:Server', null)
-  .AddItem('response:ResponseUri', null)
-  .AddItem('response:ProtocolVersion', null)
-  .AddItem('response:StatusDescription', null);
---  Request home page of wikipedia.org
-execute pwrlib.webQueryGetTextExt N'http://www.wikipedia.org', N'GET', null, @headers_get output, @html output, @attrs_get output;
---  Select results of query
-select *
-  from pwrlib.nvCollEnumerate(@headers_get)
-union
-select *
-  from pwrlib.nvCollEnumerate(@attrs_get)
---
-declare @headers_put pwrlib.NameValueCollection;
---  NameValueCollection alternate initialization
-set @headers_put = pwrlib.nvCollAdd(pwrlib.nvCollCreate(), 'content-type', 'application/text;charset=utf-16');
---  Store file on local storage in utf-16 encoding
-execute pwrlib.webQueryPutTextExt N'file://e:\WebStore\wikipedia.org.html', N'PUT', @headers_put, @html, null, null;
-```
----
-## PowerLib.SqlClr.Deploy
-
-A library that examines the specified assembly for sql clr objects and generates an SQL script for their registration, modification and deletion.
+Will be added and described a little later...
 
 ---
-## PowerLib.SqlClr.Deploy.Utility
+### **Collections**
 
-The sqlclrdu.exe utility is designed to deploy any sql clr assemblies on the MSSQL server.
+#### **Equality and comparison**
 
+There are a lot of classes that implement the equality and comparison interfaces and extension methods for working with them.
+Added two delegates `Equality<T>` and `Comparator<T>` and interface `IComparator<T>`. 
+The `Equality<T>` delegate is a delegate for equality comparison methods such as Equals of the `IEqualityComparer<T>` interface.
+The `Comparator<T>` delegate is a delegate for single-parameter comparison methods, such as the `Compare` method of the `IComparator<T>` interface. This interface is used, for example, in search methods on sorted data. In the search method, instead of a pattern for searching and an comparer interface with two parameters, a method with one parameter is passed, which will be called by the search function with a list element. The pattern comparison logic will be in the comparator. 
+
+```csharp
+
+public delegate bool Equality<in T>(T x, T y);
+
+public delegate int Comparator<in T>(T v);
+
+public interface IComparator<in T>
+{
+  int Compare(T? obj);
+}
 ```
-> sqlclrdu.exe
 
-Microsoft SQL server CLR assembly deployment utility.
+There are extension methods and classes where, in conjunction with the `IEqualityComparer<T>` interface or the `Equality<T>` delegate, an additional boolean `nullVarious` parameter is used for nullable values. This parameter affects the comparison of `null` values and when set, two `null` values are considered unequal. Also found in conjunction with the `IComparer<T>` interface or the `Comparison<T>` delegate for nullable values is an additional `nullOrder` parameter of type `RelativeOrder`. This parameter indicates the order of null values. When set to `RelativeOrder.Lower`, `null` values always precede any other values. With `RelativeOrder.Upper` , `null` values are always behind any other values.
 
-syntax:
-  sqlclrdu.exe <command> <options> <assembly>
+Also, added several enum types with criteria for matching the condition:
 
-commands:
-  create - Create assembly on SQL server database.
-  alter - Alter assembly on SQL server database.
-  drop - Drop assembly on SQL server database.
-  manage - Manage database (-enable-clr, -trustworthy keys accepted).
+- `ComparisonCriteria` - criteria for comparing values.
 
-options:
-  -assembly:<assembly_name> - Assembly name in SQL server.
-  -script:<script_file> - SQL script file path.
-  -map:<map_file> - Map referenced types to SQL Server database objects.
-  -encoding:<script_encoding> - SQL script file encoding.
-  -connection:<connection_string> - SQL server connection string.
-  -permission:[safe|ext_access|unsafe] - One of three different levels of security in which your code can run.
-  -owner:<owner> - Database user or role.
-  -schema:<schema> - Database schema.
-  -unchecked - Applied with ALTER ASSEMBLY command and add UNCHECKED DATA option.
-  -invisible - Only register assembly without its contents.
-  -append - Append to SQL script file.
-  -strong - Specifies that the assembly is defined by a strong name.
-  -enable-clr - Sets 'clr enabled' option for SQL server.
-  -trustworthy - Sets 'trustworthy' option for database.
+  ```csharp
+  public enum ComparisonCriteria
+  {
+    Equal,
+    NotEqual,
+    LessThan,
+    GreaterThan,
+    LessThanOrEqual,
+    GreaterThanOrEqual,
+  }
+  ```
 
-comments:
-  If string values contain spaces, they must be enclosed in double quotes.
-  For example, -connection:"Data Source = MASTER\MSSQLSERVER2016;Initial Catalog = AdventureWorks2016; Integrated Security = True"
-```
+- `BetweenCriteria` - criteria for entering a value in the interval.
+
+  ```csharp
+  public enum BetweenCriteria
+  {
+    IncludeBoth,
+    ExcludeLower,
+    ExcludeUpper,
+    ExcludeBoth
+  }
+  ```
+
+- `GroupCriteria` - criteria for grouping conditions.
+
+  ```csharp
+  public enum GroupCriteria
+  {
+    And,
+    Or
+  }
+  ```
+
+- `QuantifyCriteria` - criteria for the set of elements that satisfy the condition.
+
+  ```csharp
+  public enum QuantifyCriteria
+  {
+    Any,
+    All
+  }
+  ```
+
+#### **List extensions**
+
+The ListExtension class contains a lot of extension methods for working with objects that implement the IList interface. For the non-generic *IList* interface, the methods of the *PowerLib.System.Collections.NonGeneric.Extensions.ListExtension* class are used. For the generic `IList<T>` interface, methods of the *PowerLib.System.Collections.Generic.Extensions.ListExtension* class are used. Extension methods are divided into several sections:
+
+- **Getting methods**
+
+  The methods in this section return an item or a range of items from a list.
+  
+  <details><summary>Methods</summary>
+  
+  ```csharp
+  public static TSource GetAt<TSource>(this IList<TSource> list, int index);
+
+  public static TSource GetBound<TSource>(this IList<TSource> list, Bound bound);
+
+  public static TSource GetFirst<TSource>(this IList<TSource> list);
+
+  public static TSource GetLast<TSource>(this IList<TSource> list);
+
+  public static bool TryGetBound<TSource>(this IList<TSource> list, Bound bound, out TSource? result);
+
+  public static bool TryGetFirst<TSource>(this IList<TSource> list, out TSource? result);
+
+  public static bool TryGetLast<TSource>(this IList<TSource> list, out TSource? result);
+
+  public static IReadOnlyList<TSource> GetRange<TSource>(this IList<TSource> list, int index, int count);
+
+  public static IReadOnlyList<TSource> GetRange<TSource>(this IList<TSource> list, (int index, int count) range);
+  ```
+  
+  </details>
+
+- **Setting methods**
+
+  The methods in this section set an item or a range of items in a list.
+
+  <details><summary>Methods</summary>
+
+  ```csharp
+  public static void SetAt<TSource>(this IList<TSource> list, int index, TSource item);
+
+  public static void SetBound<TSource>(this IList<TSource> list, Bound bound, TSource item);
+
+  public static void SetFirst<TSource>(this IList<TSource> list, TSource item);
+
+  public static void SetLast<TSource>(this IList<TSource> list, TSource item);
+
+  public static bool TrySetBound<TSource>(this IList<TSource> list, Bound bound, TSource item);
+
+  public static bool TryGetFirst<TSource>(this IList<TSource> list, TSource item);
+
+  public static bool TrySetLast<TSource>(this IList<TSource> list, TSource item);
+
+  public static void SetRepeat<TSource>(this IList<TSource> list, int index, TSource value, int count);
+
+  public static void SetRange<TSource>(this IList<TSource> list, int index, IEnumerable<TSource> items);
+
+  public static void SetRange<TSource>(this IList<TSource> list, int index, int count, IEnumerable<TSource> items);
+  ```
+
+  </details>
+
+- **Adding methods**
+
+  The methods in this section add an item or a range of items to a list.
+  <details><summary>Methods</summary>
+
+  ```csharp
+
+  public static void AddBound<TSource>(this IList<TSource> list, Bound bound, TSource item);
+
+  public static void AddFirst<TSource>(this IList<TSource> list, TSource item);
+
+  public static void AddLast<TSource>(this IList<TSource> list, TSource item);
+
+  public static void AddRepeat<TSource>(this IList<TSource> list, TSource value, int count);
+
+  public static void AddRange<TSource>(this IList<TSource> list, IEnumerable<TSource> items);
+
+  ```
+
+  </details>
+
+- **Inserting methods**
+
+  The methods in this section insert a range of items to a list.
+
+  <details><summary>Methods</summary>
+
+  ```csharp
+  public static void InsertRepeat<T>(this IList<T> list, int index, T value, int count);
+
+  public static void InsertRange<T>(this IList<T> list, int index, IEnumerable<T> items);
+  ```
+
+  </details>
+
+- **Removing methods**
+
+  The methods in this section remove a range of items from a list.
+
+  <details><summary>Methods</summary>
+
+  ```csharp
+  public static void RemoveRange<T>(this IList<T> list, int index, int count);
+
+  public static void RemoveRange<TSource>(this IList<TSource> list, (int index, int count) range);
+  ```
+
+  </details>
+
+- **Taking methods**
+
+  The methods in this section remove an item or a range of items from a list and return them to caller.
+
+  <details><summary>Methods</summary>
+
+  ```csharp
+  public static T TakeAt<T>(this IList<T> list, int index);
+
+  public static T TakeBound<T>(this IList<T> list, Bound bound);
+
+  public static T TakeFirst<T>(this IList<T> list);
+
+  public static T TakeLast<T>(this IList<T> list);
+
+  public static bool TryTakeBound<T>(this IList<T> list, Bound bound, out T? result);
+
+  public static bool TryTakeFirst<T>(this IList<T> list, out T? result);
+
+  public static bool TryTakeLast<T>(this IList<T> list, out T? result);
+
+  public static IReadOnlyList<T> TakeRange<T>(this IList<T> list, int index, int count);
+
+  public static IReadOnlyList<T> TakeRange<T>(this IList<T> list, (int index, int count) range);
+  ```
+
+  </details>
+
+- **Replacing methods**
+
+  The methods in this section set an item or a range of items in a list and return replaced values to caller.
+
+  <details><summary>Methods</summary>
+
+  ```csharp
+  public static T ReplaceAt<T>(this IList<T> list, int index, T item);
+
+  public static T ReplaceBound<T>(this IList<T> list, Bound bound, T item);
+
+  public static T ReplaceFirst<T>(this IList<T> list, T item);
+
+  public static T ReplaceLast<T>(this IList<T> list, T item);
+
+  public static bool TryReplaceBound<T>(this IList<T?> list, Bound bound, T? newItem, out T? oldItem);
+
+  public static bool TryReplaceFirst<T>(this IList<T?> list, T? newItem, out T? oldItem);
+
+  public static bool TryReplaceLast<T>(this IList<T?> list, T? newItem, out T? oldItem);
+
+  public static void ExchangeAt<T>(this IList<T> list, int index, ref T item);
+
+  public static void ExchangeBound<T>(this IList<T> list, Bound bound, ref T item);
+
+  public static void ExchangeFirst<T>(this IList<T> list, ref T item);
+
+  public static void ExchangeLast<T>(this IList<T> list, ref T item);
+
+  public static bool TryExchangeBound<T>(this IList<T> list, Bound bound, ref T item);
+
+  public static bool TryExchangeFirst<T>(this IList<T> list, ref T item);
+
+  public static bool TryExchangeLast<T>(this IList<T> list, ref T item);
+
+  public static IReadOnlyList<T> ReplaceRange<T>(this IList<T> list, int index, IEnumerable<T> items);
+
+  public static IReadOnlyList<T> ReplaceRange<T>(this IList<T> list, int index, int count, IEnumerable<T> items);
+
+  public static IReadOnlyList<T> ReplaceRange<T>(this IList<T> list, (int index, int count) range, IEnumerable<T> items);
+  ```
+
+  </details>
+
+- **Moving methods**
+
+  The methods in this section move an item or a range of items in a list.
+
+  <details><summary>Methods</summary>
+
+  ```csharp
+  public static void Move<T>(this IList<T> list, int sIndex, int dIndex);
+
+  public static void MoveRange<T>(this IList<T> list, int sIndex, int dIndex, int count);
+  ```
+
+  </details>
+
+- **Swapping methods**
+
+  The methods in this section swap two items or two ranges of items with each other in a list.
+
+  <details><summary>Methods</summary>
+
+  ```csharp
+  public static void Swap<T>(this IList<T> list, int xIndex, int yIndex);
+
+  public static void SwapRange<T>(this IList<T> list, int xIndex, int yIndex, int count);
+
+  public static void SwapRanges<T>(this IList<T> list, int xIndex, int xCount, int yIndex, int yCount);
+  ```
+
+  </details>
+
+- **Reversing methods**
+
+  The methods in this section reverse a range of items in a list.
+
+  <details><summary>Methods</summary>
+
+  ```csharp
+  public static void Reverse<T>(this IList<T> list);
+
+  public static void Reverse<T>(this IList<T> list, int index);
+
+  public static void Reverse<T>(this IList<T> list, int index, int count);
+
+  public static void Reverse<T>(this IList<T> list, (int index, int count) range);
+  ```
+
+  </details>
+
+- **Sort manipulation methods**
+
+  The methods in this section manipulate an item in a sorted list.
+
+  <details><summary>Methods</summary>
+
+  ```csharp
+  public static int AddSorted<T>(this IList<T> list, T item, Comparison<T> comparison, SortingOption option = SortingOption.None);
+
+  public static bool InsertSorted<T>(this IList<T> list, int index, T item, Comparison<T> comparison, SortingOption option = SortingOption.None);
+
+  public static bool SetSorted<T>(this IList<T> list, int index, T item, Comparison<T> comparison, SortingOption option = SortingOption.None);
+  ```
+
+  </details>
+
+- **Filling methods**
+
+  The methods in this section fill a range of items in a list.
+
+  <details><summary>Methods</summary>
+
+  ```csharp
+  public static void Fill<TSource>(this IList<TSource> list, TSource value);
+
+  public static void Fill<TSource>(this IList<TSource> list, int index, TSource value);
+
+  public static void Fill<TSource>(this IList<TSource> list, int index, int count, TSource value);
+
+  public static void Fill<TSource>(this IList<TSource> list, (int index, int count) range, TSource value);
+
+  public static void Fill<TSource>(this IList<TSource> list, Func<TSource> filler);
+
+  public static void Fill<TSource>(this IList<TSource> list, int index, Func<TSource> filler);
+
+  public static void Fill<TSource>(this IList<TSource> list, int index, int count, Func<TSource> filler);
+
+  public static void Fill<TSource>(this IList<TSource> list, (int index, int count) range, Func<TSource> filler);
+
+  public static void Fill<TSource>(this IList<TSource> list, Func<int, TSource> filler);
+
+  public static void Fill<TSource>(this IList<TSource> list, int index, Func<int, TSource> filler);
+
+  public static void Fill<TSource>(this IList<TSource> list, int index, int count, Func<int, TSource> filler);
+
+  public static void Fill<TSource>(this IList<TSource> list, (int index, int count) range, Func<int, TSource> filler);
+  ```
+
+  </details>
+
+- **Applying methods**
+
+  The methods in this section apply action to a range of items in a list.
+
+  <details><summary>Methods</summary>
+
+  ```csharp
+  public static void Apply<TSource>(this IList<TSource> list, Action<TSource> action);
+
+  public static void Apply<TSource>(this IList<TSource> list, int index, Action<TSource> action);
+
+  public static void Apply<TSource>(this IList<TSource> list, int index, int count, Action<TSource> action);
+
+  public static void Apply<TSource>(this IList<TSource> list, (int index, int count) range, Action<TSource> action);
+
+  public static void Apply<TSource>(this IList<TSource> list, ElementAction<TSource> action);
+
+  public static void Apply<TSource>(this IList<TSource> list, int index, ElementAction<TSource> action);
+
+  public static void Apply<TSource>(this IList<TSource> list, int index, int count, ElementAction<TSource> action);
+
+  public static void Apply<TSource>(this IList<TSource> list, (int index, int count) range, ElementAction<TSource> action);
+  ```
+  
+  </details>
+
+- **Sorting methods**
+
+  There are implemented six sorting algorithms: Bubble, Selection, Insertion, Merge, Quick, Heap. For each algorithm, there are many methods with different signatures that are combined from three blocks: sorting data, range of items to be sorted and comparator as delegate or interface. The data to be sorted can be specified as a single list of values or two paired lists of keys and associated values. The sorting range may not be specified, which means the entire list will be sorted. It can be specified by the start index and defined to the end of the list. It can also be specified by the start index and elements count, or by a tuple containing both of these. Below are the method signatures of the list sorting extensions. The ***Algorithm*** prefix at the beginning of the method name should be replaced with the name of the sorting algorithm used: Bubble, Selection, Insertion, Merge, Quick, Heap.
+
+  <details><summary>Methods</summary>
+
+  ```csharp
+  public static void AlgorithmSort<TSource>(this IList<TSource> list);
+
+  public static void AlgorithmSort<TSource>(this IList<TSource> list, int index);
+
+  public static void AlgorithmSort<TSource>(this IList<TSource> list, int index, int count);
+
+  public static void AlgorithmSort<TSource>(this IList<TSource> list, (int index, int count) range);
+
+  public static void AlgorithmSort<TSource>(this IList<TSource> list, Comparison<TSource>? comparison);
+
+  public static void AlgorithmSort<TSource>(this IList<TSource> list, int index, Comparison<TSource>? comparison);
+
+  public static void AlgorithmSort<TSource>(this IList<TSource> list, int index, int count, Comparison<TSource>? comparison);
+
+  public static void AlgorithmSort<TSource>(this IList<TSource> list, (int index, int count) range, Comparison<TSource>? comparison);
+
+  public static void AlgorithmSort<TSource>(this IList<TSource> list, IComparer<TSource>? comparer);
+
+  public static void AlgorithmSort<TSource>(this IList<TSource> list, int index, IComparer<TSource>? comparer);
+
+  public static void AlgorithmSort<TSource>(this IList<TSource> list, int index, int count, IComparer<TSource>? comparer);
+
+  public static void AlgorithmSort<TSource>(this IList<TSource> list, (int index, int count) range, IComparer<TSource>? comparer);
+
+  public static void AlgorithmSort<TKey, TSource>(this IList<TSource> list, IList<TKey> keys);
+
+  public static void AlgorithmSort<TKey, TSource>(this IList<TSource> list, IList<TKey> keys, int index);
+
+  public static void AlgorithmSort<TKey, TSource>(this IList<TSource> list, IList<TKey> keys, int index, int count);
+
+  public static void AlgorithmSort<TKey, TSource>(this IList<TSource> list, IList<TKey> keys, (int index, int count) range);
+
+  public static void AlgorithmSort<TKey, TSource>(this IList<TSource> list, IList<TKey> keys, Comparison<TKey>? comparison);
+
+  public static void AlgorithmSort<TKey, TSource>(this IList<TSource> list, IList<TKey> keys, int index, Comparison<TKey>? comparison);
+
+  public static void AlgorithmSort<TKey, TSource>(this IList<TSource> list, IList<TKey> keys, int index, int count, Comparison<TKey>? comparison);
+
+  public static void AlgorithmSort<TKey, TSource>(this IList<TSource> list, IList<TKey> keys, (int index, int count) range, Comparison<TKey>? comparison);
+
+  public static void AlgorithmSort<TKey, TSource>(this IList<TSource> list, IList<TKey> keys, IComparer<TKey>? comparer);
+
+  public static void AlgorithmSort<TKey, TSource>(this IList<TSource> list, IList<TKey> keys, int index, IComparer<TKey>? comparer);
+
+  public static void AlgorithmSort<TKey, TSource>(this IList<TSource> list, IList<TKey> keys, int index, int count, IComparer<TKey>? comparer);
+
+  public static void AlgorithmSort<TKey, TSource>(this IList<TSource> list, IList<TKey> keys, (int index, int count) range, IComparer<TKey>? comparer);
+  ```
+
+  </details>
+
+- **Enumerating methods**
+
+  The methods in this section enumerate a range of items from a list.
+  
+  <details><summary>Methods</summary>
+  
+  ```csharp
+  public static IEnumerable<TSource> Enumerate<TSource>(this IList<TSource> list, bool reverse = false);
+
+  public static IEnumerable<TSource> Enumerate<TSource>(this IList<TSource> list, int index, bool reverse = false);
+
+  public static IEnumerable<TSource> Enumerate<TSource>(this IList<TSource> list, int index, int count, bool reverse = false);
+
+  public static IEnumerable<TSource> Enumerate<TSource>(this IList<TSource> list, (int index, int count) range, bool reverse = false);
+  ```
+
+  </details>
+
+- **Copying methods**
+
+  The methods in this section copy a range of items from one to another list.
+
+  <details><summary>Methods</summary>
+
+  ```csharp
+  public static void Copy<TSource>(this IList<TSource> srcList, IList<TSource> dstList, bool reverse = false);
+
+  public static void Copy<TSource>(this IList<TSource> srcList, IList<TSource> dstList, int dstIndex, int srcIndex, bool reverse = false);
+
+  public static void Copy<TSource>(this IList<TSource> srcList, IList<TSource> dstList, int dstIndex, int srcIndex, int count, bool reverse = false);
+
+  public static void Copy<TSource>(this IList<TSource> srcList, IList<TSource> dstList, int dstIndex, (int index, int count) srcRange, bool reverse = false);
+  ```
+
+  </details>
+
+- **Matching methods**
+
+  The methods in this section match a range of items in a list.
+
+  <details><summary>Methods</summary>
+
+  ```csharp
+  public static bool Match<T>(this IList<T> list, Predicate<T> predicate, bool all);
+
+  public static bool Match<T>(this IList<T> list, int index, Predicate<T> predicate, bool all);
+
+  public static bool Match<T>(this IList<T> list, int index, int count, Predicate<T> predicate, bool all);
+
+  public static bool Match<T>(this IList<T> list, (int index, int count) range, Predicate<T> predicate, bool all);
+
+  public static bool Match<T>(this IList<T> list, ElementPredicate<T> predicate, bool all);
+
+  public static bool Match<T>(this IList<T> list, int index, ElementPredicate<T> predicate, bool all);
+
+  public static bool Match<T>(this IList<T> list, int index, int count, ElementPredicate<T> predicate, bool all);
+
+  public static bool Match<T>(this IList<T> list, (int index, int count) range, ElementPredicate<T> predicate, bool all);
+
+  public static bool MatchAny<T>(this IList<T> list, Predicate<T> predicate);
+
+  public static bool MatchAny<T>(this IList<T> list, int index, Predicate<T> predicate);
+
+  public static bool MatchAny<T>(this IList<T> list, int index, int count, Predicate<T> predicate);
+
+  public static bool MatchAny<T>(this IList<T> list, (int index, int count) range, Predicate<T> predicate);
+
+  public static bool MatchAny<T>(this IList<T> list, ElementPredicate<T> predicate);
+
+  public static bool MatchAny<T>(this IList<T> list, int index, ElementPredicate<T> predicate);
+
+  public static bool MatchAny<T>(this IList<T> list, int index, int count, ElementPredicate<T> predicate);
+
+  public static bool MatchAny<T>(this IList<T> list, (int index, int count) range, ElementPredicate<T> predicate);
+
+  public static bool MatchAll<T>(this IList<T> list, Predicate<T> predicate);
+
+  public static bool MatchAll<T>(this IList<T> list, int index, Predicate<T> predicate);
+
+  public static bool MatchAll<T>(this IList<T> list, int index, int count, Predicate<T> predicate);
+
+  public static bool MatchAll<T>(this IList<T> list, (int index, int count) range, Predicate<T> predicate);
+
+  public static bool MatchAll<T>(this IList<T> list, ElementPredicate<T> predicate);
+
+  public static bool MatchAll<T>(this IList<T> list, int index, ElementPredicate<T> predicate);
+
+  public static bool MatchAll<T>(this IList<T> list, int index, int count, ElementPredicate<T> predicate);
+
+  public static bool MatchAll<T>(this IList<T> list, (int index, int count) range, ElementPredicate<T> predicate);
+  ```
+  
+  </details>
+
+- **Element index finding methods**
+
+  The methods in this section find the index of the element that matches the predicate.
+
+  <details><summary>Methods</summary>
+
+  ```csharp
+  public static int FindIndex<T>(this IList<T> list, Predicate<T> predicate);
+
+  public static int FindIndex<T>(this IList<T> list, int index, Predicate<T> predicate);
+
+  public static int FindIndex<T>(this IList<T> list, int index, int count, Predicate<T> predicate);
+
+  public static int FindIndex<T>(this IList<T> list, (int index, int count) range, Predicate<T> predicate);
+
+  public static int FindIndex<T>(this IList<T> list, ElementPredicate<T> predicate);
+
+  public static int FindIndex<T>(this IList<T> list, int index, ElementPredicate<T> predicate);
+
+  public static int FindIndex<T>(this IList<T> list, int index, int count, ElementPredicate<T> predicate);
+
+  public static int FindIndex<T>(this IList<T> list, (int index, int count) range, ElementPredicate<T> predicate);
+
+  public static int FindLastIndex<T>(this IList<T> list, Predicate<T> predicate);
+
+  public static int FindLastIndex<T>(this IList<T> list, int index, Predicate<T> predicate);
+
+  public static int FindLastIndex<T>(this IList<T> list, int index, int count, Predicate<T> predicate);
+
+  public static int FindLastIndex<T>(this IList<T> list, (int index, int count) range, Predicate<T> predicate);
+
+  public static int FindLastIndex<T>(this IList<T> list, ElementPredicate<T> predicate);
+
+  public static int FindLastIndex<T>(this IList<T> list, int index, ElementPredicate<T> predicate);
+
+  public static int FindLastIndex<T>(this IList<T> list, int index, int count, ElementPredicate<T> predicate);
+
+  public static int FindLastIndex<T>(this IList<T> list, (int index, int count) range, ElementPredicate<T> predicate);
+  ```
+
+  </details>
+
+- **Elements finding methods**
+
+  The methods in this section find all elements in the range of the list that match the predicate.
+
+  <details><summary>Methods</summary>
+
+  ```csharp
+  public static IEnumerable<T> FindAll<T>(this IList<T> list, Predicate<T> predicate, bool reverse = false);
+
+  public static IEnumerable<T> FindAll<T>(this IList<T> list, int index, Predicate<T> predicate, bool reverse = false);
+
+  public static IEnumerable<T> FindAll<T>(this IList<T> list, int index, int count, Predicate<T> predicate, bool reverse = false);
+
+  public static IEnumerable<T> FindAll<T>(this IList<T> list, (int index, int count) range, Predicate<T> predicate, bool reverse = false);
+
+  public static IEnumerable<T> FindAll<T>(this IList<T> list, ElementPredicate<T> predicate, bool reverse = false);
+
+  public static IEnumerable<T> FindAll<T>(this IList<T> list, int index, ElementPredicate<T> predicate, bool reverse = false);
+
+  public static IEnumerable<T> FindAll<T>(this IList<T> list, int index, int count, ElementPredicate<T> predicate, bool reverse = false);
+
+  public static IEnumerable<T> FindAll<T>(this IList<T> list, (int index, int count) range, ElementPredicate<T> predicate, bool reverse = false);
+  ```
+
+  </details>
+
+- **Elements indices finding methods**
+
+  The methods in this section find all elements in the range of the list that match the predicate and return an enumeration of their indices.
+
+  <details><summary>Methods</summary>
+
+  ```csharp
+  public static IEnumerable<int> FindAllIndices<T>(this IList<T> list, Predicate<T> predicate, bool reverse = false);
+
+  public static IEnumerable<int> FindAllIndices<T>(this IList<T> list, int index, Predicate<T> predicate, bool reverse = false);
+
+  public static IEnumerable<int> FindAllIndices<T>(this IList<T> list, int index, int count, Predicate<T> predicate, bool reverse = false);
+
+  public static IEnumerable<int> FindAllIndices<T>(this IList<T> list, (int index, int count) range, Predicate<T> predicate, bool reverse = false);
+
+  public static IEnumerable<int> FindAllIndices<T>(this IList<T> list, ElementPredicate<T> predicate, bool reverse = false);
+
+  public static IEnumerable<int> FindAllIndices<T>(this IList<T> list, int index, ElementPredicate<T> predicate, bool reverse = false);
+
+  public static IEnumerable<int> FindAllIndices<T>(this IList<T> list, int index, int count, ElementPredicate<T> predicate, bool reverse = false);
+
+  public static IEnumerable<int> FindAllIndices<T>(this IList<T> list, (int index, int count) range, ElementPredicate<T> predicate, bool reverse = false);
+  ```
+
+  </details>
+
+- **Element index binary searching methods**
+
+  The methods in this section perform binary search for the position of an element in a sorted list.
+
+  <details><summary>Methods</summary>
+
+  ``` csharp
+  public static int BinarySearch<T>(this IList<T> list, Comparator<T> comparator, SearchingOption option = SearchingOption.None);
+
+  public static int BinarySearch<T>(this IList<T> list, int index, Comparator<T> comparator, SearchingOption option = SearchingOption.None);
+
+  public static int BinarySearch<T>(this IList<T> list, int index, int count, Comparator<T> comparator, SearchingOption option = SearchingOption.None);
+
+  public static int BinarySearch<T>(this IList<T> list, (int index, int count) range, Comparator<T> comparator, SearchingOption option = SearchingOption.None);
+  ```
+
+  </details>
+
+- **Element index interpolation searching methods**
+
+  The methods in this section perform interpolation search for the position of an element in a sorted list.
+
+  <details><summary>Methods</summary>
+
+  ``` csharp
+  public static int InterpolationSearch<T>(this IList<T> list, Comparator<T> comparator, Func<T, T, float> interpolator, SearchingOption option = SearchingOption.None);
+
+  public static int InterpolationSearch<T>(this IList<T> list, int index, Comparator<T> comparator, Func<T, T, float> interpolator, SearchingOption option = SearchingOption.None);
+
+  public static int InterpolationSearch<T>(this IList<T> list, int index, int count, Comparator<T> comparator, Func<T, T, float> interpolator, SearchingOption option = SearchingOption.None);
+
+  public static int InterpolationSearch<T>(this IList<T> list, (int index, int count) range, Comparator<T> comparator, Func<T, T, float> interpolator, SearchingOption option = SearchingOption.None);
+  ```
+
+  </details>
+
+- **Sequence comparing methods**
+
+  The methods in this section compare elements of two lists. Parameter *emptyOrder* sets the mode for comparing elements of two sequences with their different lengths. The comparison is performed element by element, and if at the current step the values of the sequences are element by element equal and the end is reached on one of them, then with the RelativeOrder.Lower value, the longer sequence is considered to be greater than the short sequence. With a value of RelativeOrder.Upper, a shorter sequence is considered to be greater than the long sequence.
+
+  <details><summary>Methods</summary>
+
+  ``` csharp
+  public static int SequenceCompare<T>(this IList<T> xList, IList<T> yList);
+
+  public static int SequenceCompare<T>(this IList<T> xList, int xIndex, IList<T> yList, int yIndex);
+
+  public static int SequenceCompare<T>(this IList<T> xList, int xIndex, IList<T> yList, int yIndex, int count);
+
+  public static int SequenceCompare<T>(this IList<T> xList, IList<T> yList, Comparison<T>? comparison);
+
+  public static int SequenceCompare<T>(this IList<T> xList, int xIndex, IList<T> yList, int yIndex, Comparison<T>? comparison);
+
+  public static int SequenceCompare<T>(this IList<T> xList, int xIndex, IList<T> yList, int yIndex, int count, Comparison<T> comparison);
+
+  public static int SequenceCompare<T>(this IList<T> xList, IList<T> yList, IComparer<T>? comparer);
+
+  public static int SequenceCompare<T>(this IList<T> xList, int xIndex, IList<T> yList, int yIndex, IComparer<T>? comparer);
+
+  public static int SequenceCompare<T>(this IList<T> xList, int xIndex, IList<T> yList, int yIndex, int count, IComparer<T>? comparer);
+
+  public static int SequenceCompare<T>(this IList<T> xList, IList<T> yList, RelativeOrder emptyOrder);
+
+  public static int SequenceCompare<T>(this IList<T> xList, int xIndex, IList<T> yList, int yIndex, RelativeOrder emptyOrder);
+
+  public static int SequenceCompare<T>(this IList<T> xList, int xIndex, IList<T> yList, int yIndex, int count, RelativeOrder emptyOrder);
+
+  public static int SequenceCompare<T>(this IList<T> xList, IList<T> yList, Comparison<T>? comparison, RelativeOrder emptyOrder);
+
+  public static int SequenceCompare<T>(this IList<T> xList, int xIndex, IList<T> yList, int yIndex, Comparison<T>? comparison, RelativeOrder emptyOrder);
+
+  public static int SequenceCompare<T>(this IList<T> xList, int xIndex, IList<T> yList, int yIndex, int count, Comparison<T> comparison, RelativeOrder emptyOrder);
+
+  public static int SequenceCompare<T>(this IList<T> xList, IList<T> yList, IComparer<T>? comparer, RelativeOrder emptyOrder);
+
+  public static int SequenceCompare<T>(this IList<T> xList, int xIndex, IList<T> yList, int yIndex, IComparer<T>? comparer, RelativeOrder emptyOrder);
+
+  public static int SequenceCompare<T>(this IList<T> xList, int xIndex, IList<T> yList, int yIndex, int count, IComparer<T>? comparer, RelativeOrder emptyOrder);
+  ```
+
+  </details>
+
+- **Sequence equaling methods**
+
+  The methods in this section compare elements of two lists for equality.
+
+  <details><summary>Methods</summary>
+
+  ``` csharp
+  public static bool SequenceEqual<T>(this IList<T> xList, IList<T> yList);
+
+  public static bool SequenceEqual<T>(this IList<T> xList, int xIndex, IList<T> yList, int yIndex);
+
+  public static bool SequenceEqual<T>(this IList<T> xList, int xIndex, IList<T> yList, int yIndex, int count);
+
+  public static bool SequenceEqual<T>(this IList<T> xList, IList<T> yList, Equality<T> equality);
+
+  public static bool SequenceEqual<T>(this IList<T> xList, int xIndex, IList<T> yList, int yIndex, Equality<T>? equality);
+
+  public static bool SequenceEqual<T>(this IList<T> xList, int xIndex, IList<T> yList, int yIndex, int count, Equality<T>? equality);
+
+  public static bool SequenceEqual<T>(this IList<T> xList, IList<T> yList, IEqualityComparer<T>? equalityComparer);
+
+  public static bool SequenceEqual<T>(this IList<T> xList, int xIndex, IList<T> yList, int yIndex, IEqualityComparer<T>? equalityComparer);
+
+  public static bool SequenceEqual<T>(this IList<T> xList, int xIndex, IList<T> yList, int yIndex, int count, IEqualityComparer<T>? equalityComparer);
+  ```
+
+  </details>
+
+---
+### **Linq**
+
+There are several classes for LINQ: `PwrEnumerable`, `PwrAsyncEnumerable`.
+
+Will be described a little later...
+
+---
+### **Validation**
+
+There are several classes for validating values, actions and data: `Argument`, `Operation`, `Format`.
+
+Will be described a little later...
