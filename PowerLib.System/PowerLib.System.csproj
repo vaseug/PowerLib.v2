@@ -1,0 +1,60 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>net48;net6.0;net7.0</TargetFrameworks>
+		<LangVersion>10.0</LangVersion>
+    <Version>2.0.0</Version>
+    <SignAssembly>False</SignAssembly>
+    <AllowUnsafeBlocks>False</AllowUnsafeBlocks>
+    <EnforceCodeStyleInBuild>True</EnforceCodeStyleInBuild>
+    <Nullable>enable</Nullable>
+    <AnalysisLevel>latest-all</AnalysisLevel>
+    <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
+    <Authors>Evgeny Vashchenko</Authors>
+    <DelaySign>False</DelaySign>
+    <Title></Title>
+    <RepositoryType>git</RepositoryType>
+    <PackageProjectUrl></PackageProjectUrl>
+    <PackageTags>Helpers;Extensions;Data-Structures;Algorithms;Collections;Reflection</PackageTags>
+    <Description>This library contains a lot of helper classes and extension methods to make it easier to work with collections of objects, data structures, algorithms, and existing .NET framework functionality.</Description>
+    <PackageReleaseNotes>The first release of the second version of the tool library contains a lot of helpers and extensions for working with various data structures and the existing functionality of the .NET framework.</PackageReleaseNotes>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <RepositoryUrl>https://github.com/vaseug/PowerLib.v2</RepositoryUrl>
+    <PackageLicenseFile>MIT-LICENSE.txt</PackageLicenseFile>
+    <PackageRequireLicenseAcceptance>True</PackageRequireLicenseAcceptance>
+    <PackageId>VasEug.$(AssemblyName)</PackageId>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
+    <WarningLevel>9999</WarningLevel>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|AnyCPU'">
+    <WarningLevel>9999</WarningLevel>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Remove="MIT-LICENSE.txt" />
+    <None Remove="README.md" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="MIT-LICENSE.txt">
+      <Pack>True</Pack>
+      <PackagePath>\</PackagePath>
+    </Content>
+    <Content Include="README.md">
+      <Pack>True</Pack>
+      <PackagePath>\</PackagePath>
+    </Content>
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="System.Linq.Async" Version="6.0.1" />
+  </ItemGroup>
+
+  <ItemGroup Condition="$(TargetFramework.Contains(net48))">
+    <Reference Include="Microsoft.CSharp" />
+  </ItemGroup>
+
+</Project>

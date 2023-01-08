@@ -1,0 +1,39 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>net48;net6.0;net7.0</TargetFrameworks>
+    <LangVersion>10.0</LangVersion>
+    <Version>2.0.0</Version>
+    <SignAssembly>False</SignAssembly>
+    <AllowUnsafeBlocks>False</AllowUnsafeBlocks>
+    <EnforceCodeStyleInBuild>True</EnforceCodeStyleInBuild>
+    <AnalysisLevel>latest-all</AnalysisLevel>
+    <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
+    <Authors>Evgeny Vashchenko</Authors>
+    <DelaySign>False</DelaySign>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <RepositoryType>git</RepositoryType>
+    <IsPublishable>False</IsPublishable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Remove="Tools\MethodTest.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.4.1" />
+    <PackageReference Include="MSTest.TestAdapter" Version="3.0.2" />
+    <PackageReference Include="MSTest.TestFramework" Version="3.0.2" />
+    <PackageReference Include="coverlet.collector" Version="3.2.0">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\PowerLib.System\PowerLib.System.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,321 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <!-- 
+    Microsoft ResX Schema 
+    
+    Version 2.0
+    
+    The primary goals of this format is to allow a simple XML format 
+    that is mostly human readable. The generation and parsing of the 
+    various data types are done through the TypeConverter classes 
+    associated with the data types.
+    
+    Example:
+    
+    ... ado.net/XML headers & schema ...
+    <resheader name="resmimetype">text/microsoft-resx</resheader>
+    <resheader name="version">2.0</resheader>
+    <resheader name="reader">System.Resources.ResXResourceReader, System.Windows.Forms, ...</resheader>
+    <resheader name="writer">System.Resources.ResXResourceWriter, System.Windows.Forms, ...</resheader>
+    <data name="Name1"><value>this is my long string</value><comment>this is a comment</comment></data>
+    <data name="Color1" type="System.Drawing.Color, System.Drawing">Blue</data>
+    <data name="Bitmap1" mimetype="application/x-microsoft.net.object.binary.base64">
+        <value>[base64 mime encoded serialized .NET Framework object]</value>
+    </data>
+    <data name="Icon1" type="System.Drawing.Icon, System.Drawing" mimetype="application/x-microsoft.net.object.bytearray.base64">
+        <value>[base64 mime encoded string representing a byte array form of the .NET Framework object]</value>
+        <comment>This is a comment</comment>
+    </data>
+                
+    There are any number of "resheader" rows that contain simple 
+    name/value pairs.
+    
+    Each data row contains a name, and value. The row also contains a 
+    type or mimetype. Type corresponds to a .NET class that support 
+    text/value conversion through the TypeConverter architecture. 
+    Classes that don't support this are serialized and stored with the 
+    mimetype set.
+    
+    The mimetype is used for serialized objects, and tells the 
+    ResXResourceReader how to depersist the object. This is currently not 
+    extensible. For a given mimetype the value must be set accordingly:
+    
+    Note - application/x-microsoft.net.object.binary.base64 is the format 
+    that the ResXResourceWriter will generate, however the reader can 
+    read any of the formats listed below.
+    
+    mimetype: application/x-microsoft.net.object.binary.base64
+    value   : The object must be serialized with 
+            : System.Runtime.Serialization.Formatters.Binary.BinaryFormatter
+            : and then encoded with base64 encoding.
+    
+    mimetype: application/x-microsoft.net.object.soap.base64
+    value   : The object must be serialized with 
+            : System.Runtime.Serialization.Formatters.Soap.SoapFormatter
+            : and then encoded with base64 encoding.
+
+    mimetype: application/x-microsoft.net.object.bytearray.base64
+    value   : The object must be serialized into a byte array 
+            : using a System.ComponentModel.TypeConverter
+            : and then encoded with base64 encoding.
+    -->
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace" />
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="metadata">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" />
+              </xsd:sequence>
+              <xsd:attribute name="name" use="required" type="xsd:string" />
+              <xsd:attribute name="type" type="xsd:string" />
+              <xsd:attribute name="mimetype" type="xsd:string" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="assembly">
+            <xsd:complexType>
+              <xsd:attribute name="alias" type="xsd:string" />
+              <xsd:attribute name="name" type="xsd:string" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+                <xsd:element name="comment" type="xsd:string" minOccurs="0" msdata:Ordinal="2" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" msdata:Ordinal="1" />
+              <xsd:attribute name="type" type="xsd:string" msdata:Ordinal="3" />
+              <xsd:attribute name="mimetype" type="xsd:string" msdata:Ordinal="4" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <data name="ArrayContainsMismatchedElements" xml:space="preserve">
+    <value>Array argument '{0}' contains mismatched elements.</value>
+  </data>
+  <data name="ArrayDimensionsAreMismatched" xml:space="preserve">
+    <value>Array argument '{0}' dimensions are mismatched.</value>
+  </data>
+  <data name="ArrayDimLengthsAreMismatched" xml:space="preserve">
+    <value>Array argument '{0}' dimensional lengths are mismatched.</value>
+  </data>
+  <data name="ArrayElementTypeIsMismatched" xml:space="preserve">
+    <value>Array argument '{0}' element type is mismatched.</value>
+  </data>
+  <data name="ArrayIsEmpty" xml:space="preserve">
+    <value>Array argument '{0}' is empty,</value>
+  </data>
+  <data name="ArrayIsMultidimensional" xml:space="preserve">
+    <value>Array argument '{0}' is multidimensional.</value>
+  </data>
+  <data name="ArrayIsNotEmpty" xml:space="preserve">
+    <value>Array argument '{0}' is not empty.</value>
+  </data>
+  <data name="ArrayIsOnedimensional" xml:space="preserve">
+    <value>Array argument '{0}' is onedimensional.</value>
+  </data>
+  <data name="ArrayLengthIsMismatched" xml:space="preserve">
+    <value>Array argument '{0}' length is mismatched.</value>
+  </data>
+  <data name="ArrayRankIsMismatched" xml:space="preserve">
+    <value>Array argument '{0}' rank is mismatched.</value>
+  </data>
+  <data name="CollectionContainsDuplicatedElements" xml:space="preserve">
+    <value>Collection argument '{0}' contains duplicated elements.</value>
+  </data>
+  <data name="CollectionContainsMismatchedElements" xml:space="preserve">
+    <value>Collection argument '{0}' contains mismatched elements.</value>
+  </data>
+  <data name="CollectionContainsNullElements" xml:space="preserve">
+    <value>Collection argument '{0}' contains null elements.</value>
+  </data>
+  <data name="CollectionDoesNotContainRequiredMatchedElements" xml:space="preserve">
+    <value>Collection argument '{0}' does not contain the required matched items.</value>
+  </data>
+  <data name="CollectionElementsCountIsMismatched" xml:space="preserve">
+    <value>Collection argument '{0}' elements count is mismatched.</value>
+  </data>
+  <data name="CollectionElementsCountIsOutOfRange" xml:space="preserve">
+    <value>Collection argument '{0}' elements count is out of range.</value>
+  </data>
+  <data name="CollectionIsEmpty" xml:space="preserve">
+    <value>Collection argument '{0}' is empty,</value>
+  </data>
+  <data name="CollectionIsMatched" xml:space="preserve">
+    <value>Collection argument '{0}' is matched.</value>
+  </data>
+  <data name="CollectionIsNotEmpty" xml:space="preserve">
+    <value>Collection argument '{0}' is not empty,</value>
+  </data>
+  <data name="CollectionIsNotReadOnly" xml:space="preserve">
+    <value>Collection argument '{0}' is not read only.</value>
+  </data>
+  <data name="CollectionIsNotRestrictedProperly" xml:space="preserve">
+    <value>Collection argument '{0}' is not restricted properly.</value>
+  </data>
+  <data name="CollectionIsReadOnly" xml:space="preserve">
+    <value>Collection argument '{0}' is read only.</value>
+  </data>
+  <data name="CollectionIsRestricted" xml:space="preserve">
+    <value>Collection argument '{0}' is restricted.</value>
+  </data>
+  <data name="CollectionRestrictionsAreMismatched" xml:space="preserve">
+    <value />
+  </data>
+  <data name="CollectionsAreElementwiseCompared" xml:space="preserve">
+    <value>Collection arguments '{0}' and '{1}' are elementwise compared.</value>
+  </data>
+  <data name="CollectionsAreElementwiseEqual" xml:space="preserve">
+    <value>Collection arguments '{0}' and '{1}' are elementwise equal.</value>
+  </data>
+  <data name="CollectionsAreNotElementwiseCompared" xml:space="preserve">
+    <value>Collection arguments '{0}' and '{1}' are not elementwise compared.</value>
+  </data>
+  <data name="CollectionsAreNotElementwiseEqual" xml:space="preserve">
+    <value>Collection arguments '{0}' and '{1}' are not elementwise equal.</value>
+  </data>
+  <data name="CollectionsElementsCountsAreMismatched" xml:space="preserve">
+    <value />
+  </data>
+  <data name="CollectionsElementsCountsAreNotEqual" xml:space="preserve">
+    <value>Element counts of the collection arguments '{0}' and '{1}' are not equal.</value>
+  </data>
+  <data name="CountOutOfRange" xml:space="preserve">
+    <value>Count argument '{1}' specified elements range at index '{2}' in collection '{0}' is out of range.</value>
+  </data>
+  <data name="DateTimeIntervalIsOutOfRange" xml:space="preserve">
+    <value>DateTime interval specified by arguments '{0}' and '{1}' is out of range.</value>
+  </data>
+  <data name="EnumFlagsAreEmpty" xml:space="preserve">
+    <value>Enum flags of argument '{0}' are empty.</value>
+  </data>
+  <data name="EnumFlagsAreNotEmpty" xml:space="preserve">
+    <value>Enum flags of argument '{0}' are not empty.</value>
+  </data>
+  <data name="EnumFlagsAreNotMatched" xml:space="preserve">
+    <value>Enum flags of argument '{0}' are not matched to argument '{1}' by condition '{2}'.</value>
+  </data>
+  <data name="EnumTypeIsNotFlags" xml:space="preserve">
+    <value>Enum type of argument '{0}' is not defined as flags.</value>
+  </data>
+  <data name="IndexOutOfRange" xml:space="preserve">
+    <value>Index argument '{1}' specified elements range in collection '{0} is out of range.</value>
+  </data>
+  <data name="IsBetween" xml:space="preserve">
+    <value>Argument '{0}' is between arguments '{1}' and '{2}'.</value>
+  </data>
+  <data name="IsCompared" xml:space="preserve">
+    <value>Argument '{0}' is compared to argument '{1}'.</value>
+  </data>
+  <data name="IsConstructedFrom" xml:space="preserve">
+    <value>Argument '{0}' type is constructed from generic type definition '{1}'.</value>
+  </data>
+  <data name="IsDefault" xml:space="preserve">
+    <value>Argument '{0}' has default value.</value>
+  </data>
+  <data name="IsEqual" xml:space="preserve">
+    <value>Argument '{0}' is equal to argument '{1}'.</value>
+  </data>
+  <data name="IsExistIn" xml:space="preserve">
+    <value>Argument '{0}' is exist in collection argument '{1}'.</value>
+  </data>
+  <data name="IsInstanceOfType" xml:space="preserve">
+    <value>Argument '{0}' is instance of type '{1}'.</value>
+  </data>
+  <data name="IsInstanceOfTypeCode" xml:space="preserve">
+    <value>Argument '{0}' is instance of typecode '{1}'.</value>
+  </data>
+  <data name="IsInvalid" xml:space="preserve">
+    <value>Argument '{0}' has invalid value.</value>
+  </data>
+  <data name="IsNotBetween" xml:space="preserve">
+    <value>Argument '{0}' is not between arguments '{1}' and '{2}'.</value>
+  </data>
+  <data name="IsNotCompared" xml:space="preserve">
+    <value>Argument '{0}' is not compared to argument '{1}'.</value>
+  </data>
+  <data name="IsNotConstructedFrom" xml:space="preserve">
+    <value>Argument '{0}' type is not constructed from generic type definition '{1}'.</value>
+  </data>
+  <data name="IsNotDefault" xml:space="preserve">
+    <value>Argument '{0}' has not default value.</value>
+  </data>
+  <data name="IsNotEqual" xml:space="preserve">
+    <value>Argument '{0}' is not equal to argument '{1}'.</value>
+  </data>
+  <data name="IsNotExistIn" xml:space="preserve">
+    <value>Argument '{0}' is not exist in collection argument '{1}'.</value>
+  </data>
+  <data name="IsNotGenericTypeDefinition" xml:space="preserve">
+    <value>Argument '{0}' is not generic type definition.</value>
+  </data>
+  <data name="IsNotInstanceOfType" xml:space="preserve">
+    <value>Argument '{0}' is not instance of type '{1}'.</value>
+  </data>
+  <data name="IsNotInstanceOfTypeCode" xml:space="preserve">
+    <value>Argument '{0}' is not instance of typecode '{1}'.</value>
+  </data>
+  <data name="IsNotNull" xml:space="preserve">
+    <value>Argument '{0}' has not null value.</value>
+  </data>
+  <data name="IsNull" xml:space="preserve">
+    <value>Argument '{0}' has null value.</value>
+  </data>
+  <data name="IsOutOfRange" xml:space="preserve">
+    <value>Argument '{0}' is out of range.</value>
+  </data>
+  <data name="RangeCountOutOfRange" xml:space="preserve">
+    <value>Count of range argument '{1}' specified elements range in collection '{0}' is out of range.</value>
+  </data>
+  <data name="RangeIndexOutOfRange" xml:space="preserve">
+    <value>Index of range argument '{1}' specified elements range in collection '{0} is out of range.</value>
+  </data>
+  <data name="StringIsEmpty" xml:space="preserve">
+    <value>String argument '{0}' is empty.</value>
+  </data>
+  <data name="StringIsEmptyOrWhitespace" xml:space="preserve">
+    <value>String argument '{0}' is empty or contains whitespace characters.</value>
+  </data>
+  <data name="StringIsMatched" xml:space="preserve">
+    <value>String argument '{0}' is matched to pattern argument '{1}'.</value>
+  </data>
+  <data name="StringIsMismatched" xml:space="preserve">
+    <value>String argument '{0}' is mismatched to pattern argument '{1}'.</value>
+  </data>
+  <data name="StringIsNotEmpty" xml:space="preserve">
+    <value>String argument '{0}' contains any characters.</value>
+  </data>
+  <data name="StringIsNotEmptyOrWhitespace" xml:space="preserve">
+    <value>String argument '{0}' contains non-whitespace characters.</value>
+  </data>
+  <data name="TypeDoesNotAllowNull" xml:space="preserve">
+    <value>Argument '{0}' null value cannot be represented by type '{1}'.</value>
+  </data>
+</root>

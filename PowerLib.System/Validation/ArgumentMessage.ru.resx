@@ -1,0 +1,336 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <!-- 
+    Microsoft ResX Schema 
+    
+    Version 2.0
+    
+    The primary goals of this format is to allow a simple XML format 
+    that is mostly human readable. The generation and parsing of the 
+    various data types are done through the TypeConverter classes 
+    associated with the data types.
+    
+    Example:
+    
+    ... ado.net/XML headers & schema ...
+    <resheader name="resmimetype">text/microsoft-resx</resheader>
+    <resheader name="version">2.0</resheader>
+    <resheader name="reader">System.Resources.ResXResourceReader, System.Windows.Forms, ...</resheader>
+    <resheader name="writer">System.Resources.ResXResourceWriter, System.Windows.Forms, ...</resheader>
+    <data name="Name1"><value>this is my long string</value><comment>this is a comment</comment></data>
+    <data name="Color1" type="System.Drawing.Color, System.Drawing">Blue</data>
+    <data name="Bitmap1" mimetype="application/x-microsoft.net.object.binary.base64">
+        <value>[base64 mime encoded serialized .NET Framework object]</value>
+    </data>
+    <data name="Icon1" type="System.Drawing.Icon, System.Drawing" mimetype="application/x-microsoft.net.object.bytearray.base64">
+        <value>[base64 mime encoded string representing a byte array form of the .NET Framework object]</value>
+        <comment>This is a comment</comment>
+    </data>
+                
+    There are any number of "resheader" rows that contain simple 
+    name/value pairs.
+    
+    Each data row contains a name, and value. The row also contains a 
+    type or mimetype. Type corresponds to a .NET class that support 
+    text/value conversion through the TypeConverter architecture. 
+    Classes that don't support this are serialized and stored with the 
+    mimetype set.
+    
+    The mimetype is used for serialized objects, and tells the 
+    ResXResourceReader how to depersist the object. This is currently not 
+    extensible. For a given mimetype the value must be set accordingly:
+    
+    Note - application/x-microsoft.net.object.binary.base64 is the format 
+    that the ResXResourceWriter will generate, however the reader can 
+    read any of the formats listed below.
+    
+    mimetype: application/x-microsoft.net.object.binary.base64
+    value   : The object must be serialized with 
+            : System.Runtime.Serialization.Formatters.Binary.BinaryFormatter
+            : and then encoded with base64 encoding.
+    
+    mimetype: application/x-microsoft.net.object.soap.base64
+    value   : The object must be serialized with 
+            : System.Runtime.Serialization.Formatters.Soap.SoapFormatter
+            : and then encoded with base64 encoding.
+
+    mimetype: application/x-microsoft.net.object.bytearray.base64
+    value   : The object must be serialized into a byte array 
+            : using a System.ComponentModel.TypeConverter
+            : and then encoded with base64 encoding.
+    -->
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace" />
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="metadata">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" />
+              </xsd:sequence>
+              <xsd:attribute name="name" use="required" type="xsd:string" />
+              <xsd:attribute name="type" type="xsd:string" />
+              <xsd:attribute name="mimetype" type="xsd:string" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="assembly">
+            <xsd:complexType>
+              <xsd:attribute name="alias" type="xsd:string" />
+              <xsd:attribute name="name" type="xsd:string" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+                <xsd:element name="comment" type="xsd:string" minOccurs="0" msdata:Ordinal="2" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" msdata:Ordinal="1" />
+              <xsd:attribute name="type" type="xsd:string" msdata:Ordinal="3" />
+              <xsd:attribute name="mimetype" type="xsd:string" msdata:Ordinal="4" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <data name="ArrayContainsMismatchedElements" xml:space="preserve">
+    <value>Массив '{0}' содержит недопустимые элементы.</value>
+  </data>
+  <data name="ArrayDimensionsAreMismatched" xml:space="preserve">
+    <value>Элементы размерностей массива '{0}' содержат недопустимые элементы.</value>
+  </data>
+  <data name="ArrayDimLengthsAreMismatched" xml:space="preserve">
+    <value>Длины размерностей массива '{0}' содержат недопустимые элементы.</value>
+  </data>
+  <data name="ArrayElementTypeIsMismatched" xml:space="preserve">
+    <value>Тип элементов массива '{0}' является недопустимым.</value>
+  </data>
+  <data name="ArrayIsEmpty" xml:space="preserve">
+    <value>Массив '{0}' является пустым.</value>
+  </data>
+  <data name="ArrayIsMultidimensional" xml:space="preserve">
+    <value>Массив '{0}' является многомерным.</value>
+  </data>
+  <data name="ArrayIsNotEmpty" xml:space="preserve">
+    <value>Массив '{0}' не является пустым.</value>
+  </data>
+  <data name="ArrayIsOnedimensional" xml:space="preserve">
+    <value>Массив '{0}' является одномерным.</value>
+  </data>
+  <data name="ArrayLengthIsMismatched" xml:space="preserve">
+    <value>Длина массива '{0}' является недопустимой.</value>
+  </data>
+  <data name="ArrayRankIsMismatched" xml:space="preserve">
+    <value>Ранг массива '{0}' является недопустимым.</value>
+  </data>
+  <data name="CannotCastToType" xml:space="preserve">
+    <value>Аргумент '{0}' не может быть приведен к типу '{1}'.</value>
+  </data>
+  <data name="CollectionCountIsOutOfRange" xml:space="preserve">
+    <value>Коллекция '{0}' содержит недопустимое количество элементов.</value>
+  </data>
+  <data name="CollectionDoesNotContainRequiredMatchedElements" xml:space="preserve">
+    <value>Коллекция '{0}' не содержит требуемых допустимых элементов.</value>
+  </data>
+  <data name="CollectionHasDefaultElements" xml:space="preserve">
+    <value>Коллекция '{0}' содержит элементы со значением по умолчанию.</value>
+  </data>
+  <data name="CollectionHasInvalidCount" xml:space="preserve">
+    <value>Коллекция '{0}' содержит недопустимое количество элементов.</value>
+  </data>
+  <data name="CollectionHasInvalidElements" xml:space="preserve">
+    <value>Коллекция '{0}' содержит недопустимые элементы.</value>
+  </data>
+  <data name="CollectionHasNullElements" xml:space="preserve">
+    <value>Коллекция '{0}' содержит нулевые элементы.</value>
+  </data>
+  <data name="CollectionIsEmpty" xml:space="preserve">
+    <value>Коллекция '{0}' не содержит элементов,</value>
+  </data>
+  <data name="CollectionIsMatched" xml:space="preserve">
+    <value>Коллекция '{0}' удовлетворяет условию.</value>
+  </data>
+  <data name="CollectionIsNotEmpty" xml:space="preserve">
+    <value>Коллекция '{0}' не является пустой,</value>
+  </data>
+  <data name="CollectionIsNotReadOnly" xml:space="preserve">
+    <value>Коллекция '{0}' не только для чтения.</value>
+  </data>
+  <data name="CollectionIsNotRestrictedProperly" xml:space="preserve">
+    <value>Коллекция '{0}' не является должным образом ограниченной.</value>
+  </data>
+  <data name="CollectionIsReadOnly" xml:space="preserve">
+    <value>Коллекция '{0}' только для чтения.</value>
+  </data>
+  <data name="CollectionIsRestricted" xml:space="preserve">
+    <value>Коллекция '{0}' является ограниченной.</value>
+  </data>
+  <data name="CollectionsAreElementwiseCompared" xml:space="preserve">
+    <value>Коллекции '{0}' и '{1}' поэлементно сравнимы.</value>
+  </data>
+  <data name="CollectionsAreElementwiseEqual" xml:space="preserve">
+    <value>Коллекции '{0}' и '{1}' поэлементно равны.</value>
+  </data>
+  <data name="CollectionsAreNotElementwiseCompared" xml:space="preserve">
+    <value>Коллекции '{0}' и '{1}' поэлементно не сравнимы.</value>
+  </data>
+  <data name="CollectionsAreNotElementwiseEqual" xml:space="preserve">
+    <value>Коллекции '{0}' и '{1}' поэлементно не равны.</value>
+  </data>
+  <data name="CollectionsElementsCountsAreMismatched" xml:space="preserve">
+    <value />
+  </data>
+  <data name="CollectionsElementsCountsAreNotEqual" xml:space="preserve">
+    <value>Длины коллекций аргументов '{0}' and '{1}' не равны.</value>
+  </data>
+  <data name="CountOnExistOutOfRange" xml:space="preserve">
+    <value>Аргумент '{0}' количества области существующих элементов содержит недопустимое значение.</value>
+  </data>
+  <data name="CountOnInsertOutOfRange" xml:space="preserve">
+    <value>Аргумент '{0}' количества области элементов для вставки содержит недопустимое значение.</value>
+  </data>
+  <data name="DateTimeIntervalIsOutOfRange" xml:space="preserve">
+    <value>Временной интервал задаваемый аргументами '{0}' and '{1}' находится за пределами допустимых значений.</value>
+  </data>
+  <data name="EnumFlagsAreEmpty" xml:space="preserve">
+    <value>Флаги перечисления аргумента '{0}' не заданы.</value>
+  </data>
+  <data name="EnumFlagsAreNotEmpty" xml:space="preserve">
+    <value>Флаги перечисления аргумента '{0}' не пусты.</value>
+  </data>
+  <data name="EnumFlagsAreNotMatched" xml:space="preserve">
+    <value>Флаги перечисления аргумента '{0}' не сопостовимы аргументу '{1}' по условию '{2}'.</value>
+  </data>
+  <data name="EnumFlagsIsEmpty" xml:space="preserve">
+    <value>Не заданы флаги аргмента перечисления '{0}'.</value>
+  </data>
+  <data name="EnumTypeIsNotFlags" xml:space="preserve">
+    <value>Тип аргумента перечисления '{0}' не определен как флаговый.</value>
+  </data>
+  <data name="IndexOnExistOutOfRange" xml:space="preserve">
+    <value>Аргумент '{0}' индекса области существующих элементов содержит недопустимое значение.</value>
+  </data>
+  <data name="IndexOnInsertOutOfRange" xml:space="preserve">
+    <value>Аргумент '{0}' индекса области элементов для вставки содержит недопустимое значение.</value>
+  </data>
+  <data name="IsBetween" xml:space="preserve">
+    <value>Значение аргумента '{0}' находится между значениями аргуменов '{1}' и '{2}'.</value>
+  </data>
+  <data name="IsCompared" xml:space="preserve">
+    <value>Значение аргумента '{0}' сопоставимо значению аргумена '{1}'.</value>
+  </data>
+  <data name="IsConstructedFrom" xml:space="preserve">
+    <value>Тип аргумента '{0}' произведен из определения обобщенного типа '{1}'.</value>
+  </data>
+  <data name="IsDefault" xml:space="preserve">
+    <value>Аргумент '{0}' содержит значение по умолчанию.</value>
+  </data>
+  <data name="IsEqual" xml:space="preserve">
+    <value>Значение аргумента '{0}' равно значению аргумента '{1}'.</value>
+  </data>
+  <data name="IsExistIn" xml:space="preserve">
+    <value>Значение аргумента '{0}' содержится в коллекции аргумента '{1}'.</value>
+  </data>
+  <data name="IsInstanceOfType" xml:space="preserve">
+    <value>Аргумент '{0}' является значением с типом '{1}'.</value>
+  </data>
+  <data name="IsInstanceOfTypeCode" xml:space="preserve">
+    <value>Аргумент '{0}' является значением с кодом типа '{1}'.</value>
+  </data>
+  <data name="IsInvalid" xml:space="preserve">
+    <value>Аргумент '{0}' содержит недопустимое значение.</value>
+  </data>
+  <data name="IsNotBetween" xml:space="preserve">
+    <value>Значение аргумента '{0}' не находится между значениями аргументов '{1}' и '{2}'.</value>
+  </data>
+  <data name="IsNotCompared" xml:space="preserve">
+    <value>Значение аргумента '{0}' несопоставимо значению аргумена '{1}'.</value>
+  </data>
+  <data name="IsNotConstructedFrom" xml:space="preserve">
+    <value>Тип аргумента '{0}' не произведен из определения обобщенного типа '{1}'.</value>
+  </data>
+  <data name="IsNotDefault" xml:space="preserve">
+    <value>Аргумент '{0}' не содержит значение по умолчанию.</value>
+  </data>
+  <data name="IsNotEqual" xml:space="preserve">
+    <value>Значение аргумента '{0}' не равно значению аргумента '{1}'.</value>
+  </data>
+  <data name="IsNotExistIn" xml:space="preserve">
+    <value>Значение аргумента '{0}' не содержится в коллекции аргумента '{1}'.</value>
+  </data>
+  <data name="IsNotGenericTypeDefinition" xml:space="preserve">
+    <value>Значение типа из аргумента '{0}' не является определением обобщенного типа.</value>
+  </data>
+  <data name="IsNotInstanceOfType" xml:space="preserve">
+    <value>Аргумент '{0}' не является значением с типом '{1}'.</value>
+  </data>
+  <data name="IsNotInstanceOfTypeCode" xml:space="preserve">
+    <value>Аргумент '{0}' не является значением с кодом типа '{1}'.</value>
+  </data>
+  <data name="IsNotNull" xml:space="preserve">
+    <value>Аргумент '{0}' не содержит нулевое значение.</value>
+  </data>
+  <data name="IsNull" xml:space="preserve">
+    <value>Аргумент '{0}' содержит нулевое значение.</value>
+  </data>
+  <data name="IsOutOfRange" xml:space="preserve">
+    <value>Значение аргумента '{0}' находится за переделами допустимых значений.</value>
+  </data>
+  <data name="RangeCountOnExistOutOfRange" xml:space="preserve">
+    <value>Количество области существующих элементов аргумента '{0}' содержит недопустимое значение.</value>
+  </data>
+  <data name="RangeCountOnInsertOutOfRange" xml:space="preserve">
+    <value>Количество области элементов для вставки аргумента '{0}' содержит недопустимое значение.</value>
+  </data>
+  <data name="RangeIndexOnExistOutOfRange" xml:space="preserve">
+    <value>Индекс области существующих элементов аргумента '{0}' содержит недопустимое значение.</value>
+  </data>
+  <data name="RangeIndexOnInsertOutOfRange" xml:space="preserve">
+    <value>Индекс области элементов для вставки аргумента '{0}' содержит недопустимое значение.</value>
+  </data>
+  <data name="StringIsEmpty" xml:space="preserve">
+    <value>Строковый аргумент'{0}' является пустым.</value>
+  </data>
+  <data name="StringIsEmptyOrWhitespace" xml:space="preserve">
+    <value>Строковый аргмент '{0}' является пустым или содержит пробельные символы.</value>
+  </data>
+  <data name="StringIsMatched" xml:space="preserve">
+    <value>Строковый аргумент '{0}' соответствует аргументу шаблона '{1}'.</value>
+  </data>
+  <data name="StringIsMismatched" xml:space="preserve">
+    <value>Строковый аргумент '{0}' не соответствует аргументу шаблона '{1}'.</value>
+  </data>
+  <data name="StringIsNotEmpty" xml:space="preserve">
+    <value>Строковый аргумент '{0}' не является пустым.</value>
+  </data>
+  <data name="StringIsNotEmptyOrWhitespace" xml:space="preserve">
+    <value>Строковый аргумент '{0}' содержит непробельные символы.</value>
+  </data>
+  <data name="TypeDoesNotAllowNull" xml:space="preserve">
+    <value>Аргумент '{0}' с нулевым значением не может быть представлен типом '{1}'.</value>
+  </data>
+</root>
