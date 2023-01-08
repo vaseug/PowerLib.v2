@@ -241,17 +241,17 @@ The static *Reflector* class from namespace *PowerLib.System.Reflection* impleme
 The first category is determined by where the member is defined: instance or type. To work with static members, the type is used as the first parameter or generic method argument. To work with instance members, an instance of the required type specified by the first parameter is used. The second category determines whether the method must be performed on the member. If a required member is not found or the required functionality is not available for direct methods an exception is thrown. Methods with optional performing return a Boolean value indicating the success of the required operation, and their name begins with the ***Try*** prefix.
 All member access methods require the MemberAccessibility enum parameter to be set, which specifies flags that specify how the required member is to be found:
 
->  *IgnoreCase* - specifies that the case of the member name should not be considered when member searching;<br/>
-  *DeclaredOnly* - specifies that only members declared at the level of the supplied type's hierarchy should be considered. Inherited members are not considered;<br/>
-  *FlattenHierarchy* - specifies that public and protected static members up the hierarchy should be returned. Private static members in inherited classes are not returned;<br/>
-  *Family* - specifies that members with family access are to be included in the search;<br/>
-  *Assembly* - specifies that members with assembly access are to be included in the search;<br/>
-  *FamilyOrAssembly* - specifies that members with family or assembly access are to be included in the search;<br/>
-  *FamilyAndAssembly* - specifies that members with family and assembly access are to be included in the search;<br/>
-  *Private* - specifies that private members are to be included in the search;<br/>
-  *Public* - specifies that public members are to be included in the search;<br/>
-  *NonPublic* - specifies that non-public members are to be included in the search;<br/>
-  *AnyAccess* - specifies that any access members are to be included in the search.<br/>
+> *`IgnoreCase`* - specifies that the case of the member name should not be considered when member searching;<br/>
+  *`DeclaredOnly`* - specifies that only members declared at the level of the supplied type's hierarchy should be considered. Inherited members are not considered;<br/>
+  *`FlattenHierarchy`* - specifies that public and protected static members up the hierarchy should be returned. Private static members in inherited classes are not returned;<br/>
+  *`Family`* - specifies that members with family access are to be included in the search;<br/>
+  *`Assembly`* - specifies that members with assembly access are to be included in the search;<br/>
+  *`FamilyOrAssembly`* - specifies that members with family or assembly access are to be included in the search;<br/>
+  *`FamilyAndAssembly`* - specifies that members with family and assembly access are to be included in the search;<br/>
+  *`Private`* - specifies that private members are to be included in the search;<br/>
+  *`Public`* - specifies that public members are to be included in the search;<br/>
+  *`NonPublic`* - specifies that non-public members are to be included in the search;<br/>
+  *`AnyAccess`* - specifies that any access members are to be included in the search.<br/>
 
 Also, for all members except for constructors, it is required to specify its name.
 All member methods allow a typed stub value of the TypedValue type, in which, along with the value, its type is specified. A *Type* can be a real *Value* type, any of its base types, or any interface it implements.
@@ -932,7 +932,7 @@ internal static class ReflectorTest
 </details>
 
 ---
-### Resources
+### **Resources**
 
 There are several simple and useful classes for mapping keys of a specified type to resources. The main base class is the `ResourceAccessor<TKey>` abstract class from the PowerLib.System.Resources namespace. It provides public methods for getting resources (strings, streams, or other objects). Classes that inherit from it must ensure that the key value is converted to a string representation of the resource identifier. Resource access methods contain a formatProvider parameter of type IFormatProvider. If it can be cast to or through a CultureInfo object, then the requested resource is looked up in the appropriate locale. If it was not possible to get the CultureInfo, then the default CultureInfo will be used.
 The `CustomResourceAccessor<TKey>` class inherits the `ResourceAccessor<TKey>` class, one of its constructor parameters is a delegate that maps the generic TKey type to a resource identifier. Another class, `EnumResourceAccessor<TKey>`, accepts only an enumerated type as a TKey key type, and its name is a resource identifier. If no resource source is specified in the constructor, then the resource manager will attempt to load the resources attached to the TKey.
@@ -995,14 +995,15 @@ public CustomResourceAccessor(ResourceManager resourceManager, Func<TKey, string
 
 </details>
 
---- Arrays
+---
+### **Arrays**
 
 Will be added and described a little later...
 
 ---
-### Collections
+### **Collections**
 
-### Equality and comparison
+#### **Equality and comparison**
 
 There are a lot of classes that implement the equality and comparison interfaces and extension methods for working with them.
 Added two delegates `Equality<T>` and `Comparator<T>` and interface `IComparator<T>`. 
