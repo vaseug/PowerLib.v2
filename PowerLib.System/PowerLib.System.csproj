@@ -3,7 +3,7 @@
   <PropertyGroup>
     <TargetFrameworks>net48;net6.0;net7.0</TargetFrameworks>
 		<LangVersion>10.0</LangVersion>
-    <Version>2.0.0</Version>
+    <Version>2.0.2</Version>
     <SignAssembly>False</SignAssembly>
     <AllowUnsafeBlocks>False</AllowUnsafeBlocks>
     <EnforceCodeStyleInBuild>True</EnforceCodeStyleInBuild>
@@ -15,12 +15,12 @@
     <Title></Title>
     <RepositoryType>git</RepositoryType>
     <PackageProjectUrl></PackageProjectUrl>
-    <PackageTags>Helpers;Extensions;Data-Structures;Algorithms;Collections;Reflection</PackageTags>
+    <PackageTags>Helper;Extension;DataStructure;Algorithm;Collection;Reflection</PackageTags>
     <Description>This library contains a lot of helper classes and extension methods to make it easier to work with collections of objects, data structures, algorithms, and existing .NET framework functionality.</Description>
     <PackageReleaseNotes>The first release of the second version of the tool library contains a lot of helpers and extensions for working with various data structures and the existing functionality of the .NET framework.</PackageReleaseNotes>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <RepositoryUrl>https://github.com/vaseug/PowerLib.v2</RepositoryUrl>
-    <PackageLicenseFile>MIT-LICENSE.txt</PackageLicenseFile>
+    <PackageLicenseFile>LICENSE</PackageLicenseFile>
     <PackageRequireLicenseAcceptance>True</PackageRequireLicenseAcceptance>
     <PackageId>VasEug.$(AssemblyName)</PackageId>
   </PropertyGroup>
@@ -34,12 +34,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <None Remove="MIT-LICENSE.txt" />
-    <None Remove="README.md" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <Content Include="MIT-LICENSE.txt">
+    <Content Include="LICENSE">
       <Pack>True</Pack>
       <PackagePath>\</PackagePath>
     </Content>
@@ -55,6 +50,21 @@
 
   <ItemGroup Condition="$(TargetFramework.Contains(net48))">
     <Reference Include="Microsoft.CSharp" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="README-NG.md">
+      <Pack>True</Pack>
+      <PackagePath>\</PackagePath>
+    </None>
+    <None Update="README.md">
+      <Pack>True</Pack>
+      <PackagePath>\</PackagePath>
+    </None>
+    <None Update="README.txt">
+      <Pack>True</Pack>
+      <PackagePath>\</PackagePath>
+    </None>
   </ItemGroup>
 
 </Project>
