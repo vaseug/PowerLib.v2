@@ -69,7 +69,7 @@ public static class PwrEnum
       TypeCode.Int16 => value.ToInt16(null),
       TypeCode.Int32 => value.ToInt32(null),
       TypeCode.Int64 => value.ToInt64(null),
-      _ => Operation.That.Failed<object>()
+      _ => Operation.That.Failed()
     };
 
   /// <summary>
@@ -152,7 +152,7 @@ public static class PwrEnum
             sResult |= flags[i].ToInt64(null);
         return (TEnum)Enum.ToObject(typeof(TEnum), sResult);
       default:
-        return Operation.That.Failed<TEnum>();
+        return Operation.That.Failed();
     }
   }
 
@@ -181,7 +181,7 @@ public static class PwrEnum
             sresult &= flags[i].ToInt64(null);
         return (TEnum)Enum.ToObject(typeof(TEnum), sresult);
       default:
-        return Operation.That.Failed<TEnum>();
+        return Operation.That.Failed();
     }
   }
 
@@ -210,7 +210,7 @@ public static class PwrEnum
             sresult &= ~flags[i].ToInt64(null);
         return (TEnum)Enum.ToObject(typeof(TEnum), sresult);
       default:
-        return Operation.That.Failed<TEnum>();
+        return Operation.That.Failed();
     }
   }
 
@@ -228,7 +228,7 @@ public static class PwrEnum
     {
       TypeCode.Byte or TypeCode.UInt16 or TypeCode.UInt32 or TypeCode.UInt64 => (TEnum)Enum.ToObject(typeof(TEnum), Argument.That.EnumFlags(value).ToUInt64(null) ^ mask.ToUInt64(null)),
       TypeCode.SByte or TypeCode.Int16 or TypeCode.Int32 or TypeCode.Int64 => (TEnum)Enum.ToObject(typeof(TEnum), Argument.That.EnumFlags(value).ToInt64(null) ^ mask.ToInt64(null)),
-      _ => Operation.That.Failed<TEnum>(),
+      _ => Operation.That.Failed(),
     };
   }
 
@@ -273,7 +273,7 @@ public static class PwrEnum
         else
           return FlagsMatchResult.NonOverlap;
       default:
-        return Operation.That.Failed<FlagsMatchResult>();
+        return Operation.That.Failed();
     }
   }
 
@@ -298,7 +298,7 @@ public static class PwrEnum
         var sFlags = flags.ToInt64(null);
         return (sValue & sFlags) == sFlags;
       default:
-        return Operation.That.Failed<bool>();
+        return Operation.That.Failed();
     }
   }
 
@@ -323,7 +323,7 @@ public static class PwrEnum
         var sFlags = flags.ToInt64(null);
         return (sValue & sFlags) != 0;
       default:
-        return Operation.That.Failed<bool>();
+        return Operation.That.Failed();
     }
   }
 

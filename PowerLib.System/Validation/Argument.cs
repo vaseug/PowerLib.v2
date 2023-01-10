@@ -116,13 +116,13 @@ public sealed partial class Argument
 
   [DoesNotReturn]
   [SuppressMessage("Style", "IDE0060:Remove unused parameter", Justification = "Used indirectly")]
-  public TSource Invalid<TSource>(TSource value,
+  public dynamic Invalid<TSource>(TSource value,
     string? message = null, [CallerArgumentExpression("value")] string? valueParameter = "value")
     => throw new ArgumentException(message ?? FormatString(ArgumentMessage.IsInvalid, valueParameter), valueParameter);
 
   [DoesNotReturn]
   [SuppressMessage("Style", "IDE0060:Remove unused parameter", Justification = "Used indirectly")]
-  public TResult Invalid<TSource, TResult>(TSource value, TResult? result,
+  public TResult? Invalid<TSource, TResult>(TSource value, TResult? result,
     string? message = null, [CallerArgumentExpression("value")] string? valueParameter = "value")
     => throw new ArgumentException(message ?? FormatString(ArgumentMessage.IsInvalid, valueParameter), valueParameter);
 
@@ -4253,9 +4253,9 @@ public sealed partial class Argument
     => (couple, index, counts) =>
     {
       var result = couple.xItem.Success ? couple.yItem.Success ? comparison(couple.xItem.Value, couple.yItem.Value) :
-        emptyOrder switch { RelativeOrder.Lower => 1, RelativeOrder.Upper => -1, _ => Invalid(emptyOrder, default(int)) } :
-        couple.yItem.Success ? emptyOrder switch { RelativeOrder.Lower => -1, RelativeOrder.Upper => 1, _ => Invalid(emptyOrder, default(int)) } :
-        Operation.That.Failed<int>();
+        emptyOrder switch { RelativeOrder.Lower => 1, RelativeOrder.Upper => -1, _ => Invalid(emptyOrder) } :
+        couple.yItem.Success ? emptyOrder switch { RelativeOrder.Lower => -1, RelativeOrder.Upper => 1, _ => Invalid(emptyOrder) } :
+        Operation.That.Failed();
       var matched = Comparison.Match(result, criteria) ^ negate;
       return result == 0 ? NavigateCommand.None : (NavigateCommand.Skip | (!matched && (index == counts.xCount || index == counts.yCount) ? NavigateCommand.Stop : NavigateCommand.None));
     };

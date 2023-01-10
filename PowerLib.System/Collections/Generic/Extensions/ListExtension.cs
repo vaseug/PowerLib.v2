@@ -23,10 +23,10 @@ public static class ListExtension
     => index => filler();
 
   private static int ExistingBoundIndex(int count, Bound bound)
-    => count == 0 ? InvalidIndex : bound switch { Bound.Lower => 0, Bound.Upper => count - 1, _ => Operation.That.Failed<int>() };
+    => count == 0 ? InvalidIndex : bound switch { Bound.Lower => 0, Bound.Upper => count - 1, _ => Argument.That.Invalid(bound) };
 
   private static int AddingBoundIndex(int count, Bound bound)
-    => count == 0 ? 0 : bound switch { Bound.Lower => 0, Bound.Upper => count, _ => Operation.That.Failed<int>() };
+    => count == 0 ? 0 : bound switch { Bound.Lower => 0, Bound.Upper => count, _ => Argument.That.Invalid(bound) };
 
   #endregion
   #region Control methods
@@ -336,6 +336,35 @@ public static class ListExtension
 
   #endregion
   #region Remove
+
+  public static void RemoveBound<T>(this IList<T> list, Bound bound)
+  {
+    Argument.That.NotEmpty(list);
+
+    list.RemoveAt(ExistingBoundIndex(list.Count, bound));
+  }
+
+  public static void RemoveFirst<T>(this IList<T> list)
+    => list.RemoveBound(Bound.Lower);
+
+  public static void RemoveLast<T>(this IList<T> list)
+    => list.RemoveBound(Bound.Upper);
+
+  public static bool TryRemoveBound<T>(this IList<T> list, Bound bound)
+  {
+    Argument.That.NotNull(list);
+
+    if (list.Count == 0)
+      return false;
+    list.RemoveAt(ExistingBoundIndex(list.Count, bound));
+    return true;
+  }
+
+  public static bool TryRemoveFirst<T>(this IList<T> list)
+    => list.TryRemoveBound(Bound.Lower);
+
+  public static bool TryRemoveLast<T>(this IList<T> list)
+    => list.TryRemoveBound(Bound.Upper);
 
   private static void RemoveRangeCore<TSource>(IList<TSource> list, int index, int count)
   {

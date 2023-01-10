@@ -20,7 +20,7 @@ namespace PowerLib.System.ComponentModel
       {
         TypeCode.SByte or TypeCode.Int16 or TypeCode.Int32 or TypeCode.Int64 => unchecked((ulong)((IConvertible)value).ToInt64(null)),
         TypeCode.Byte or TypeCode.UInt16 or TypeCode.UInt32 or TypeCode.UInt64 => ((IConvertible)value).ToUInt64(null),
-        _ => Argument.That.Invalid(value, default(ulong)),
+        _ => Argument.That.Invalid(value),
       };
 
     public static bool IsFlags(Type type)

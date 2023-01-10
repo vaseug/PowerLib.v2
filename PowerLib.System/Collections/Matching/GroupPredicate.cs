@@ -51,7 +51,7 @@ public sealed class GroupPredicate : IPredicate
             return true;
         return false;
       default:
-        return Operation.That.Failed<bool>();
+        return Operation.That.Failed();
     }
   }
 

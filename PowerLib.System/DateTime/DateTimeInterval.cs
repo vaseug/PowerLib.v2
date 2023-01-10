@@ -63,7 +63,7 @@ public readonly struct DateTimeInterval : IEquatable<DateTimeInterval>
       dateTimeFirst.DateTimeStart < dateTimeSecond.DateTimeStart && dateTimeFirst.DateTimeEnd > dateTimeSecond.DateTimeEnd ? DateTimeIntervalMatchResult.Enclose :
       dateTimeFirst.DateTimeStart < dateTimeSecond.DateTimeStart ? DateTimeIntervalMatchResult.OverlapBefore :
       dateTimeFirst.DateTimeEnd > dateTimeSecond.DateTimeEnd ? DateTimeIntervalMatchResult.OverlapAfter :
-      Operation.That.Failed<DateTimeIntervalMatchResult>();
+      Operation.That.Failed();
 
   public bool Equals(DateTimeInterval other)
     => _dateTime == other._dateTime && _timeSpan == other._timeSpan;
