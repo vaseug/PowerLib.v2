@@ -23,10 +23,10 @@ public static class ListExtension
     => index => filler();
 
   private static int ExistingBoundIndex(int count, Bound bound)
-    => count == 0 ? InvalidIndex : bound switch { Bound.Lower => 0, Bound.Upper => count - 1, _ => Operation.That.Failed<int>() };
+    => count == 0 ? InvalidIndex : bound switch { Bound.Lower => 0, Bound.Upper => count - 1, _ => Argument.That.Invalid(bound) };
 
   private static int AddingBoundIndex(int count, Bound bound)
-    => count == 0 ? 0 : bound switch { Bound.Lower => 0, Bound.Upper => count, _ => Operation.That.Failed<int>() };
+    => count == 0 ? 0 : bound switch { Bound.Lower => 0, Bound.Upper => count, _ => Argument.That.Invalid(bound) };
 
   #endregion
   #region Control methods

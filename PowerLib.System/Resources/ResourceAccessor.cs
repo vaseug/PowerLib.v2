@@ -29,7 +29,7 @@ public abstract class ResourceAccessor<TKey>
   protected abstract string GetName(TKey key);
 
   protected virtual CultureInfo? GetCulture(IFormatProvider? formatProvider)
-    => formatProvider?.GetFormat(typeof(CultureInfo)) as CultureInfo ?? DefaultCulture;
+    => formatProvider is CultureInfo cultureInfo ? cultureInfo : formatProvider?.GetFormat(typeof(CultureInfo)) as CultureInfo ?? DefaultCulture;
 
   #endregion
   #region Public methods

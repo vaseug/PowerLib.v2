@@ -393,8 +393,8 @@ public static class PwrEnumerable
       xFlag = xEnumerator.MoveNext();
       yFlag = yEnumerator.MoveNext();
       result = xFlag ? yFlag ? comparison(xEnumerator.Current, yEnumerator.Current) :
-        emptyOrder switch { RelativeOrder.Lower => 1, RelativeOrder.Upper => -1, _ => Argument.That.Invalid(emptyOrder, default(int)) } :
-        yFlag ? emptyOrder switch { RelativeOrder.Lower => -1, RelativeOrder.Upper => 1, _ => Argument.That.Invalid(emptyOrder, default(int)) } : 0;
+        emptyOrder switch { RelativeOrder.Lower => 1, RelativeOrder.Upper => -1, _ => Argument.That.Invalid(emptyOrder) } :
+        yFlag ? emptyOrder switch { RelativeOrder.Lower => -1, RelativeOrder.Upper => 1, _ => Argument.That.Invalid(emptyOrder) } : 0;
     }
     while (result == 0 && xFlag && yFlag);
     return result;

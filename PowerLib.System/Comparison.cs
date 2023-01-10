@@ -14,7 +14,7 @@ namespace PowerLib.System
         ComparisonCriteria.GreaterThanOrEqual => result >= 0,
         ComparisonCriteria.LessThan => result < 0,
         ComparisonCriteria.LessThanOrEqual => result <= 0,
-        _ => Operation.That.Failed<bool>()
+        _ => Operation.That.Failed()
       };
 
     internal static bool Match(int lowerResult, int upperResult, BetweenCriteria criteria)
@@ -24,20 +24,20 @@ namespace PowerLib.System
         BetweenCriteria.ExcludeLower => lowerResult > 0 && upperResult <= 0,
         BetweenCriteria.ExcludeUpper => lowerResult >= 0 && upperResult < 0,
         BetweenCriteria.ExcludeBoth => lowerResult > 0 && upperResult < 0,
-        _ => Operation.That.Failed<bool>()
+        _ => Operation.That.Failed()
       };
 
     internal static int Result(int result, int offset, bool xSuccess, bool ySuccess, RelativeOrder emptyOrder)
       => xSuccess ? ySuccess ? (result > 0 ? offset + 1 : result < 0 ? -(offset + 1) : 0) :
-        emptyOrder switch { RelativeOrder.Lower => offset + 1, RelativeOrder.Upper => -(offset + 1), _ => Argument.That.Invalid(emptyOrder, default(int)) } :
-        ySuccess ? emptyOrder switch { RelativeOrder.Lower => -(offset + 1), RelativeOrder.Upper => offset + 1, _ => Argument.That.Invalid(emptyOrder, default(int)) } : 0;
+        emptyOrder switch { RelativeOrder.Lower => offset + 1, RelativeOrder.Upper => -(offset + 1), _ => Argument.That.Invalid(emptyOrder) } :
+        ySuccess ? emptyOrder switch { RelativeOrder.Lower => -(offset + 1), RelativeOrder.Upper => offset + 1, _ => Argument.That.Invalid(emptyOrder) } : 0;
 
     public static int Invoke<T>(this Comparison<T> comparison, T? xValue, T? yValue, RelativeOrder nullOrder)
     {
       Argument.That.NotNull(comparison);
 
       return xValue is not null ? yValue is not null ? comparison(xValue, yValue) :
-        nullOrder == RelativeOrder.Lower ? 1 : nullOrder == RelativeOrder.Upper ? -1 : Operation.That.Failed<int>() : yValue is not null ? nullOrder == RelativeOrder.Lower ? -1 : nullOrder == RelativeOrder.Upper ? 1 : Operation.That.Failed<int>() : 0;
+        nullOrder == RelativeOrder.Lower ? 1 : nullOrder == RelativeOrder.Upper ? -1 : Argument.That.Invalid(nullOrder) : yValue is not null ? nullOrder == RelativeOrder.Lower ? -1 : nullOrder == RelativeOrder.Upper ? 1 : Argument.That.Invalid(nullOrder) : 0;
     }
 
     public static int Invoke<T>(this Comparison<T> comparison, T? xValue, T? yValue, RelativeOrder nullOrder)
@@ -46,13 +46,13 @@ namespace PowerLib.System
       Argument.That.NotNull(comparison);
 
       return xValue is not null ? yValue is not null ? comparison(xValue.Value, yValue.Value) :
-        nullOrder == RelativeOrder.Lower ? 1 : nullOrder == RelativeOrder.Upper ? -1 : Operation.That.Failed<int>() : yValue is not null ? nullOrder == RelativeOrder.Lower ? -1 : nullOrder == RelativeOrder.Upper ? 1 : Operation.That.Failed<int>() : 0;
+        nullOrder == RelativeOrder.Lower ? 1 : nullOrder == RelativeOrder.Upper ? -1 : Argument.That.Invalid(nullOrder) : yValue is not null ? nullOrder == RelativeOrder.Lower ? -1 : nullOrder == RelativeOrder.Upper ? 1 : Argument.That.Invalid(nullOrder) : 0;
     }
 
     public static int Invoke<T>(this Comparison<T?> comparison, TryOut<T> xItem, TryOut<T> yItem, RelativeOrder emptyOrder)
       => xItem.Success ? yItem.Success ? Argument.That.NotNull(comparison)(xItem.Value, yItem.Value) :
-        emptyOrder switch { RelativeOrder.Lower => 1, RelativeOrder.Upper => -1, _ => Argument.That.Invalid(emptyOrder, default(int)) } :
-        yItem.Success ? emptyOrder switch { RelativeOrder.Lower => -1, RelativeOrder.Upper => 1, _ => Argument.That.Invalid(emptyOrder, default(int)) } :
+        emptyOrder switch { RelativeOrder.Lower => 1, RelativeOrder.Upper => -1, _ => Argument.That.Invalid(emptyOrder) } :
+        yItem.Success ? emptyOrder switch { RelativeOrder.Lower => -1, RelativeOrder.Upper => 1, _ => Argument.That.Invalid(emptyOrder) } :
         0;
 
     public static bool Match<T>(this Comparison<T> comparison, T xValue, T yValue, ComparisonCriteria criteria)

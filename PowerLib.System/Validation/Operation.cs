@@ -117,7 +117,7 @@ public sealed class Operation
       throw new NotImplementedException(message ?? FormatString(OperationMessage.Unimplemented));
 
   [DoesNotReturn]
-  public void Failed(string? message = null, Exception? innerExcption = null)
+  public dynamic Failed(string? message = null, Exception? innerExcption = null)
     => throw new InvalidOperationException(message ?? FormatString(OperationMessage.Failed), innerExcption);
 
   [DoesNotReturn]
@@ -125,7 +125,7 @@ public sealed class Operation
     => throw new InvalidOperationException(message ?? FormatString(OperationMessage.Failed), innerExcption);
 
   [DoesNotReturn]
-  public void OutOfRange(string? message = null, Exception? innerExcption = null)
+  public dynamic OutOfRange(string? message = null, Exception? innerExcption = null)
     => throw new InvalidOperationException(message ?? FormatString(OperationMessage.OutOfRange), innerExcption);
 
   [DoesNotReturn]
@@ -133,8 +133,7 @@ public sealed class Operation
     => throw new InvalidOperationException(message ?? FormatString(OperationMessage.OutOfRange), innerExcption);
 
   [DoesNotReturn]
-
-  public void Unsupported(string? message = null, Exception? innerExcption = null)
+  public dynamic Unsupported(string? message = null, Exception? innerExcption = null)
     => throw new NotSupportedException(message ?? FormatString(OperationMessage.Unsupported), innerExcption);
 
   [DoesNotReturn]
@@ -142,12 +141,12 @@ public sealed class Operation
     => throw new NotSupportedException(message ?? FormatString(OperationMessage.Unsupported), innerExcption);
 
   [DoesNotReturn]
-  public void Unimplemented(string? message = null, Exception? innerExcption = null)
-    => throw new NotImplementedException(message ?? FormatString(OperationMessage.Unimplemented), innerExcption);
+  public dynamic Unimplemented(string? message = null, Exception? innerExcption = null)
+    => throw new NotSupportedException(message ?? FormatString(OperationMessage.Unimplemented), innerExcption);
 
   [DoesNotReturn]
   public T Unimplemented<T>(string? message = null, Exception? innerExcption = null)
-    => throw new NotSupportedException(message ?? FormatString(OperationMessage.Unimplemented), innerExcption);
+    => throw new NotImplementedException(message ?? FormatString(OperationMessage.Unimplemented), innerExcption);
 
   #endregion
 }

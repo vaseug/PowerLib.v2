@@ -18,9 +18,7 @@ namespace PowerLib.System.Extensions
 
     public static int CompareTo<T>(this T value, T? other, RelativeOrder nullOrder)
       where T : struct, IComparable<T>
-    {
-      return other is not null ? value.CompareTo(other.Value) : nullOrder == RelativeOrder.Lower ? 1 : nullOrder == RelativeOrder.Upper ? -1 : Operation.That.Failed<int>();
-    }
+      => other is not null ? value.CompareTo(other.Value) : nullOrder == RelativeOrder.Lower ? 1 : nullOrder == RelativeOrder.Upper ? -1 : Argument.That.Invalid(nullOrder);
 
     public static bool MatchTo<T>(this T value, T? other, ComparisonCriteria criteria)
       where T : IComparable<T>
@@ -148,7 +146,7 @@ namespace PowerLib.System.Extensions
     {
       Argument.That.NotNull(value);
 
-      return other is not null ? value.CompareTo(other) : nullOrder == RelativeOrder.Lower ? 1 : nullOrder == RelativeOrder.Upper ? -1 : Operation.That.Failed<int>();
+      return other is not null ? value.CompareTo(other) : nullOrder == RelativeOrder.Lower ? 1 : nullOrder == RelativeOrder.Upper ? -1 : Argument.That.Invalid(nullOrder);
     }
 
     public static bool MatchTo(this IComparable value, object? other, ComparisonCriteria criteria)

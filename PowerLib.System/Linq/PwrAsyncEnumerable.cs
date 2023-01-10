@@ -492,8 +492,8 @@ public static class PwrAsyncEnumerable
         xFlag = await xAsyncEnumerator.MoveNextAsync();
         yFlag = yEnumerator.MoveNext();
         result = xFlag ? yFlag ? comparison(xAsyncEnumerator.Current, yEnumerator.Current) :
-          emptyOrder switch { RelativeOrder.Lower => 1, RelativeOrder.Upper => -1, _ => Argument.That.Invalid(emptyOrder, default(int)) } :
-          yFlag ? emptyOrder switch { RelativeOrder.Lower => -1, RelativeOrder.Upper => 1, _ => Argument.That.Invalid(emptyOrder, default(int)) } : 0;
+          emptyOrder switch { RelativeOrder.Lower => 1, RelativeOrder.Upper => -1, _ => Argument.That.Invalid(emptyOrder) } :
+          yFlag ? emptyOrder switch { RelativeOrder.Lower => -1, RelativeOrder.Upper => 1, _ => Argument.That.Invalid(emptyOrder) } : 0;
       }
       while (result == 0 && xFlag && yFlag);
       return result;
@@ -537,8 +537,8 @@ public static class PwrAsyncEnumerable
           xFlag = await xAsyncEnumerator.MoveNextAsync();
           yFlag = await yAsyncEnumerator.MoveNextAsync();
           result = xFlag ? yFlag ? comparison(xAsyncEnumerator.Current, yAsyncEnumerator.Current) :
-            emptyOrder switch { RelativeOrder.Lower => 1, RelativeOrder.Upper => -1, _ => Argument.That.Invalid(emptyOrder, default(int)) } :
-            yFlag ? emptyOrder switch { RelativeOrder.Lower => -1, RelativeOrder.Upper => 1, _ => Argument.That.Invalid(emptyOrder, default(int)) } : 0;
+            emptyOrder switch { RelativeOrder.Lower => 1, RelativeOrder.Upper => -1, _ => Argument.That.Invalid(emptyOrder) } :
+            yFlag ? emptyOrder switch { RelativeOrder.Lower => -1, RelativeOrder.Upper => 1, _ => Argument.That.Invalid(emptyOrder) } : 0;
         }
         while (result == 0 && xFlag && yFlag);
         return result;

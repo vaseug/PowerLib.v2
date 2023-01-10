@@ -13,8 +13,8 @@ public static class ComparerExtension
     Argument.That.NotNull(comparer);
 
     return xValue is not null ? yValue is not null ? comparer.Compare(xValue, yValue) :
-      nullOrder == RelativeOrder.Lower ? 1 : nullOrder == RelativeOrder.Upper ? -1 : Operation.That.Failed<int>() :
-      yValue is not null ? nullOrder == RelativeOrder.Lower ? -1 : nullOrder == RelativeOrder.Upper ? 1 : Operation.That.Failed<int>() : 0;
+      nullOrder == RelativeOrder.Lower ? 1 : nullOrder == RelativeOrder.Upper ? -1 : Argument.That.Invalid(nullOrder) :
+      yValue is not null ? nullOrder == RelativeOrder.Lower ? -1 : nullOrder == RelativeOrder.Upper ? 1 : Argument.That.Invalid(nullOrder) : 0;
   }
 
   public static bool Match(this IComparer comparer, object? xValue, object? yValue, ComparisonCriteria criteria)
