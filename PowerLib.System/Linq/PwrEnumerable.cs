@@ -1,8 +1,5 @@
 ﻿using System;
-using System.Collections;
 using System.Collections.Generic;
-using System.Threading;
-using System.Threading.Tasks;
 using PowerLib.System.Collections;
 using PowerLib.System.Collections.Generic.Extensions;
 using PowerLib.System.Collections.NonGeneric.Extensions;
@@ -369,13 +366,13 @@ public static class PwrEnumerable
     while (result && xFlag && yFlag);
     return result;
   }
-
+/*
   public static bool SequenceEqual<T>(this IEnumerable<T> source, IEnumerable<T> others)
     => SequenceEqualCore(Argument.That.NotNull(source), Argument.That.NotNull(others), EqualityComparer<T>.Default.AsEquality<T>());
 
   public static bool SequenceEqual<T>(this IEnumerable<T> source, IEnumerable<T> others, IEqualityComparer<T>? equalityComparer)
     => SequenceEqualCore(Argument.That.NotNull(source), Argument.That.NotNull(others), (equalityComparer ?? EqualityComparer<T>.Default).AsEquality());
-
+*/
   public static bool SequenceEqual<T>(this IEnumerable<T> source, IEnumerable<T> others, Equality<T?>? equality)
     => SequenceEqualCore(Argument.That.NotNull(source), Argument.That.NotNull(others), equality ?? EqualityComparer<T>.Default.AsEquality<T>());
 
@@ -446,10 +443,10 @@ public static class PwrEnumerable
 
   #endregion
   #region Maximum
-
+/*
   public static T Max<T>(this IEnumerable<T> source)
     => BoundCore(Argument.That.NotEmpty(source), Comparer<T>.Default.AsComparison<T>(), System.Bound.Upper);
-
+*/
   public static T Max<T>(this IEnumerable<T> source, Comparison<T>? comparison)
     => BoundCore(Argument.That.NotEmpty(source), (comparison ?? Comparer<T>.Default.Compare).AsComparison(), System.Bound.Upper);
 
@@ -458,10 +455,10 @@ public static class PwrEnumerable
 
   #endregion
   #region Minimum
-
+/*
   public static T Min<T>(this IEnumerable<T> source)
     => BoundCore(Argument.That.NotEmpty(source), Comparer<T>.Default.AsComparison<T>(), System.Bound.Lower);
-
+*/
   public static T Min<T>(this IEnumerable<T> source, Comparison<T>? comparison)
     => BoundCore(Argument.That.NotEmpty(source), (comparison ?? Comparer<T>.Default.Compare).AsComparison(), System.Bound.Lower);
 

@@ -7,7 +7,7 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "PowerLib.System", "PowerLib
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "PowerLib.System.Test", "PowerLib.System.Test\PowerLib.System.Test.csproj", "{07F288B6-6883-4A36-923F-DBAFCF5802D9}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PowerLib.System.xTest", "PowerLib.System.xTest\PowerLib.System.xTest.csproj", "{46B8FE07-8CBF-447A-AB86-E36C17E6FFFA}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "PowerLib.System.xTest", "PowerLib.System.xTest\PowerLib.System.xTest.csproj", "{46B8FE07-8CBF-447A-AB86-E36C17E6FFFA}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
