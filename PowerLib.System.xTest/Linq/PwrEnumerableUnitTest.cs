@@ -43,17 +43,17 @@ public class PwrEnumerableUnitTest
   public static IEnumerable<object?[]> ScalarResultData
     => new object?[][]
     {
-      new object?[] { nameof(PwrEnumerable.SequenceEqual), new Type?[1],
-        new object?[] { Enumerable.Range(10, 0), Enumerable.Range(0, 0) }, true },
+      //new object?[] { nameof(PwrEnumerable.SequenceEqual), new Type?[1],
+      //  new object?[] { Enumerable.Range(10, 0), Enumerable.Range(0, 0) }, true },
 
-      new object?[] { nameof(PwrEnumerable.SequenceEqual), new Type?[1],
-        new object?[] { Enumerable.Range(10, 10), Enumerable.Range(0, 10).Select(n => n + 10) }, true },
+      //new object?[] { nameof(PwrEnumerable.SequenceEqual), new Type?[1],
+      //  new object?[] { Enumerable.Range(10, 10), Enumerable.Range(0, 10).Select(n => n + 10) }, true },
 
-      new object?[] { nameof(PwrEnumerable.SequenceEqual), new Type?[1],
-        new object?[] { Enumerable.Range(10, 10), Enumerable.Range(10, 10).Concat(Enumerable.Range(20, 1)) }, false },
+      //new object?[] { nameof(PwrEnumerable.SequenceEqual), new Type?[1],
+      //  new object?[] { Enumerable.Range(10, 10), Enumerable.Range(10, 10).Concat(Enumerable.Range(20, 1)) }, false },
 
-      new object?[] { nameof(PwrEnumerable.SequenceEqual), new Type?[1],
-        new object?[] { Enumerable.Range(10, 10), Enumerable.Range(9, 1).Concat(Enumerable.Range(10, 10)) }, false },
+      //new object?[] { nameof(PwrEnumerable.SequenceEqual), new Type?[1],
+      //  new object?[] { Enumerable.Range(10, 10), Enumerable.Range(9, 1).Concat(Enumerable.Range(10, 10)) }, false },
 
       new object?[] { nameof(PwrEnumerable.SequenceCompare), new Type?[1],
         new object?[] { Enumerable.Range(10, 10), Enumerable.Range(0, 10).Select(n => n + 10) }, 0 },

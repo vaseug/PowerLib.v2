@@ -118,15 +118,15 @@
     <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
   </resheader>
   <data name="ConstructorNotFound" xml:space="preserve">
-    <value>Не найден конструктор.</value>
+    <value>Конструктор не найден.</value>
   </data>
   <data name="FieldNotFound" xml:space="preserve">
-    <value>Не найдено поле с наименованием '{0}'.</value>
+    <value>Поле не найдено.</value>
   </data>
   <data name="MethodNotFound" xml:space="preserve">
-    <value>Не найден метод с наименованием '{0}' и подходящими параметрами.</value>
+    <value>Метод не найден.</value>
   </data>
   <data name="PropertyNotFound" xml:space="preserve">
-    <value>Не найдено свойство с наименованием '{0}'.</value>
+    <value>Свойство не найдено.</value>
   </data>
 </root>

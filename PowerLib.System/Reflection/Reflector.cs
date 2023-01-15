@@ -1,12 +1,10 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Data;
 using System.Globalization;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
-using PowerLib.System.Collections;
 using PowerLib.System.Collections.Generic.Extensions;
 using PowerLib.System.Collections.Matching;
 using PowerLib.System.Linq;
@@ -3269,7 +3267,7 @@ public static class Reflector
       }
     }
     if (required && methodInfo is null)
-      throw new InvalidOperationException(FormatMessage(ReflectionMessage.MethodNotFound));
+      throw new InvalidOperationException(FormatMessage(ReflectionMessage.MethodNotFound, name));
     return methodInfo;
   }
 
