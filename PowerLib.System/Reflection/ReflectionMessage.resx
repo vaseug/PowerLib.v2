@@ -123,6 +123,12 @@
   <data name="ConstructorNotFound" xml:space="preserve">
     <value>Constructor not found.</value>
   </data>
+  <data name="EventAmbiguousMatch" xml:space="preserve">
+    <value>Event ambiguous match.</value>
+  </data>
+  <data name="EventNotFound" xml:space="preserve">
+    <value>Event is not found.</value>
+  </data>
   <data name="FieldAmbiguousMatch" xml:space="preserve">
     <value>Field ambiguous match.</value>
   </data>

@@ -54,9 +54,6 @@ namespace PowerLib.System.IO
     public static bool IsBaseOf(this DirectoryInfo directoryInfo, FileSystemInfo fileSystemInfo)
       => PwrPath.IsBaseOf(Argument.That.NotNull(directoryInfo).FullName, Argument.That.NotNull(fileSystemInfo).FullName);
 
-    public static string GetRelativeTo(this FileSystemInfo fileSystemInfo, DirectoryInfo directoryInfo)
-      => PwrPath.GetRelativeTo(Argument.That.NotNull(fileSystemInfo).FullName, Argument.That.NotNull(directoryInfo).FullName);
-
     #endregion
     #region Internal methods
 
@@ -250,6 +247,7 @@ namespace PowerLib.System.IO
       {
         case FileInfo fileInfo:
           var targetDirectory = Path.GetDirectoryName(options.Value.TargetPath);
+          Argument.That.NotNull(targetDirectory);
           if (!Directory.Exists(targetDirectory) && options.Value.EnsureDirectory)
             Directory.CreateDirectory(targetDirectory);
           fileInfo.CopyTo(options.Value.TargetPath, options.Value.Overwrite);
@@ -265,6 +263,7 @@ namespace PowerLib.System.IO
       if (!options.Success || string.IsNullOrEmpty(options.Value.TargetPath) || !fileSystemInfo.Exists)
         return false;
       var targetDirectory = Path.GetDirectoryName(options.Value.TargetPath);
+      Argument.That.NotNull(targetDirectory);
       switch (fileSystemInfo)
       {
         case FileInfo fileInfo:

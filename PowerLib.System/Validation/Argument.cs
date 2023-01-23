@@ -1151,7 +1151,25 @@ public sealed partial class Argument
   #region Range validation
   #region Total
 
-  public int InRangeOut(int total, int index, int basis = 0,
+  public int InRangeOut(int total, int index,
+    string? message = null, [CallerArgumentExpression("total")] string? totalParameter = "total", [CallerArgumentExpression("index")] string? indexParameter = "index")
+  {
+    Between(total, 0, int.MaxValue, valueParameter: totalParameter);
+
+    return index >= 0 && index <= total ? index :
+      throw new ArgumentOutOfRangeException(indexParameter, message ?? FormatString(ArgumentMessage.IndexOutOfRange, totalParameter, indexParameter));
+  }
+
+  public int InRangeIn(int total, int index,
+    string? message = null, [CallerArgumentExpression("total")] string? totalParameter = "total", [CallerArgumentExpression("index")] string? indexParameter = "index")
+  {
+    Between(total, 0, int.MaxValue, valueParameter: totalParameter);
+
+    return index >= 0 && index < total ? index :
+      throw new ArgumentOutOfRangeException(indexParameter, message ?? FormatString(ArgumentMessage.IndexOutOfRange, totalParameter, indexParameter));
+  }
+
+  public int InRangeBasisOut(int total, int index, int basis,
     string? message = null, [CallerArgumentExpression("total")] string? totalParameter = "total", [CallerArgumentExpression("index")] string? indexParameter = "index")
   {
     NonNegative(basis);
@@ -1161,7 +1179,7 @@ public sealed partial class Argument
       throw new ArgumentOutOfRangeException(indexParameter, message ?? FormatString(ArgumentMessage.IndexOutOfRange, totalParameter, indexParameter));
   }
 
-  public int InRangeIn(int total, int index, int basis = 0,
+  public int InRangeBasisIn(int total, int index, int basis,
     string? message = null, [CallerArgumentExpression("total")] string? totalParameter = "total", [CallerArgumentExpression("index")] string? indexParameter = "index")
   {
     NonNegative(basis);
@@ -1171,7 +1189,40 @@ public sealed partial class Argument
       throw new ArgumentOutOfRangeException(indexParameter, message ?? FormatString(ArgumentMessage.IndexOutOfRange, totalParameter, indexParameter));
   }
 
-  public (int index, int count) InRangeOut(int total, int index, int count, int basis = 0,
+  public (int index, int count) InRangeOut(int total, int index, int count,
+    string? message = null, [CallerArgumentExpression("total")] string? totalParameter = "total",
+    [CallerArgumentExpression("index")] string? indexParameter = "index", [CallerArgumentExpression("count")] string? countParameter = "count")
+  {
+    Between(total, 0, int.MaxValue, valueParameter: totalParameter);
+
+    return index >= 0 && index <= total ? count >= 0 && count <= total - index ? (index, count) :
+      throw new ArgumentOutOfRangeException(countParameter, message ?? FormatString(ArgumentMessage.CountOutOfRange, totalParameter, countParameter, indexParameter)) :
+      throw new ArgumentOutOfRangeException(indexParameter, message ?? FormatString(ArgumentMessage.IndexOutOfRange, totalParameter, indexParameter));
+  }
+
+  public (int index, int count) InRangeIn(int total, int index, int count,
+    string? message = null, [CallerArgumentExpression("total")] string? totalParameter = "total",
+    [CallerArgumentExpression("index")] string? indexParameter = "index", [CallerArgumentExpression("count")] string? countParameter = "count")
+  {
+    Between(total, 0, int.MaxValue, valueParameter: totalParameter);
+
+    return index >= 0 && index < total ? count >= 0 && count <= total - index ? (index, count) :
+      throw new ArgumentOutOfRangeException(countParameter, message ?? FormatString(ArgumentMessage.CountOutOfRange, totalParameter, countParameter, indexParameter)) :
+      throw new ArgumentOutOfRangeException(indexParameter, message ?? FormatString(ArgumentMessage.IndexOutOfRange, totalParameter, indexParameter));
+  }
+
+  public (int index, int count) InRangeRev(int total, int index, int count,
+    string? message = null, [CallerArgumentExpression("total")] string? totalParameter = "total",
+    [CallerArgumentExpression("index")] string? indexParameter = "index", [CallerArgumentExpression("count")] string? countParameter = "count")
+  {
+    Between(total, 0, int.MaxValue, valueParameter: totalParameter);
+
+    return index >= 0 && index < total ? count >= 0 && count <= index + 1 ? (index, count) :
+      throw new ArgumentOutOfRangeException(countParameter, message ?? FormatString(ArgumentMessage.CountOutOfRange, totalParameter, countParameter, indexParameter)) :
+      throw new ArgumentOutOfRangeException(indexParameter, message ?? FormatString(ArgumentMessage.IndexOutOfRange, totalParameter, indexParameter));
+  }
+
+  public (int index, int count) InRangeBasisOut(int total, int index, int count, int basis,
     string? message = null, [CallerArgumentExpression("total")] string? totalParameter = "total",
     [CallerArgumentExpression("index")] string? indexParameter = "index", [CallerArgumentExpression("count")] string? countParameter = "count")
   {
@@ -1183,7 +1234,7 @@ public sealed partial class Argument
       throw new ArgumentOutOfRangeException(indexParameter, message ?? FormatString(ArgumentMessage.IndexOutOfRange, totalParameter, indexParameter));
   }
 
-  public (int index, int count) InRangeIn(int total, int index, int count, int basis = 0,
+  public (int index, int count) InRangeBasisIn(int total, int index, int count, int basis,
     string? message = null, [CallerArgumentExpression("total")] string? totalParameter = "total",
     [CallerArgumentExpression("index")] string? indexParameter = "index", [CallerArgumentExpression("count")] string? countParameter = "count")
   {
@@ -1195,7 +1246,49 @@ public sealed partial class Argument
       throw new ArgumentOutOfRangeException(indexParameter, message ?? FormatString(ArgumentMessage.IndexOutOfRange, totalParameter, indexParameter));
   }
 
-  public (int index, int count) InRangeOut(int total, (int index, int count) range, int basis = 0,
+  public (int index, int count) InRangeBasisRev(int total, int index, int count, int basis,
+    string? message = null, [CallerArgumentExpression("total")] string? totalParameter = "total",
+    [CallerArgumentExpression("index")] string? indexParameter = "index", [CallerArgumentExpression("count")] string? countParameter = "count")
+  {
+    NonNegative(basis);
+    Between(total, 0, int.MaxValue - basis, valueParameter: totalParameter);
+
+    return index >= basis && index < basis + total ? count >= 0 && count <= index + 1 - basis ? (index, count) :
+      throw new ArgumentOutOfRangeException(countParameter, message ?? FormatString(ArgumentMessage.CountOutOfRange, totalParameter, countParameter, indexParameter)) :
+      throw new ArgumentOutOfRangeException(indexParameter, message ?? FormatString(ArgumentMessage.IndexOutOfRange, totalParameter, indexParameter));
+  }
+
+  public (int index, int count) InRangeOut(int total, (int index, int count) range,
+    string? message = null, [CallerArgumentExpression("total")] string? totalParameter = "total", [CallerArgumentExpression("range")] string? rangeParameter = "range")
+  {
+    Between(total, 0, int.MaxValue, valueParameter: totalParameter);
+
+    return range.index >= 0 && range.index <= total ? range.count >= 0 && range.count <= total - range.index ? range :
+      throw new ArgumentOutOfRangeException(rangeParameter, message ?? FormatString(ArgumentMessage.RangeCountOutOfRange, totalParameter, rangeParameter)) :
+      throw new ArgumentOutOfRangeException(rangeParameter, message ?? FormatString(ArgumentMessage.RangeIndexOutOfRange, totalParameter, rangeParameter));
+  }
+
+  public (int index, int count) InRangeIn(int total, (int index, int count) range,
+    string? message = null, [CallerArgumentExpression("total")] string? totalParameter = "total", [CallerArgumentExpression("range")] string? rangeParameter = "range")
+  {
+    Between(total, 0, int.MaxValue, valueParameter: totalParameter);
+
+    return range.index >= 0 && range.index < total ? range.count >= 0 && range.count <= total - range.index ? range :
+      throw new ArgumentOutOfRangeException(rangeParameter, message ?? FormatString(ArgumentMessage.RangeCountOutOfRange, totalParameter, rangeParameter)) :
+      throw new ArgumentOutOfRangeException(rangeParameter, message ?? FormatString(ArgumentMessage.RangeIndexOutOfRange, totalParameter, rangeParameter));
+  }
+
+  public (int index, int count) InRangeRev(int total, (int index, int count) range,
+    string? message = null, [CallerArgumentExpression("total")] string? totalParameter = "total", [CallerArgumentExpression("range")] string? rangeParameter = "range")
+  {
+    Between(total, 0, int.MaxValue, valueParameter: totalParameter);
+
+    return range.index >= 0 && range.index < total ? range.count >= 0 && range.count <= range.index + 1 ? range :
+      throw new ArgumentOutOfRangeException(rangeParameter, message ?? FormatString(ArgumentMessage.RangeCountOutOfRange, totalParameter, rangeParameter)) :
+      throw new ArgumentOutOfRangeException(rangeParameter, message ?? FormatString(ArgumentMessage.RangeIndexOutOfRange, totalParameter, rangeParameter));
+  }
+
+  public (int index, int count) InRangeBasisOut(int total, (int index, int count) range, int basis,
     string? message = null, [CallerArgumentExpression("total")] string? totalParameter = "total", [CallerArgumentExpression("range")] string? rangeParameter = "range")
   {
     NonNegative(basis);
@@ -1206,13 +1299,24 @@ public sealed partial class Argument
       throw new ArgumentOutOfRangeException(rangeParameter, message ?? FormatString(ArgumentMessage.RangeIndexOutOfRange, totalParameter, rangeParameter));
   }
 
-  public (int index, int count) InRangeIn(int total, (int index, int count) range, int basis = 0,
+  public (int index, int count) InRangeBasisIn(int total, (int index, int count) range, int basis,
     string? message = null, [CallerArgumentExpression("total")] string? totalParameter = "total", [CallerArgumentExpression("range")] string? rangeParameter = "range")
   {
     NonNegative(basis);
     Between(total, 0, int.MaxValue - basis, valueParameter: totalParameter);
 
     return range.index >= basis && range.index < basis + total ? range.count >= 0 && range.count <= basis + total - range.index ? range :
+      throw new ArgumentOutOfRangeException(rangeParameter, message ?? FormatString(ArgumentMessage.RangeCountOutOfRange, totalParameter, rangeParameter)) :
+      throw new ArgumentOutOfRangeException(rangeParameter, message ?? FormatString(ArgumentMessage.RangeIndexOutOfRange, totalParameter, rangeParameter));
+  }
+
+  public (int index, int count) InRangeBasisRev(int total, (int index, int count) range, int basis,
+    string? message = null, [CallerArgumentExpression("total")] string? totalParameter = "total", [CallerArgumentExpression("range")] string? rangeParameter = "range")
+  {
+    NonNegative(basis);
+    Between(total, 0, int.MaxValue - basis, valueParameter: totalParameter);
+
+    return range.index >= basis && range.index < basis + total ? range.count >= 0 && range.count <= range.index + 1 - basis ? range :
       throw new ArgumentOutOfRangeException(rangeParameter, message ?? FormatString(ArgumentMessage.RangeCountOutOfRange, totalParameter, rangeParameter)) :
       throw new ArgumentOutOfRangeException(rangeParameter, message ?? FormatString(ArgumentMessage.RangeIndexOutOfRange, totalParameter, rangeParameter));
   }
@@ -1242,27 +1346,78 @@ public sealed partial class Argument
       throw new ArgumentOutOfRangeException(indexParameter, message ?? FormatString(ArgumentMessage.IndexOutOfRange, totalParameter, indexParameter));
   }
 
-  public long InRangeOut(long total, long index, long basis = 0L,
+  public long InRangeOut(long total, long index,
+    string? message = null, [CallerArgumentExpression("total")] string? totalParameter = "total", [CallerArgumentExpression("index")] string? indexParameter = "index")
+  {
+    Between(total, 0L, long.MaxValue, valueParameter: totalParameter);
+
+    return index >= 0L && index <= total ? index :
+      throw new ArgumentOutOfRangeException(indexParameter, message ?? FormatString(ArgumentMessage.IndexOutOfRange, totalParameter, indexParameter));
+  }
+
+  public long InRangeIn(long total, long index,
+    string? message = null, [CallerArgumentExpression("total")] string? totalParameter = "total", [CallerArgumentExpression("index")] string? indexParameter = "index")
+  {
+    Between(total, 0L, long.MaxValue, valueParameter: totalParameter);
+
+    return index >= 0L && index < total ? index :
+      throw new ArgumentOutOfRangeException(indexParameter, message ?? FormatString(ArgumentMessage.IndexOutOfRange, totalParameter, indexParameter));
+  }
+
+  public long InRangeBasisOut(long total, long index, long basis,
     string? message = null, [CallerArgumentExpression("total")] string? totalParameter = "total", [CallerArgumentExpression("index")] string? indexParameter = "index")
   {
     NonNegative(basis);
-    Between(total, 0, long.MaxValue - basis, valueParameter: totalParameter);
+    Between(total, 0L, long.MaxValue - basis, valueParameter: totalParameter);
 
     return index >= basis && index <= basis + total ? index :
       throw new ArgumentOutOfRangeException(indexParameter, message ?? FormatString(ArgumentMessage.IndexOutOfRange, totalParameter, indexParameter));
   }
 
-  public long InRangeIn(long total, long index, long basis = 0L,
+  public long InRangeBasisIn(long total, long index, long basis,
     string? message = null, [CallerArgumentExpression("total")] string? totalParameter = "total", [CallerArgumentExpression("index")] string? indexParameter = "index")
   {
     NonNegative(basis);
-    Between(total, 0, long.MaxValue - basis, valueParameter: totalParameter);
+    Between(total, 0L, long.MaxValue - basis, valueParameter: totalParameter);
 
     return index >= basis && index < basis + total ? index :
       throw new ArgumentOutOfRangeException(indexParameter, message ?? FormatString(ArgumentMessage.IndexOutOfRange, totalParameter, indexParameter));
   }
 
-  public (long index, long count) InRangeOut(long total, long index, long count, long basis = 0L,
+  public (long index, long count) InRangeOut(long total, long index, long count,
+    string? message = null, [CallerArgumentExpression("total")] string? totalParameter = "total",
+    [CallerArgumentExpression("index")] string? indexParameter = "index", [CallerArgumentExpression("count")] string? countParameter = "count")
+  {
+    Between(total, 0L, long.MaxValue, valueParameter: totalParameter);
+
+    return index >= 0L && index <= total ? count >= 0L && count <= total - index ? (index, count) :
+      throw new ArgumentOutOfRangeException(countParameter, message ?? FormatString(ArgumentMessage.CountOutOfRange, totalParameter, countParameter, indexParameter)) :
+      throw new ArgumentOutOfRangeException(indexParameter, message ?? FormatString(ArgumentMessage.IndexOutOfRange, totalParameter, indexParameter));
+  }
+
+  public (long index, long count) InRangeIn(long total, long index, long count,
+    string? message = null, [CallerArgumentExpression("total")] string? totalParameter = "total",
+    [CallerArgumentExpression("index")] string? indexParameter = "index", [CallerArgumentExpression("count")] string? countParameter = "count")
+  {
+    Between(total, 0L, long.MaxValue, valueParameter: totalParameter);
+
+    return index >= 0L && index < total ? count >= 0L && count <= total - index ? (index, count) :
+      throw new ArgumentOutOfRangeException(countParameter, message ?? FormatString(ArgumentMessage.CountOutOfRange, totalParameter, countParameter, indexParameter)) :
+      throw new ArgumentOutOfRangeException(indexParameter, message ?? FormatString(ArgumentMessage.IndexOutOfRange, totalParameter, indexParameter));
+  }
+
+  public (long index, long count) InRangeRev(long total, long index, long count,
+    string? message = null, [CallerArgumentExpression("total")] string? totalParameter = "total",
+    [CallerArgumentExpression("index")] string? indexParameter = "index", [CallerArgumentExpression("count")] string? countParameter = "count")
+  {
+    Between(total, 0L, long.MaxValue, valueParameter: totalParameter);
+
+    return index >= 0L && index < total ? count >= 0L && count <= index + 1 ? (index, count) :
+      throw new ArgumentOutOfRangeException(countParameter, message ?? FormatString(ArgumentMessage.CountOutOfRange, totalParameter, countParameter, indexParameter)) :
+      throw new ArgumentOutOfRangeException(indexParameter, message ?? FormatString(ArgumentMessage.IndexOutOfRange, totalParameter, indexParameter));
+  }
+
+  public (long index, long count) InRangeBasisOut(long total, long index, long count, long basis,
     string? message = null, [CallerArgumentExpression("total")] string? totalParameter = "total",
     [CallerArgumentExpression("index")] string? indexParameter = "index", [CallerArgumentExpression("count")] string? countParameter = "count")
   {
@@ -1274,7 +1429,7 @@ public sealed partial class Argument
       throw new ArgumentOutOfRangeException(indexParameter, message ?? FormatString(ArgumentMessage.IndexOutOfRange, totalParameter, indexParameter));
   }
 
-  public (long index, long count) InRangeIn(long total, long index, long count, long basis = 0L,
+  public (long index, long count) InRangeBasisIn(long total, long index, long count, long basis = 0L,
     string? message = null, [CallerArgumentExpression("total")] string? totalParameter = "total",
     [CallerArgumentExpression("index")] string? indexParameter = "index", [CallerArgumentExpression("count")] string? countParameter = "count")
   {
@@ -1286,24 +1441,77 @@ public sealed partial class Argument
       throw new ArgumentOutOfRangeException(indexParameter, message ?? FormatString(ArgumentMessage.IndexOutOfRange, totalParameter, indexParameter));
   }
 
-  public (long index, long count) InRangeOut(long total, (long index, long count) range, long basis = 0L,
+  public (long index, long count) InRangeBasisRev(long total, long index, long count, long basis = 0L,
+    string? message = null, [CallerArgumentExpression("total")] string? totalParameter = "total",
+    [CallerArgumentExpression("index")] string? indexParameter = "index", [CallerArgumentExpression("count")] string? countParameter = "count")
+  {
+    NonNegative(basis);
+    Between(total, 0L, long.MaxValue - basis, valueParameter: totalParameter);
+
+    return index >= basis && index < basis + total ? count >= 0L && count <= index + 1L - basis ? (index, count) :
+      throw new ArgumentOutOfRangeException(countParameter, message ?? FormatString(ArgumentMessage.CountOutOfRange, totalParameter, countParameter, indexParameter)) :
+      throw new ArgumentOutOfRangeException(indexParameter, message ?? FormatString(ArgumentMessage.IndexOutOfRange, totalParameter, indexParameter));
+  }
+
+  public (long index, long count) InRangeOut(long total, (long index, long count) range,
+    string? message = null, [CallerArgumentExpression("total")] string? totalParameter = "total", [CallerArgumentExpression("range")] string? rangeParameter = "range")
+  {
+    Between(total, 0L, int.MaxValue, valueParameter: totalParameter);
+
+    return range.index >= 0L && range.index <= total ? range.count >= 0L && range.count <= total - range.index ? range :
+      throw new ArgumentOutOfRangeException(rangeParameter, message ?? FormatString(ArgumentMessage.RangeCountOutOfRange, totalParameter, rangeParameter)) :
+      throw new ArgumentOutOfRangeException(rangeParameter, message ?? FormatString(ArgumentMessage.RangeIndexOutOfRange, totalParameter, rangeParameter));
+  }
+
+  public (long index, long count) InRangeIn(long total, (long index, long count) range,
+    string? message = null, [CallerArgumentExpression("total")] string? totalParameter = "total", [CallerArgumentExpression("range")] string? rangeParameter = "range")
+  {
+    Between(total, 0, int.MaxValue, valueParameter: totalParameter);
+
+    return range.index >= 0L && range.index < total ? range.count >= 0L && range.count <= total - range.index ? range :
+      throw new ArgumentOutOfRangeException(rangeParameter, message ?? FormatString(ArgumentMessage.RangeCountOutOfRange, totalParameter, rangeParameter)) :
+      throw new ArgumentOutOfRangeException(rangeParameter, message ?? FormatString(ArgumentMessage.RangeIndexOutOfRange, totalParameter, rangeParameter));
+  }
+
+  public (long index, long count) InRangeRev(long total, (long index, long count) range,
+    string? message = null, [CallerArgumentExpression("total")] string? totalParameter = "total", [CallerArgumentExpression("range")] string? rangeParameter = "range")
+  {
+    Between(total, 0, int.MaxValue, valueParameter: totalParameter);
+
+    return range.index >= 0L && range.index < total ? range.count >= 0L && range.count <= range.index + 1 ? range :
+      throw new ArgumentOutOfRangeException(rangeParameter, message ?? FormatString(ArgumentMessage.RangeCountOutOfRange, totalParameter, rangeParameter)) :
+      throw new ArgumentOutOfRangeException(rangeParameter, message ?? FormatString(ArgumentMessage.RangeIndexOutOfRange, totalParameter, rangeParameter));
+  }
+
+  public (long index, long count) InRangeBasisOut(long total, (long index, long count) range, long basis,
     string? message = null, [CallerArgumentExpression("total")] string? totalParameter = "total", [CallerArgumentExpression("range")] string? rangeParameter = "range")
   {
     NonNegative(basis);
-    Between(total, 0, int.MaxValue - basis, valueParameter: totalParameter);
+    Between(total, 0L, int.MaxValue - basis, valueParameter: totalParameter);
 
     return range.index >= basis && range.index <= basis + total ? range.count >= 0L && range.count <= basis + total - range.index ? range :
       throw new ArgumentOutOfRangeException(rangeParameter, message ?? FormatString(ArgumentMessage.RangeCountOutOfRange, totalParameter, rangeParameter)) :
       throw new ArgumentOutOfRangeException(rangeParameter, message ?? FormatString(ArgumentMessage.RangeIndexOutOfRange, totalParameter, rangeParameter));
   }
 
-  public (long index, long count) InRangeIn(long total, (long index, long count) range, long basis = 0L,
+  public (long index, long count) InRangeBasisIn(long total, (long index, long count) range, long basis,
     string? message = null, [CallerArgumentExpression("total")] string? totalParameter = "total", [CallerArgumentExpression("range")] string? rangeParameter = "range")
   {
     NonNegative(basis);
-    Between(total, 0, int.MaxValue - basis, valueParameter: totalParameter);
+    Between(total, 0L, int.MaxValue - basis, valueParameter: totalParameter);
 
     return range.index >= basis && range.index < basis + total ? range.count >= 0L && range.count <= basis + total - range.index ? range :
+      throw new ArgumentOutOfRangeException(rangeParameter, message ?? FormatString(ArgumentMessage.RangeCountOutOfRange, totalParameter, rangeParameter)) :
+      throw new ArgumentOutOfRangeException(rangeParameter, message ?? FormatString(ArgumentMessage.RangeIndexOutOfRange, totalParameter, rangeParameter));
+  }
+
+  public (long index, long count) InRangeBasisRev(long total, (long index, long count) range, long basis,
+    string? message = null, [CallerArgumentExpression("total")] string? totalParameter = "total", [CallerArgumentExpression("range")] string? rangeParameter = "range")
+  {
+    NonNegative(basis);
+    Between(total, 0L, int.MaxValue - basis, valueParameter: totalParameter);
+
+    return range.index >= basis && range.index < basis + total ? range.count >= 0L && range.count <= range.index + 1 - basis ? range :
       throw new ArgumentOutOfRangeException(rangeParameter, message ?? FormatString(ArgumentMessage.RangeCountOutOfRange, totalParameter, rangeParameter)) :
       throw new ArgumentOutOfRangeException(rangeParameter, message ?? FormatString(ArgumentMessage.RangeIndexOutOfRange, totalParameter, rangeParameter));
   }
@@ -1372,6 +1580,16 @@ public sealed partial class Argument
       throw new ArgumentOutOfRangeException(indexParameter, message ?? FormatString(ArgumentMessage.IndexOutOfRange, collectionParameter, indexParameter));
   }
 
+  public (int index, int count) InRangeRev(ICollection collection, int index, int count,
+    string? message = null, [CallerArgumentExpression("collection")] string? collectionParameter = "collection",
+    [CallerArgumentExpression("index")] string? indexParameter = "index", [CallerArgumentExpression("count")] string? countParameter = "count")
+  {
+    var total = NotNull(collection, valueParameter: collectionParameter).Count;
+    return index >= 0 && index < total ? count >= 0 && count <= index + 1 ? (index, count) :
+      throw new ArgumentOutOfRangeException(countParameter, message ?? FormatString(ArgumentMessage.CountOutOfRange, collectionParameter, countParameter, indexParameter)) :
+      throw new ArgumentOutOfRangeException(indexParameter, message ?? FormatString(ArgumentMessage.IndexOutOfRange, collectionParameter, indexParameter));
+  }
+
   public (int index, int count) InRangeOut(ICollection collection, (int index, int count) range,
     string? message = null, [CallerArgumentExpression("collection")] string? collectionParameter = "collection", [CallerArgumentExpression("range")] string? rangeParameter = "range")
   {
@@ -1386,6 +1604,15 @@ public sealed partial class Argument
   {
     var total = NotNull(collection, valueParameter: collectionParameter).Count;
     return range.index >= 0 && range.index < total ? range.count >= 0 && range.count <= total - range.index ? range :
+      throw new ArgumentOutOfRangeException(rangeParameter, message ?? FormatString(ArgumentMessage.RangeCountOutOfRange, collectionParameter, rangeParameter)) :
+      throw new ArgumentOutOfRangeException(rangeParameter, message ?? FormatString(ArgumentMessage.RangeIndexOutOfRange, collectionParameter, rangeParameter));
+  }
+
+  public (int index, int count) InRangeRev(ICollection collection, (int index, int count) range,
+    string? message = null, [CallerArgumentExpression("collection")] string? collectionParameter = "collection", [CallerArgumentExpression("range")] string? rangeParameter = "range")
+  {
+    var total = NotNull(collection, valueParameter: collectionParameter).Count;
+    return range.index >= 0 && range.index < total ? range.count >= 0 && range.count <= range.index + 1 ? range :
       throw new ArgumentOutOfRangeException(rangeParameter, message ?? FormatString(ArgumentMessage.RangeCountOutOfRange, collectionParameter, rangeParameter)) :
       throw new ArgumentOutOfRangeException(rangeParameter, message ?? FormatString(ArgumentMessage.RangeIndexOutOfRange, collectionParameter, rangeParameter));
   }
@@ -1449,6 +1676,16 @@ public sealed partial class Argument
       throw new ArgumentOutOfRangeException(indexParameter, message ?? FormatString(ArgumentMessage.IndexOutOfRange, collectionParameter, indexParameter));
   }
 
+  public (int index, int count) InRangeRev<T>(ICollection<T> collection, int index, int count,
+    string? message = null, [CallerArgumentExpression("collection")] string? collectionParameter = "collection",
+    [CallerArgumentExpression("index")] string? indexParameter = "index", [CallerArgumentExpression("count")] string? countParameter = "count")
+  {
+    var total = NotNull(collection, valueParameter: collectionParameter).Count;
+    return index >= 0 && index < total ? count >= 0 && count <= index + 1 ? (index, count) :
+      throw new ArgumentOutOfRangeException(countParameter, message ?? FormatString(ArgumentMessage.CountOutOfRange, collectionParameter, countParameter, indexParameter)) :
+      throw new ArgumentOutOfRangeException(indexParameter, message ?? FormatString(ArgumentMessage.IndexOutOfRange, collectionParameter, indexParameter));
+  }
+
   public (int index, int count) InRangeOut<T>(ICollection<T> collection, (int index, int count) range,
     string? message = null, [CallerArgumentExpression("collection")] string? collectionParameter = "collection", [CallerArgumentExpression("range")] string? rangeParameter = "range")
   {
@@ -1463,6 +1700,15 @@ public sealed partial class Argument
   {
     var total = NotNull(collection, valueParameter: collectionParameter).Count;
     return range.index >= 0 && range.index < total ? range.count >= 0 && range.count <= total - range.index ? range :
+      throw new ArgumentOutOfRangeException(rangeParameter, message ?? FormatString(ArgumentMessage.RangeCountOutOfRange, collectionParameter, rangeParameter)) :
+      throw new ArgumentOutOfRangeException(rangeParameter, message ?? FormatString(ArgumentMessage.RangeIndexOutOfRange, collectionParameter, rangeParameter));
+  }
+
+  public (int index, int count) InRangeRev<T>(ICollection<T> collection, (int index, int count) range,
+    string? message = null, [CallerArgumentExpression("collection")] string? collectionParameter = "collection", [CallerArgumentExpression("range")] string? rangeParameter = "range")
+  {
+    var total = NotNull(collection, valueParameter: collectionParameter).Count;
+    return range.index >= 0 && range.index < total ? range.count >= 0 && range.count <= range.index + 1 ? range :
       throw new ArgumentOutOfRangeException(rangeParameter, message ?? FormatString(ArgumentMessage.RangeCountOutOfRange, collectionParameter, rangeParameter)) :
       throw new ArgumentOutOfRangeException(rangeParameter, message ?? FormatString(ArgumentMessage.RangeIndexOutOfRange, collectionParameter, rangeParameter));
   }
@@ -1526,6 +1772,16 @@ public sealed partial class Argument
       throw new ArgumentOutOfRangeException(indexParameter, message ?? FormatString(ArgumentMessage.IndexOutOfRange, collectionParameter, indexParameter));
   }
 
+  public (int index, int count) InRangeRev<T>(IReadOnlyCollection<T> collection, int index, int count,
+    string? message = null, [CallerArgumentExpression("collection")] string? collectionParameter = "collection",
+    [CallerArgumentExpression("index")] string? indexParameter = "index", [CallerArgumentExpression("count")] string? countParameter = "count")
+  {
+    var total = NotNull(collection, valueParameter: collectionParameter).Count;
+    return index >= 0 && index < total ? count >= 0 && count <= index + 1 ? (index, count) :
+      throw new ArgumentOutOfRangeException(countParameter, message ?? FormatString(ArgumentMessage.CountOutOfRange, collectionParameter, countParameter, indexParameter)) :
+      throw new ArgumentOutOfRangeException(indexParameter, message ?? FormatString(ArgumentMessage.IndexOutOfRange, collectionParameter, indexParameter));
+  }
+
   public (int index, int count) InRangeOut<T>(IReadOnlyCollection<T> collection, (int index, int count) range,
     string? message = null, [CallerArgumentExpression("collection")] string? collectionParameter = "collection", [CallerArgumentExpression("range")] string? rangeParameter = "range")
   {
@@ -1540,6 +1796,15 @@ public sealed partial class Argument
   {
     var total = NotNull(collection, valueParameter: collectionParameter).Count;
     return range.index >= 0 && range.index < total ? range.count >= 0 && range.count <= total - range.index ? range :
+      throw new ArgumentOutOfRangeException(rangeParameter, message ?? FormatString(ArgumentMessage.RangeCountOutOfRange, collectionParameter, rangeParameter)) :
+      throw new ArgumentOutOfRangeException(rangeParameter, message ?? FormatString(ArgumentMessage.RangeIndexOutOfRange, collectionParameter, rangeParameter));
+  }
+
+  public (int index, int count) InRangeRev<T>(IReadOnlyCollection<T> collection, (int index, int count) range,
+    string? message = null, [CallerArgumentExpression("collection")] string? collectionParameter = "collection", [CallerArgumentExpression("range")] string? rangeParameter = "range")
+  {
+    var total = NotNull(collection, valueParameter: collectionParameter).Count;
+    return range.index >= 0 && range.index < total ? range.count >= 0 && range.count <= range.index + 1 ? range :
       throw new ArgumentOutOfRangeException(rangeParameter, message ?? FormatString(ArgumentMessage.RangeCountOutOfRange, collectionParameter, rangeParameter)) :
       throw new ArgumentOutOfRangeException(rangeParameter, message ?? FormatString(ArgumentMessage.RangeIndexOutOfRange, collectionParameter, rangeParameter));
   }
@@ -1606,6 +1871,16 @@ public sealed partial class Argument
       throw new ArgumentOutOfRangeException(indexParameter, message ?? FormatString(ArgumentMessage.IndexOutOfRange, arrayParameter, indexParameter));
   }
 
+  public (int index, int count) InRangeRev<T>(T[] array, int index, int count,
+    string? message = null, [CallerArgumentExpression("array")] string? arrayParameter = "array",
+    [CallerArgumentExpression("index")] string? indexParameter = "index", [CallerArgumentExpression("count")] string? countParameter = "count")
+  {
+    var total = NotNull(array, valueParameter: arrayParameter).Length;
+    return index >= 0 && index < total ? count >= 0 && count <= index + 1 ? (index, count) :
+      throw new ArgumentOutOfRangeException(countParameter, message ?? FormatString(ArgumentMessage.CountOutOfRange, arrayParameter, countParameter, indexParameter)) :
+      throw new ArgumentOutOfRangeException(indexParameter, message ?? FormatString(ArgumentMessage.IndexOutOfRange, arrayParameter, indexParameter));
+  }
+
   public (int index, int count) InRangeOut<T>(T[] array, (int index, int count) range,
     string? message = null, [CallerArgumentExpression("array")] string? arrayParameter = "array", [CallerArgumentExpression("range")] string? rangeParameter = "range")
   {
@@ -1620,6 +1895,15 @@ public sealed partial class Argument
   {
     var total = NotNull(array, valueParameter: arrayParameter).Length;
     return range.index >= 0 && range.index < total ? range.count >= 0 && range.count <= total - range.index ? range :
+      throw new ArgumentOutOfRangeException(rangeParameter, message ?? FormatString(ArgumentMessage.RangeCountOutOfRange, arrayParameter, rangeParameter)) :
+      throw new ArgumentOutOfRangeException(rangeParameter, message ?? FormatString(ArgumentMessage.RangeIndexOutOfRange, arrayParameter, rangeParameter));
+  }
+
+  public (int index, int count) InRangeRev<T>(T[] array, (int index, int count) range,
+    string? message = null, [CallerArgumentExpression("array")] string? arrayParameter = "array", [CallerArgumentExpression("range")] string? rangeParameter = "range")
+  {
+    var total = NotNull(array, valueParameter: arrayParameter).Length;
+    return range.index >= 0 && range.index < total ? range.count >= 0 && range.count <= range.index + 1 ? range :
       throw new ArgumentOutOfRangeException(rangeParameter, message ?? FormatString(ArgumentMessage.RangeCountOutOfRange, arrayParameter, rangeParameter)) :
       throw new ArgumentOutOfRangeException(rangeParameter, message ?? FormatString(ArgumentMessage.RangeIndexOutOfRange, arrayParameter, rangeParameter));
   }

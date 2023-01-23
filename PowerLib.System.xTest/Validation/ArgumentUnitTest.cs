@@ -38,7 +38,7 @@ namespace PowerLib.System.Test.Validation
     [MemberData(nameof(NotNullData))]
     public void NotNullSuccessful(Type?[] genericArgs, object?[] positionalParams)
     {
-      var result = Reflector.CallMethod(Argument.That, nameof(Argument.NotNull), MemberAccessibility.Public, genericArgs, positionalParams, null, null);
+      var result = Reflector.CallInstanceMethod(Argument.That, nameof(Argument.NotNull), MemberAccessibility.Public, genericArgs, positionalParams, null, null);
 
       Assert.Equal(positionalParams?[0], result);
     }
@@ -49,7 +49,7 @@ namespace PowerLib.System.Test.Validation
     {
       try
       {
-        Reflector.CallMethod(Argument.That, nameof(Argument.NotNull), MemberAccessibility.Public, genericArgs, positionalParams, null, null);
+        Reflector.CallInstanceMethod(Argument.That, nameof(Argument.NotNull), MemberAccessibility.Public, genericArgs, positionalParams, null, null);
         throw new InvalidOperationException();
       }
       catch (TargetInvocationException ex) when (ex.InnerException?.GetType() == typeof(ArgumentNullException))
@@ -97,7 +97,7 @@ namespace PowerLib.System.Test.Validation
     [MemberData(nameof(TypeSuccessfulData))]
     public void TypeValidationSuccessful(string methodName, Type?[] genericArgs, object?[] positionalParams)
     {
-      var result = Reflector.CallMethod(Argument.That, methodName, MemberAccessibility.Public, genericArgs, positionalParams, null, null);
+      var result = Reflector.CallInstanceMethod(Argument.That, methodName, MemberAccessibility.Public, genericArgs, positionalParams, null, null);
 
       Assert.Equal(positionalParams?[0], result);
     }
@@ -108,7 +108,7 @@ namespace PowerLib.System.Test.Validation
     {
       try
       {
-        Reflector.CallMethod(Argument.That, methodName, MemberAccessibility.Public, genericArgs, positionalParams, null, null);
+        Reflector.CallInstanceMethod(Argument.That, methodName, MemberAccessibility.Public, genericArgs, positionalParams, null, null);
         throw new InvalidOperationException();
       }
       catch (TargetInvocationException ex) when (ex.InnerException?.GetType() == exceptionType)
@@ -136,7 +136,7 @@ namespace PowerLib.System.Test.Validation
     [MemberData(nameof(BooleanDataSuccessful))]
     public void BooleanValidationSuccessful(string methodName, object?[] positionalParams)
     {
-      var result = Reflector.CallMethod(Argument.That, methodName, MemberAccessibility.Public, null, positionalParams, null, null);
+      var result = Reflector.CallInstanceMethod(Argument.That, methodName, MemberAccessibility.Public, null, positionalParams, null, null);
 
       Assert.Equal(positionalParams?[0], result);
     }
@@ -147,7 +147,7 @@ namespace PowerLib.System.Test.Validation
     {
       try
       {
-        Reflector.CallMethod(Argument.That, methodName, MemberAccessibility.Public, null, positionalParams, null, null);
+        Reflector.CallInstanceMethod(Argument.That, methodName, MemberAccessibility.Public, null, positionalParams, null, null);
         throw new InvalidOperationException();
       }
       catch (TargetInvocationException ex) when (ex.InnerException?.GetType() == exceptionType)
@@ -177,7 +177,7 @@ namespace PowerLib.System.Test.Validation
     [MemberData(nameof(DateTimeRangeSuccessfulData))]
     public void DateTimeRangeValidationSuccessful(string methodName, object?[] positionalParams)
     {
-      var result = Reflector.CallMethod(Argument.That, methodName, MemberAccessibility.Public, null, positionalParams, null, null);
+      var result = Reflector.CallInstanceMethod(Argument.That, methodName, MemberAccessibility.Public, null, positionalParams, null, null);
       Assert.NotNull(result);
       Assert.IsType<DateTimeInterval>(result);
       var interval = (DateTimeInterval)result;
@@ -191,7 +191,7 @@ namespace PowerLib.System.Test.Validation
     {
       try
       {
-        Reflector.CallMethod(Argument.That, methodName, MemberAccessibility.Public, null, positionalParams, null, null);
+        Reflector.CallInstanceMethod(Argument.That, methodName, MemberAccessibility.Public, null, positionalParams, null, null);
         throw new InvalidOperationException();
       }
       catch (TargetInvocationException ex) when (ex.InnerException?.GetType() == exceptionType)
@@ -289,7 +289,7 @@ namespace PowerLib.System.Test.Validation
     {
       var methodName = Argument.That.InstanceOf<string>(name);
       var positionalParams = Argument.That.InstanceOf<IList<object?>>(parameters);
-      var result = Reflector.CallMethod(Argument.That, methodName, MemberAccessibility.Public, null, positionalParams, null, null);
+      var result = Reflector.CallInstanceMethod(Argument.That, methodName, MemberAccessibility.Public, null, positionalParams, null, null);
       Assert.Equal(positionalParams[0], result);
     }
 
@@ -302,7 +302,7 @@ namespace PowerLib.System.Test.Validation
       var positionalParams = Argument.That.InstanceOf<IList<object?>>(parameters);
       try
       {
-        Reflector.CallMethod(Argument.That, methodName, MemberAccessibility.Public, null, positionalParams, null, null);
+        Reflector.CallInstanceMethod(Argument.That, methodName, MemberAccessibility.Public, null, positionalParams, null, null);
         throw new InvalidOperationException();
       }
       catch (TargetInvocationException ex) when (ex.InnerException?.GetType() == exceptionType)
@@ -534,7 +534,7 @@ namespace PowerLib.System.Test.Validation
     {
       var genericArgs = Argument.That.OfType<IList<Type?>>(arguments);
       var positionalParams = Argument.That.InstanceOf<IList<object?>>(parameters);
-      var result = Reflector.CallMethod(Argument.That, nameof(Argument.Equals), MemberAccessibility.Public, genericArgs, positionalParams, null, null);
+      var result = Reflector.CallInstanceMethod(Argument.That, nameof(Argument.Equals), MemberAccessibility.Public, genericArgs, positionalParams, null, null);
       Assert.Equal(TypedValue.GetValue(positionalParams[0]), result);
     }
 
@@ -546,7 +546,7 @@ namespace PowerLib.System.Test.Validation
       var positionalParams = Argument.That.InstanceOf<IList<object?>>(parameters);
       try
       {
-        Reflector.CallMethod(Argument.That, nameof(Argument.Equals), MemberAccessibility.Public, genericArgs, positionalParams, null, null);
+        Reflector.CallInstanceMethod(Argument.That, nameof(Argument.Equals), MemberAccessibility.Public, genericArgs, positionalParams, null, null);
         throw new InvalidOperationException();
       }
       catch (TargetInvocationException ex) when (ex.InnerException?.GetType() == typeof(ArgumentOutOfRangeException))
@@ -559,7 +559,7 @@ namespace PowerLib.System.Test.Validation
     {
       var genericArgs = Argument.That.OfType<IList<Type?>>(arguments);
       var positionalParams = Argument.That.InstanceOf<IList<object?>>(parameters);
-      var result = Reflector.CallMethod(Argument.That, nameof(Argument.NotEquals), MemberAccessibility.Public, genericArgs, positionalParams, null, null);
+      var result = Reflector.CallInstanceMethod(Argument.That, nameof(Argument.NotEquals), MemberAccessibility.Public, genericArgs, positionalParams, null, null);
       Assert.Equal(TypedValue.GetValue(positionalParams[0]), result);
     }
 
@@ -571,7 +571,7 @@ namespace PowerLib.System.Test.Validation
       var positionalParams = Argument.That.InstanceOf<IList<object?>>(parameters);
       try
       {
-        Reflector.CallMethod(Argument.That, nameof(Argument.NotEquals), MemberAccessibility.Public, genericArgs, positionalParams, null, null);
+        Reflector.CallInstanceMethod(Argument.That, nameof(Argument.NotEquals), MemberAccessibility.Public, genericArgs, positionalParams, null, null);
         throw new InvalidOperationException();
       }
       catch (TargetInvocationException ex) when (ex.InnerException?.GetType() == typeof(ArgumentOutOfRangeException))
@@ -599,7 +599,7 @@ namespace PowerLib.System.Test.Validation
     {
       var genericArgs = Argument.That.OfType<IList<Type?>>(arguments);
       var positionalParams = Argument.That.InstanceOf<IList<object?>>(parameters);
-      var result = Reflector.CallMethod(Argument.That, nameof(Argument.In), MemberAccessibility.Public, genericArgs, positionalParams, null, null);
+      var result = Reflector.CallInstanceMethod(Argument.That, nameof(Argument.In), MemberAccessibility.Public, genericArgs, positionalParams, null, null);
       Assert.Equal(positionalParams[0], result);
     }
 
@@ -611,7 +611,7 @@ namespace PowerLib.System.Test.Validation
       var positionalParams = Argument.That.InstanceOf<IList<object?>>(parameters);
       try
       {
-        Reflector.CallMethod(Argument.That, nameof(Argument.In), MemberAccessibility.Public, genericArgs, positionalParams, null, null);
+        Reflector.CallInstanceMethod(Argument.That, nameof(Argument.In), MemberAccessibility.Public, genericArgs, positionalParams, null, null);
         throw new InvalidOperationException();
       }
       catch (TargetInvocationException ex) when (ex.InnerException is ArgumentOutOfRangeException)
@@ -624,7 +624,7 @@ namespace PowerLib.System.Test.Validation
     {
       var genericArgs = Argument.That.OfType<IList<Type?>>(arguments);
       var positionalParams = Argument.That.InstanceOf<IList<object?>>(parameters);
-      var result = Reflector.CallMethod(Argument.That, nameof(Argument.NotIn), MemberAccessibility.Public, genericArgs, positionalParams, null, null);
+      var result = Reflector.CallInstanceMethod(Argument.That, nameof(Argument.NotIn), MemberAccessibility.Public, genericArgs, positionalParams, null, null);
       Assert.Equal(positionalParams[0], result);
     }
 
@@ -636,7 +636,7 @@ namespace PowerLib.System.Test.Validation
       var positionalParams = Argument.That.InstanceOf<IList<object?>>(parameters);
       try
       {
-        Reflector.CallMethod(Argument.That, nameof(Argument.NotIn), MemberAccessibility.Public, genericArgs, positionalParams, null, null);
+        Reflector.CallInstanceMethod(Argument.That, nameof(Argument.NotIn), MemberAccessibility.Public, genericArgs, positionalParams, null, null);
         throw new InvalidOperationException();
       }
       catch (TargetInvocationException ex) when (ex.InnerException is ArgumentOutOfRangeException)
@@ -668,7 +668,7 @@ namespace PowerLib.System.Test.Validation
     {
       var genericArgs = Argument.That.OfType<IList<Type?>>(arguments);
       var positionalParams = Argument.That.InstanceOf<IList<object?>>(parameters);
-      var result = Reflector.CallMethod(Argument.That, nameof(Argument.Compare), MemberAccessibility.Public, genericArgs, positionalParams, null, null);
+      var result = Reflector.CallInstanceMethod(Argument.That, nameof(Argument.Compare), MemberAccessibility.Public, genericArgs, positionalParams, null, null);
       Assert.Equal(positionalParams[0], result);
     }
 
@@ -680,7 +680,7 @@ namespace PowerLib.System.Test.Validation
       var positionalParams = Argument.That.InstanceOf<IList<object?>>(parameters);
       try
       {
-        Reflector.CallMethod(Argument.That, nameof(Argument.Compare), MemberAccessibility.Public, genericArgs, positionalParams, null, null);
+        Reflector.CallInstanceMethod(Argument.That, nameof(Argument.Compare), MemberAccessibility.Public, genericArgs, positionalParams, null, null);
         throw new InvalidOperationException();
       }
       catch (TargetInvocationException ex) when (ex.InnerException is ArgumentOutOfRangeException)
@@ -693,7 +693,7 @@ namespace PowerLib.System.Test.Validation
     {
       var genericArgs = Argument.That.OfType<IList<Type?>>(arguments);
       var positionalParams = Argument.That.InstanceOf<IList<object?>>(parameters);
-      var result = Reflector.CallMethod(Argument.That, nameof(Argument.NotCompare), MemberAccessibility.Public, genericArgs, positionalParams, null, null);
+      var result = Reflector.CallInstanceMethod(Argument.That, nameof(Argument.NotCompare), MemberAccessibility.Public, genericArgs, positionalParams, null, null);
       Assert.Equal(positionalParams[0], result);
     }
 
@@ -705,7 +705,7 @@ namespace PowerLib.System.Test.Validation
       var positionalParams = Argument.That.InstanceOf<IList<object?>>(parameters);
       try
       {
-        Reflector.CallMethod(Argument.That, nameof(Argument.NotCompare), MemberAccessibility.Public, genericArgs, positionalParams, null, null);
+        Reflector.CallInstanceMethod(Argument.That, nameof(Argument.NotCompare), MemberAccessibility.Public, genericArgs, positionalParams, null, null);
         throw new InvalidOperationException();
       }
       catch (TargetInvocationException ex) when (ex.InnerException is ArgumentOutOfRangeException)
@@ -739,7 +739,7 @@ namespace PowerLib.System.Test.Validation
     {
       var genericArgs = Argument.That.OfType<IList<Type?>>(arguments);
       var positionalParams = Argument.That.InstanceOf<IList<object?>>(parameters);
-      var result = Reflector.CallMethod(Argument.That, nameof(Argument.Between), MemberAccessibility.Public, genericArgs, positionalParams, null, null);
+      var result = Reflector.CallInstanceMethod(Argument.That, nameof(Argument.Between), MemberAccessibility.Public, genericArgs, positionalParams, null, null);
       Assert.Equal(positionalParams[0], result);
     }
 
@@ -751,7 +751,7 @@ namespace PowerLib.System.Test.Validation
       var positionalParams = Argument.That.InstanceOf<IList<object?>>(parameters);
       try
       {
-        Reflector.CallMethod(Argument.That, nameof(Argument.Between), MemberAccessibility.Public, genericArgs, positionalParams, null, null);
+        Reflector.CallInstanceMethod(Argument.That, nameof(Argument.Between), MemberAccessibility.Public, genericArgs, positionalParams, null, null);
         throw new InvalidOperationException();
       }
       catch (TargetInvocationException ex) when (ex.InnerException is ArgumentOutOfRangeException)
@@ -764,7 +764,7 @@ namespace PowerLib.System.Test.Validation
     {
       var genericArgs = Argument.That.OfType<IList<Type?>>(arguments);
       var positionalParams = Argument.That.InstanceOf<IList<object?>>(parameters);
-      var result = Reflector.CallMethod(Argument.That, nameof(Argument.NotBetween), MemberAccessibility.Public, genericArgs, positionalParams, null, null);
+      var result = Reflector.CallInstanceMethod(Argument.That, nameof(Argument.NotBetween), MemberAccessibility.Public, genericArgs, positionalParams, null, null);
       Assert.Equal(positionalParams[0], result);
     }
 
@@ -776,7 +776,7 @@ namespace PowerLib.System.Test.Validation
       var positionalParams = Argument.That.InstanceOf<IList<object?>>(parameters);
       try
       {
-        Reflector.CallMethod(Argument.That, nameof(Argument.NotBetween), MemberAccessibility.Public, genericArgs, positionalParams, null, null);
+        Reflector.CallInstanceMethod(Argument.That, nameof(Argument.NotBetween), MemberAccessibility.Public, genericArgs, positionalParams, null, null);
         throw new InvalidOperationException();
       }
       catch (TargetInvocationException ex) when (ex.InnerException is ArgumentOutOfRangeException)
@@ -853,7 +853,7 @@ namespace PowerLib.System.Test.Validation
     public void NegativeSuccessful(object parameters)
     {
       var positionalParams = Argument.That.InstanceOf<IList<object?>>(parameters);
-      var result = Reflector.CallMethod(Argument.That, nameof(Argument.Negative), MemberAccessibility.Public, null, positionalParams, null, null);
+      var result = Reflector.CallInstanceMethod(Argument.That, nameof(Argument.Negative), MemberAccessibility.Public, null, positionalParams, null, null);
       Assert.Equal(positionalParams[0], result);
     }
 
@@ -864,7 +864,7 @@ namespace PowerLib.System.Test.Validation
       var positionalParams = Argument.That.InstanceOf<IList<object?>>(parameters);
       try
       {
-        Reflector.CallMethod(Argument.That, nameof(Argument.Negative), MemberAccessibility.Public, null, positionalParams, null, null);
+        Reflector.CallInstanceMethod(Argument.That, nameof(Argument.Negative), MemberAccessibility.Public, null, positionalParams, null, null);
         throw new InvalidOperationException();
       }
       catch (TargetInvocationException ex) when (ex.InnerException is ArgumentOutOfRangeException exInner)
@@ -878,7 +878,7 @@ namespace PowerLib.System.Test.Validation
     public void NonNegativeSuccessful(object parameters)
     {
       var positionalParams = Argument.That.InstanceOf<IList<object?>>(parameters);
-      var result = Reflector.CallMethod(Argument.That, nameof(Argument.NonNegative), MemberAccessibility.Public, null, positionalParams, null, null);
+      var result = Reflector.CallInstanceMethod(Argument.That, nameof(Argument.NonNegative), MemberAccessibility.Public, null, positionalParams, null, null);
       Assert.Equal(positionalParams[0], result);
     }
 
@@ -889,7 +889,7 @@ namespace PowerLib.System.Test.Validation
       var positionalParams = Argument.That.InstanceOf<IList<object?>>(parameters);
       try
       {
-        Reflector.CallMethod(Argument.That, nameof(Argument.NonNegative), MemberAccessibility.Public, null, positionalParams, null, null);
+        Reflector.CallInstanceMethod(Argument.That, nameof(Argument.NonNegative), MemberAccessibility.Public, null, positionalParams, null, null);
         throw new InvalidOperationException();
       }
       catch (TargetInvocationException ex) when (ex.InnerException is ArgumentOutOfRangeException exInner)
@@ -903,7 +903,7 @@ namespace PowerLib.System.Test.Validation
     public void PositiveSuccessful(object parameters)
     {
       var positionalParams = Argument.That.InstanceOf<IList<object?>>(parameters);
-      var result = Reflector.CallMethod(Argument.That, nameof(Argument.Positive), MemberAccessibility.Public, null, positionalParams, null, null);
+      var result = Reflector.CallInstanceMethod(Argument.That, nameof(Argument.Positive), MemberAccessibility.Public, null, positionalParams, null, null);
       Assert.Equal(positionalParams[0], result);
     }
 
@@ -914,7 +914,7 @@ namespace PowerLib.System.Test.Validation
       var positionalParams = Argument.That.InstanceOf<IList<object?>>(parameters);
       try
       {
-        Reflector.CallMethod(Argument.That, nameof(Argument.Positive), MemberAccessibility.Public, null, positionalParams, null, null);
+        Reflector.CallInstanceMethod(Argument.That, nameof(Argument.Positive), MemberAccessibility.Public, null, positionalParams, null, null);
         throw new InvalidOperationException();
       }
       catch (TargetInvocationException ex) when (ex.InnerException is ArgumentOutOfRangeException exInner)
@@ -928,7 +928,7 @@ namespace PowerLib.System.Test.Validation
     public void NonPositiveSuccessful(object parameters)
     {
       var positionalParams = Argument.That.InstanceOf<IList<object?>>(parameters);
-      var result = Reflector.CallMethod(Argument.That, nameof(Argument.NonPositive), MemberAccessibility.Public, null, positionalParams, null, null);
+      var result = Reflector.CallInstanceMethod(Argument.That, nameof(Argument.NonPositive), MemberAccessibility.Public, null, positionalParams, null, null);
       Assert.Equal(positionalParams[0], result);
     }
 
@@ -939,7 +939,7 @@ namespace PowerLib.System.Test.Validation
       var positionalParams = Argument.That.InstanceOf<IList<object?>>(parameters);
       try
       {
-        Reflector.CallMethod(Argument.That, nameof(Argument.NonPositive), MemberAccessibility.Public, null, positionalParams, null, null);
+        Reflector.CallInstanceMethod(Argument.That, nameof(Argument.NonPositive), MemberAccessibility.Public, null, positionalParams, null, null);
         throw new InvalidOperationException();
       }
       catch (TargetInvocationException ex) when (ex.InnerException is ArgumentOutOfRangeException exInner)
@@ -953,7 +953,7 @@ namespace PowerLib.System.Test.Validation
     public void NonZeroSuccessful(object parameters)
     {
       var positionalParams = Argument.That.InstanceOf<IList<object?>>(parameters);
-      var result = Reflector.CallMethod(Argument.That, nameof(Argument.NonZero), MemberAccessibility.Public, null, positionalParams, null, null);
+      var result = Reflector.CallInstanceMethod(Argument.That, nameof(Argument.NonZero), MemberAccessibility.Public, null, positionalParams, null, null);
       Assert.Equal(positionalParams[0], result);
     }
 
@@ -964,7 +964,7 @@ namespace PowerLib.System.Test.Validation
       var positionalParams = Argument.That.InstanceOf<IList<object?>>(parameters);
       try
       {
-        Reflector.CallMethod(Argument.That, nameof(Argument.NonZero), MemberAccessibility.Public, null, positionalParams, null, null);
+        Reflector.CallInstanceMethod(Argument.That, nameof(Argument.NonZero), MemberAccessibility.Public, null, positionalParams, null, null);
         throw new InvalidOperationException();
       }
       catch (TargetInvocationException ex) when (ex.InnerException is ArgumentOutOfRangeException exInner)
@@ -1020,7 +1020,7 @@ namespace PowerLib.System.Test.Validation
     {
       var methodName = Argument.That.InstanceOf<string>(name);
       var positionalParams = Argument.That.InstanceOf<IList<object?>>(parameters);
-      var actualResult = Reflector.CallMethod(Argument.That, methodName, MemberAccessibility.Public, null, positionalParams, null, null);
+      var actualResult = Reflector.CallInstanceMethod(Argument.That, methodName, MemberAccessibility.Public, null, positionalParams, null, null);
       Assert.Equal(expectedResult, actualResult);
     }
 
@@ -1032,7 +1032,7 @@ namespace PowerLib.System.Test.Validation
       var positionalParams = Argument.That.InstanceOf<IList<object?>>(parameters);
       try
       {
-        Reflector.CallMethod(Argument.That, methodName, MemberAccessibility.Public, null, positionalParams, null, null);
+        Reflector.CallInstanceMethod(Argument.That, methodName, MemberAccessibility.Public, null, positionalParams, null, null);
         throw new InvalidOperationException();
       }
       catch (TargetInvocationException ex) when (ex.InnerException is ArgumentOutOfRangeException exInner)
@@ -1130,7 +1130,7 @@ namespace PowerLib.System.Test.Validation
       var methodName = Argument.That.InstanceOf<string>(name);
       var genericArgs = Argument.That.OfType<IList<Type?>>(arguments);
       var positionalParams = Argument.That.InstanceOf<IList<object?>>(parameters);
-      var result = Reflector.CallMethod(Argument.That, methodName, MemberAccessibility.Public, genericArgs, positionalParams, null, null);
+      var result = Reflector.CallInstanceMethod(Argument.That, methodName, MemberAccessibility.Public, genericArgs, positionalParams, null, null);
       Assert.NotNull(result);
     }
 
@@ -1144,7 +1144,7 @@ namespace PowerLib.System.Test.Validation
       var expectedException = Argument.That.InstanceOf<Type>(exception);
       try
       {
-        Reflector.CallMethod(Argument.That, methodName, MemberAccessibility.Public, genericArgs, positionalParams, null, null);
+        Reflector.CallInstanceMethod(Argument.That, methodName, MemberAccessibility.Public, genericArgs, positionalParams, null, null);
         throw new InvalidOperationException();
       }
       catch (TargetInvocationException ex) when (ex.InnerException?.GetType() == expectedException)

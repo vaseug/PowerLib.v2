@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using PowerLib.System.Arrays;
 using PowerLib.System.Collections.Generic.Extensions;
 using PowerLib.System.Validation;
@@ -2720,9 +2721,9 @@ public static class ListExtension
   #endregion
   #region FindIndex
 
-  private static int FindIndexCore<T>(IList<T> list, int index, int count, ElementPredicate<T> predicate, bool reverse)
+  private static int FindIndexCore<T>(IList<T> list, int index, int count, ElementPredicate<T> predicate)
   {
-    for (index += reverse && count > 0 ? count - 1 : 0; count > 0; index += reverse ? -1 : 1, count--)
+    for (; count > 0; index++, count--)
       if (predicate(list[index], index))
         return index;
     return InvalidIndex;
@@ -2733,7 +2734,7 @@ public static class ListExtension
     Argument.That.NotNull(list);
     Argument.That.NotNull(predicate);
 
-    return FindIndexCore(list, 0, list.Count, ElementPredicate(predicate), false);
+    return FindIndexCore(list, 0, list.Count, ElementPredicate(predicate));
   }
 
   public static int FindIndex<T>(this IList<T> list, int index, Predicate<T> predicate)
@@ -2741,7 +2742,7 @@ public static class ListExtension
     Argument.That.InRangeOut(list, index);
     Argument.That.NotNull(predicate);
 
-    return FindIndexCore(list, index, list.Count - index, ElementPredicate(predicate), false);
+    return FindIndexCore(list, index, list.Count - index, ElementPredicate(predicate));
   }
 
   public static int FindIndex<T>(this IList<T> list, int index, int count, Predicate<T> predicate)
@@ -2749,7 +2750,7 @@ public static class ListExtension
     Argument.That.InRangeOut(list, index, count);
     Argument.That.NotNull(predicate);
 
-    return FindIndexCore(list, index, count, ElementPredicate(predicate), false);
+    return FindIndexCore(list, index, count, ElementPredicate(predicate));
   }
 
   public static int FindIndex<T>(this IList<T> list, (int index, int count) range, Predicate<T> predicate)
@@ -2757,7 +2758,7 @@ public static class ListExtension
     Argument.That.InRangeOut(list, range);
     Argument.That.NotNull(predicate);
 
-    return FindIndexCore(list, range.index, range.count, ElementPredicate(predicate), false);
+    return FindIndexCore(list, range.index, range.count, ElementPredicate(predicate));
   }
 
   public static int FindIndex<T>(this IList<T> list, ElementPredicate<T> predicate)
@@ -2765,7 +2766,7 @@ public static class ListExtension
     Argument.That.NotNull(list);
     Argument.That.NotNull(predicate);
 
-    return FindIndexCore(list, 0, list.Count, predicate, false);
+    return FindIndexCore(list, 0, list.Count, predicate);
   }
 
   public static int FindIndex<T>(this IList<T> list, int index, ElementPredicate<T> predicate)
@@ -2773,7 +2774,7 @@ public static class ListExtension
     Argument.That.InRangeOut(list, index);
     Argument.That.NotNull(predicate);
 
-    return FindIndexCore(list, index, list.Count - index, predicate, false);
+    return FindIndexCore(list, index, list.Count - index, predicate);
   }
 
   public static int FindIndex<T>(this IList<T> list, int index, int count, ElementPredicate<T> predicate)
@@ -2781,7 +2782,7 @@ public static class ListExtension
     Argument.That.InRangeOut(list, index, count);
     Argument.That.NotNull(predicate);
 
-    return FindIndexCore(list, index, count, predicate, false);
+    return FindIndexCore(list, index, count, predicate);
   }
 
   public static int FindIndex<T>(this IList<T> list, (int index, int count) range, ElementPredicate<T> predicate)
@@ -2789,7 +2790,18 @@ public static class ListExtension
     Argument.That.InRangeOut(list, range);
     Argument.That.NotNull(predicate);
 
-    return FindIndexCore(list, range.index, range.count, predicate, false);
+    return FindIndexCore(list, range.index, range.count, predicate);
+  }
+
+  #endregion
+  #region FindLastIndex
+
+  private static int FindLastIndexCore<T>(IList<T> list, int index, int count, ElementPredicate<T> predicate)
+  {
+    for (; count > 0 && index >= 0; index--, count--)
+      if (predicate(list[index], index))
+        return index;
+    return InvalidIndex;
   }
 
   public static int FindLastIndex<T>(this IList<T> list, Predicate<T> predicate)
@@ -2797,31 +2809,31 @@ public static class ListExtension
     Argument.That.NotNull(list);
     Argument.That.NotNull(predicate);
 
-    return FindIndexCore(list, 0, list.Count, ElementPredicate(predicate), true);
+    return FindLastIndexCore(list, list.Count == 0 ? 0 : list.Count - 1, list.Count, ElementPredicate(predicate));
   }
 
   public static int FindLastIndex<T>(this IList<T> list, int index, Predicate<T> predicate)
   {
-    Argument.That.InRangeOut(list, index);
+    Argument.That.InRangeIn(list, index);
     Argument.That.NotNull(predicate);
 
-    return FindIndexCore(list, index, list.Count - index, ElementPredicate(predicate), true);
+    return FindLastIndexCore(list, index, index + 1, ElementPredicate(predicate));
   }
 
   public static int FindLastIndex<T>(this IList<T> list, int index, int count, Predicate<T> predicate)
   {
-    Argument.That.InRangeOut(list, index, count);
+    Argument.That.InRangeRev(list, index, count);
     Argument.That.NotNull(predicate);
 
-    return FindIndexCore(list, index, count, ElementPredicate(predicate), true);
+    return FindLastIndexCore(list, index, count, ElementPredicate(predicate));
   }
 
   public static int FindLastIndex<T>(this IList<T> list, (int index, int count) range, Predicate<T> predicate)
   {
-    Argument.That.InRangeOut(list, range);
+    Argument.That.InRangeRev(list, range);
     Argument.That.NotNull(predicate);
 
-    return FindIndexCore(list, range.index, range.count, ElementPredicate(predicate), true);
+    return FindLastIndexCore(list, range.index, range.count, ElementPredicate(predicate));
   }
 
   public static int FindLastIndex<T>(this IList<T> list, ElementPredicate<T> predicate)
@@ -2829,31 +2841,31 @@ public static class ListExtension
     Argument.That.NotNull(list);
     Argument.That.NotNull(predicate);
 
-    return FindIndexCore(list, 0, list.Count, predicate, true);
+    return FindLastIndexCore(list, list.Count == 0 ? 0 : list.Count - 1, list.Count, predicate);
   }
 
   public static int FindLastIndex<T>(this IList<T> list, int index, ElementPredicate<T> predicate)
   {
-    Argument.That.InRangeOut(list, index);
+    Argument.That.InRangeIn(list, index);
     Argument.That.NotNull(predicate);
 
-    return FindIndexCore(list, index, list.Count - index, predicate, true);
+    return FindLastIndexCore(list, index, index + 1, predicate);
   }
 
   public static int FindLastIndex<T>(this IList<T> list, int index, int count, ElementPredicate<T> predicate)
   {
-    Argument.That.InRangeOut(list, index, count);
+    Argument.That.InRangeRev(list, index, count);
     Argument.That.NotNull(predicate);
 
-    return FindIndexCore(list, index, count, predicate, true);
+    return FindLastIndexCore(list, index, count, predicate);
   }
 
   public static int FindLastIndex<T>(this IList<T> list, (int index, int count) range, ElementPredicate<T> predicate)
   {
-    Argument.That.InRangeOut(list, range);
+    Argument.That.InRangeRev(list, range);
     Argument.That.NotNull(predicate);
 
-    return FindIndexCore(list, range.index, range.count, predicate, true);
+    return FindLastIndexCore(list, range.index, range.count, predicate);
   }
 
   #endregion
@@ -3667,7 +3679,7 @@ public static class ListExtension
 #if !NET7_0_OR_GREATER
 
   public static IReadOnlyList<T> AsReadOnly<T>(this IList<T> list)
-    => Argument.That.NotNull(list) as IReadOnlyList<T> ?? list.AsReadOnlyList();
+    => Argument.That.NotNull(list) as IReadOnlyList<T> ?? new ReadOnlyCollection<T>(list);
 
 #endif
 

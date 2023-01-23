@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Linq;
 using System.Reflection;
@@ -15,6 +16,11 @@ namespace PowerLib.System.Reflection;
 
 public static class Reflector
 {
+  #region Constants
+
+  private const string InvokeMethod = "Invoke";
+
+  #endregion
   #region Internal fields
 
   private static readonly Lazy<ResourceAccessor<ReflectionMessage>> resourceAccessor = new(() => new EnumResourceAccessor<ReflectionMessage>());
@@ -80,9 +86,7 @@ public static class Reflector
         {
           if (sourceArgument is null)
             resultArguments[position] = sourceType;
-          //else if (!sourceArgument.IsAssignableFrom(sourceType))
           else if (!MatchType(sourceType, TypeVariance.Contravariant, sourceArgument, sourceTypeArguments, resultTypeArguments, sourceMethodArguments, resultMethodArguments))
-            //sourceArgument.IsAssignableFrom(sourceType))
             return false;
           else
             resultArguments[position] = sourceArgument;
@@ -154,7 +158,36 @@ public static class Reflector
     }
   }
 
-  private static object?[] GetParameterValues(ParameterInfo[] parameters, IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues)
+  private static IReadOnlyList<Type?> GetTypesOfValues(this IList<object?> values)
+    => Argument.That.NotNull(values)
+      .Select(parameterValue => TypedValue.GetType(parameterValue))
+      .AsReadOnlyList();
+
+  private static IReadOnlyList<Type?> GetTypesOfValues(this IReadOnlyList<object?> values)
+    => Argument.That.NotNull(values)
+      .Select(parameterValue => TypedValue.GetType(parameterValue))
+      .AsReadOnlyList();
+
+  private static IReadOnlyDictionary<string, Type?> GetTypesOfValues(this IDictionary<string, object?> values, bool ignoreCase)
+    => Argument.That.NotNull(values)
+      .ToDictionary(parameterValue => parameterValue.Key, parameterValue => TypedValue.GetType(parameterValue.Value), ignoreCase ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal)
+      .AsReadOnlyDictionary();
+
+  private static IReadOnlyDictionary<string, Type?> GetTypesOfValues(this IReadOnlyDictionary<string, object?> values, bool ignoreCase)
+    => Argument.That.NotNull(values)
+      .ToDictionary(parameterValue => parameterValue.Key, parameterValue => TypedValue.GetType(parameterValue.Value), ignoreCase ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal)
+      .AsReadOnlyDictionary();
+
+  private static object?[] GetParameterValues(this ParameterInfo[] parameters, IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues)
+    => parameters
+      .Select(paramInfo =>
+        paramInfo.IsOut ? default :
+        positionalParameterValues is not null && paramInfo.Position < positionalParameterValues.Count ? TypedValue.GetValue(positionalParameterValues[paramInfo.Position]) :
+        namedParameterValues is not null && !string.IsNullOrEmpty(paramInfo.Name) && namedParameterValues.TryGetValue(paramInfo.Name, out var value) ? TypedValue.GetValue(value) :
+        paramInfo.DefaultValue)
+      .ToArray();
+
+  private static object?[] GetParameterValues(this ParameterInfo[] parameters, IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues)
     => Argument.That.NotNull(parameters)
       .Select(paramInfo =>
         paramInfo.IsOut ? default :
@@ -163,16 +196,7 @@ public static class Reflector
         paramInfo.DefaultValue)
       .ToArray();
 
-  private static object?[] GetParameterValues(ParameterInfo[] parameters, IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues)
-    => Argument.That.NotNull(parameters)
-      .Select(paramInfo =>
-        paramInfo.IsOut ? default :
-        positionalParameterValues is not null && paramInfo.Position < positionalParameterValues.Count ? TypedValue.GetValue(positionalParameterValues[paramInfo.Position]) :
-        namedParameterValues is not null && !string.IsNullOrEmpty(paramInfo.Name) && namedParameterValues.TryGetValue(paramInfo.Name, out var value) ? TypedValue.GetValue(value) :
-        paramInfo.DefaultValue)
-      .ToArray();
-
-  private static void SetParameterValues(ParameterInfo[] parameters, object?[] values, IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues)
+  private static void SetParameterValues(this ParameterInfo[] parameters, object?[] values, IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues)
   {
     if (positionalParameterValues is not null || namedParameterValues is not null)
       parameters.ForEach(paramInfo =>
@@ -187,7 +211,7 @@ public static class Reflector
       });
   }
 
-  private static void SetArgumentTypes(Type[] genericArguments, IList<Type?>? sourceArguments)
+  private static void SetArgumentTypes(this Type[] genericArguments, IList<Type?>? sourceArguments)
   {
     if (sourceArguments is not null)
       genericArguments.ForEach((argument, index) => sourceArguments[index] ??= argument);
@@ -206,7 +230,7 @@ public static class Reflector
   private static IEnumerable<FieldInfo> GetFields(Type sourceType, bool staticMember, string name, MemberAccessibility memberAccessibility, bool shouldWrite)
   {
     var bindingFlags = GetBindingFlags(staticMember, memberAccessibility);
-    var nameComparison = memberAccessibility.IsFlagsSet(MemberAccessibility.IgnoreCase) ? StringComparison.InvariantCultureIgnoreCase : StringComparison.InvariantCulture;
+    var nameComparison = memberAccessibility.IsFlagsSet(MemberAccessibility.IgnoreCase) ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
     var predicate = (FieldInfo fieldInfo) =>
       string.Equals(fieldInfo.Name, name, nameComparison) &&
       (!shouldWrite || !fieldInfo.Attributes.IsFlagsSet(FieldAttributes.InitOnly)) &&
@@ -223,31 +247,24 @@ public static class Reflector
     return sourceType.GetFields(bindingFlags).Where(predicate);
   }
 
-  private static bool MatchField(FieldInfo fieldInfo,
-    IReadOnlyList<Type?>? sourceTypeArguments, IList<Type?>? resultTypeArguments, Type? valueType, TypeVariance typeVariance)
+  private static bool MatchField(FieldInfo fieldInfo, IReadOnlyList<Type?>? sourceTypeArguments, IList<Type?>? resultTypeArguments, Type? valueType, TypeVariance typeVariance)
   {
     var genericTypeArguments = fieldInfo.DeclaringType?.GetGenericArguments();
-    if (!MatchArguments(genericTypeArguments, sourceTypeArguments, resultTypeArguments, null, null, null))
-      return false;
-
-    var fieldType = fieldInfo.FieldType;
-    if (valueType is null)
+    if (MatchArguments(genericTypeArguments, sourceTypeArguments, resultTypeArguments, null, null, null))
     {
-      if (!fieldType.IsNullAssignable())
-        return false;
+      var fieldType = fieldInfo.FieldType;
+      return valueType is null
+        ? typeVariance == TypeVariance.Covariant || fieldType.IsNullAssignable()
+        : MatchType(valueType, typeVariance, fieldType, sourceTypeArguments, resultTypeArguments, null, null);
     }
-    else
-    {
-      if (!MatchType(valueType, typeVariance, fieldType, sourceTypeArguments, resultTypeArguments, null, null))
-        return false;
-    }
-    return true;
+    return false;
   }
 
-  private static FieldInfo? MatchField(Type sourceType, bool staticMember, string name, MemberAccessibility memberAccessibility, bool shouldWrite, bool required,
+  private static FieldInfo? MatchField(Type sourceType, bool staticMember, string name, MemberAccessibility memberAccessibility, bool shouldWrite,
     IReadOnlyList<Type?>? sourceTypeArguments, Type? valueType, TypeVariance variance)
   {
-    var fieldResults = GetFields(sourceType, staticMember, name, memberAccessibility, shouldWrite)
+    var topHierarchy = memberAccessibility.IsFlagsSet(MemberAccessibility.TopHierarchy);
+    var resultFields = GetFields(sourceType, staticMember, name, memberAccessibility, shouldWrite)
       .Select(fieldInfo =>
       {
         var inheritanceLevel = sourceType.GetInheritanceLevel(fieldInfo.DeclaringType!);
@@ -257,217 +274,333 @@ public static class Reflector
       })
       .Where(tuple => tuple.fieldInfo is not null)
       .OrderBy(tuple => tuple.inheritanceLevel)
-      .ToArray();
-    var fieldResult = fieldResults.FirstOrDefault();
-    var fieldInfo = fieldResult.fieldInfo;
+      .TakeWhile((fieldInfo: default(FieldInfo), inheritanceLevel: -1),
+        (state, item) => (item.fieldInfo, item.inheritanceLevel),
+        (state, item) => state.fieldInfo is null || (!topHierarchy || state.inheritanceLevel == item.inheritanceLevel))
+      .Take(2);
+    var fieldInfo = default(FieldInfo);
+    var typeArguments = default(Type?[]);
+    var inheritanceLevel = default(int);
+    foreach (var resultField in resultFields)
+    {
+      if (fieldInfo is null)
+      {
+        fieldInfo = resultField.fieldInfo;
+        typeArguments = resultField.typeArguments;
+        inheritanceLevel = resultField.inheritanceLevel;
+        continue;
+      }
+      if (!topHierarchy || inheritanceLevel == resultField.inheritanceLevel)
+        Operation.That.Failed(FormatMessage(ReflectionMessage.FieldAmbiguousMatch));
+      break;
+    }
     if (fieldInfo is not null)
     {
-      if (sourceType.IsGenericType && !sourceType.IsConstructedGenericType && fieldResult.typeArguments is not null)
+      if (sourceType.IsGenericType && !sourceType.IsConstructedGenericType && typeArguments is not null)
       {
-        sourceType = sourceType.MakeGenericType(fieldResult.typeArguments);
-        fieldInfo = MatchField(sourceType, staticMember, name, memberAccessibility, shouldWrite, required, null, valueType, variance);
+        sourceType = sourceType.MakeGenericType(typeArguments);
+        fieldInfo = MatchField(sourceType, staticMember, name, memberAccessibility, shouldWrite, null, valueType, variance);
       }
     }
-    if (required && fieldInfo is null)
-      throw new InvalidOperationException(FormatMessage(ReflectionMessage.FieldNotFound));
     return fieldInfo;
   }
 
-  #endregion
-  #region Instance field public methods
-  #region Try methods
-
-  public static bool TryGetField(object source, string name, MemberAccessibility memberAccessibility, Type? valueType, out object? value)
+  private static bool TryGetFieldCore(Type sourceType, object? source, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, Type? valueType,
+    [NotNullWhen(true)] out FieldInfo? result)
   {
-    Argument.That.NotNull(source);
-    Argument.That.NotNullOrWhitespace(name);
-    var sourceObject = TypedValue.GetValue(source);
-    Argument.That.NotNull(sourceObject);
-    var sourceType = TypedValue.GetType(source)!;
+    var fieldInfo = MatchField(sourceType, source is null, name, memberAccessibility, false, typeArguments?.AsReadOnly(), valueType, TypeVariance.Covariant);
+    if (fieldInfo is null)
+    {
+      result = null;
+      return false;
+    }
+    fieldInfo.ReflectedType?.GetGenericArguments().SetArgumentTypes(typeArguments);
+    result = fieldInfo;
+    return true;
+  }
 
-    var fieldInfo = MatchField(sourceType, false, name, memberAccessibility, false, false, null, valueType ?? typeof(object), TypeVariance.Covariant);
+  private static FieldInfo GetFieldCore(Type sourceType, object? source, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, Type? valueType)
+  {
+    var fieldInfo = MatchField(sourceType, source is null, name, memberAccessibility, false, typeArguments?.AsReadOnly(), valueType, TypeVariance.Covariant);
+    Operation.That.IsValid(fieldInfo is not null, FormatMessage(ReflectionMessage.FieldNotFound));
+    fieldInfo.ReflectedType?.GetGenericArguments().SetArgumentTypes(typeArguments);
+    return fieldInfo;
+  }
+
+  private static bool TryGetFieldValueCore(Type sourceType, object? source, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, Type? valueType, out object? value)
+  {
+    var fieldInfo = MatchField(sourceType, source is null, name, memberAccessibility, false, typeArguments?.AsReadOnly(), valueType, TypeVariance.Covariant);
     if (fieldInfo is null)
     {
       value = default;
       return false;
     }
-    value = fieldInfo.GetValue(sourceObject);
+    var result = fieldInfo.GetValue(source);
+    fieldInfo.ReflectedType?.GetGenericArguments().SetArgumentTypes(typeArguments);
+    value = result;
     return true;
   }
 
-  public static bool TryGetField<TValue>(object source, string name, MemberAccessibility memberAccessibility, out TValue? value)
+  private static bool TrySetFieldValueCore(Type sourceType, object? source, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, Type? valueType, object? value)
   {
-    Argument.That.NotNull(source);
-    Argument.That.NotNullOrWhitespace(name);
-    var sourceObject = TypedValue.GetValue(source);
-    Argument.That.NotNull(sourceObject);
-    var sourceType = TypedValue.GetType(source)!;
-
-    var fieldInfo = MatchField(sourceType, false, name, memberAccessibility, false, false, null, typeof(TValue?), TypeVariance.Covariant);
-    if (fieldInfo is null)
-    {
-      value = default;
-      return false;
-    }
-    value = (TValue?)fieldInfo.GetValue(sourceObject);
-    return true;
-  }
-
-  public static bool TryGetField<TSource>(TSource source, string name, MemberAccessibility memberAccessibility, Type? valueType, out object? value)
-  {
-    Argument.That.NotNull(source);
-    Argument.That.NotNullOrWhitespace(name);
-
-    var fieldInfo = MatchField(typeof(TSource), false, name, memberAccessibility, false, false, null, valueType ?? typeof(object), TypeVariance.Covariant);
-    if (fieldInfo is null)
-    {
-      value = default;
-      return false;
-    }
-    value = fieldInfo.GetValue(source);
-    return true;
-  }
-
-  public static bool TryGetField<TSource, TValue>(TSource source, string name, MemberAccessibility memberAccessibility, out TValue? value)
-  {
-    Argument.That.NotNull(source);
-    Argument.That.NotNullOrWhitespace(name);
-
-    var fieldInfo = MatchField(typeof(TSource), false, name, memberAccessibility, false, false, null, typeof(TValue?), TypeVariance.Covariant);
-    if (fieldInfo is null)
-    {
-      value = default;
-      return false;
-    }
-    value = (TValue?)fieldInfo.GetValue(source);
-    return true;
-  }
-
-  public static bool TrySetField(object source, string name, MemberAccessibility memberAccessibility, object? value)
-  {
-    Argument.That.NotNull(source);
-    Argument.That.NotNullOrWhitespace(name);
-    var sourceObject = TypedValue.GetValue(source);
-    Argument.That.NotNull(sourceObject);
-    var sourceType = TypedValue.GetType(source)!;
-
-    var fieldInfo = MatchField(sourceType, false, name, memberAccessibility, true, false, null, TypedValue.GetType(value), TypeVariance.Contravariant);
-    if (fieldInfo is null)
-      return false;
-    fieldInfo.SetValue(sourceObject, TypedValue.GetValue(value));
-    return true;
-  }
-
-  public static bool TrySetField<TValue>(object source, string name, MemberAccessibility memberAccessibility, TValue? value)
-  {
-    Argument.That.NotNull(source);
-    Argument.That.NotNullOrWhitespace(name);
-    var sourceObject = TypedValue.GetValue(source);
-    Argument.That.NotNull(sourceObject);
-    var sourceType = TypedValue.GetType(source)!;
-
-    var fieldInfo = MatchField(sourceType, false, name, memberAccessibility, true, false, null, typeof(TValue?), TypeVariance.Contravariant);
-    if (fieldInfo is null)
-      return false;
-    fieldInfo.SetValue(sourceObject, value);
-    return true;
-  }
-
-  public static bool TrySetField<TSource>(TSource source, string name, MemberAccessibility memberAccessibility, object? value)
-  {
-    Argument.That.NotNull(source);
-    Argument.That.NotNullOrWhitespace(name);
-
-    var fieldInfo = MatchField(typeof(TSource), false, name, memberAccessibility, true, false, null, TypedValue.GetType(value), TypeVariance.Contravariant);
-    if (fieldInfo is null)
-      return false;
-    fieldInfo.SetValue(source, TypedValue.GetValue(value));
-    return true;
-  }
-
-  public static bool TrySetField<TSource, TValue>(TSource source, string name, MemberAccessibility memberAccessibility, TValue? value)
-  {
-    Argument.That.NotNull(source);
-    Argument.That.NotNullOrWhitespace(name);
-
-    var fieldInfo = MatchField(typeof(TSource), false, name, memberAccessibility, true, false, null, typeof(TValue?), TypeVariance.Contravariant);
+    var fieldInfo = MatchField(sourceType, source is null, name, memberAccessibility, true, typeArguments?.AsReadOnly(), valueType, TypeVariance.Contravariant);
     if (fieldInfo is null)
       return false;
     fieldInfo.SetValue(source, value);
+    fieldInfo.ReflectedType?.GetGenericArguments().SetArgumentTypes(typeArguments);
     return true;
   }
 
-  public static bool TryReplaceField(object source, string name, MemberAccessibility memberAccessibility, object? newValue, out object? oldValue)
+  private static bool TryReplaceFieldValueCore(Type sourceType, object? source, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, Type? valueType, object? newValue, out object? oldValue)
   {
-    Argument.That.NotNull(source);
-    Argument.That.NotNullOrWhitespace(name);
-    var sourceObject = TypedValue.GetValue(source);
-    Argument.That.NotNull(sourceObject);
-    var sourceType = TypedValue.GetType(source)!;
-
-    var fieldInfo = MatchField(sourceType, false, name, memberAccessibility, true, false, null, TypedValue.GetType(newValue), TypeVariance.Contravariant);
-    if (fieldInfo is null)
-    {
-      oldValue = default;
-      return false;
-    }
-    oldValue = fieldInfo.GetValue(sourceObject);
-    fieldInfo.SetValue(sourceObject, TypedValue.GetValue(newValue));
-    return true;
-  }
-
-  public static bool TryReplaceField<TValue>(object source, string name, MemberAccessibility memberAccessibility, TValue? newValue, out TValue? oldValue)
-  {
-    Argument.That.NotNull(source);
-    Argument.That.NotNullOrWhitespace(name);
-    var sourceObject = TypedValue.GetValue(source);
-    Argument.That.NotNull(sourceObject);
-    var sourceType = TypedValue.GetType(source)!;
-
-    var fieldInfo = MatchField(sourceType, false, name, memberAccessibility, true, false, null, typeof(TValue?), TypeVariance.Invariant);
-    if (fieldInfo is null)
-    {
-      oldValue = default;
-      return false;
-    }
-    oldValue = (TValue?)fieldInfo.GetValue(sourceObject);
-    fieldInfo.SetValue(sourceObject, newValue);
-    return true;
-  }
-
-  public static bool TryReplaceField<TSource>(TSource source, string name, MemberAccessibility memberAccessibility, object? newValue, out object? oldValue)
-  {
-    Argument.That.NotNull(source);
-    Argument.That.NotNullOrWhitespace(name);
-
-    var fieldInfo = MatchField(typeof(TSource), false, name, memberAccessibility, true, false, null, TypedValue.GetType(newValue), TypeVariance.Contravariant);
+    var fieldInfo = MatchField(sourceType, source is null, name, memberAccessibility, true, typeArguments?.AsReadOnly(), valueType, TypeVariance.Invariant);
     if (fieldInfo is null)
     {
       oldValue = default;
       return false;
     }
     oldValue = fieldInfo.GetValue(source);
-    fieldInfo.SetValue(source, TypedValue.GetValue(newValue));
+    fieldInfo.SetValue(source, newValue);
+    fieldInfo.ReflectedType?.GetGenericArguments().SetArgumentTypes(typeArguments);
     return true;
   }
 
-  public static bool TryReplaceField<TSource, TValue>(TSource source, string name, MemberAccessibility memberAccessibility, TValue? newValue, out TValue? oldValue)
+  private static object? GetFieldValueCore(Type sourceType, object? source, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, Type? valueType)
+  {
+    var fieldInfo = MatchField(sourceType, source is null, name, memberAccessibility, false, typeArguments?.AsReadOnly(), valueType, TypeVariance.Covariant);
+    Operation.That.IsValid(fieldInfo is not null, FormatMessage(ReflectionMessage.FieldNotFound));
+    var result = fieldInfo.GetValue(source);
+    fieldInfo.ReflectedType?.GetGenericArguments().SetArgumentTypes(typeArguments);
+    return result;
+  }
+
+  private static void SetFieldValueCore(Type sourceType, object? source, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, Type? valueType, object? value)
+  {
+    var fieldInfo = MatchField(sourceType, source is null, name, memberAccessibility, true, typeArguments?.AsReadOnly(), valueType, TypeVariance.Contravariant);
+    Operation.That.IsValid(fieldInfo is not null, FormatMessage(ReflectionMessage.FieldNotFound));
+    fieldInfo.SetValue(source, value);
+    fieldInfo.ReflectedType?.GetGenericArguments().SetArgumentTypes(typeArguments);
+  }
+
+  private static object? ReplaceFieldValueCore(Type sourceType, object? source, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, Type? valueType, object? value)
+  {
+    var fieldInfo = MatchField(sourceType, source is null, name, memberAccessibility, true, typeArguments?.AsReadOnly(), valueType, TypeVariance.Invariant);
+    Operation.That.IsValid(fieldInfo is not null, FormatMessage(ReflectionMessage.FieldNotFound));
+    var result = fieldInfo.GetValue(source);
+    fieldInfo.SetValue(source, value);
+    fieldInfo.ReflectedType?.GetGenericArguments().SetArgumentTypes(typeArguments);
+    return result;
+  }
+
+  #endregion
+  #region Instance field public methods
+  #region Try info methods
+
+  public static bool TryGetInstanceField(object source, string name, MemberAccessibility memberAccessibility, Type? valueType,
+    [NotNullWhen(true)] out FieldInfo? fieldInfo)
+  {
+    Argument.That.NotNull(source);
+    Argument.That.NotNullOrWhitespace(name);
+    var sourceObject = TypedValue.GetValue(source);
+    Argument.That.NotNull(sourceObject);
+    var sourceType = TypedValue.GetType(source)!;
+
+    return TryGetFieldCore(sourceType, sourceObject, name, memberAccessibility, null, valueType, out fieldInfo);
+  }
+
+  public static bool TryGetInstanceField<TValue>(object source, string name, MemberAccessibility memberAccessibility,
+    [NotNullWhen(true)] out FieldInfo? fieldInfo)
+  {
+    Argument.That.NotNull(source);
+    Argument.That.NotNullOrWhitespace(name);
+    var sourceObject = TypedValue.GetValue(source);
+    Argument.That.NotNull(sourceObject);
+    var sourceType = TypedValue.GetType(source)!;
+
+    return TryGetFieldCore(sourceType, sourceObject, name, memberAccessibility, null, typeof(TValue), out fieldInfo);
+  }
+
+  public static bool TryGetInstanceField<TSource>(TSource source, string name, MemberAccessibility memberAccessibility, Type? valueType,
+    [NotNullWhen(true)] out FieldInfo? fieldInfo)
   {
     Argument.That.NotNull(source);
     Argument.That.NotNullOrWhitespace(name);
 
-    var fieldInfo = MatchField(typeof(TSource), false, name, memberAccessibility, true, false, null, typeof(TValue?), TypeVariance.Invariant);
-    if (fieldInfo is null)
+    return TryGetFieldCore(typeof(TSource), source, name, memberAccessibility, null, valueType, out fieldInfo);
+  }
+
+  public static bool TryGetInstanceField<TSource, TValue>(TSource source, string name, MemberAccessibility memberAccessibility,
+    [NotNullWhen(true)] out FieldInfo? fieldInfo)
+  {
+    Argument.That.NotNull(source);
+    Argument.That.NotNullOrWhitespace(name);
+
+    return TryGetFieldCore(typeof(TSource), source, name, memberAccessibility, null, typeof(TValue), out fieldInfo);
+  }
+
+  #endregion
+  #region Try get methods
+
+  public static bool TryGetInstanceFieldValue(object source, string name, MemberAccessibility memberAccessibility, Type? valueType, out object? value)
+  {
+    Argument.That.NotNull(source);
+    Argument.That.NotNullOrWhitespace(name);
+    var sourceObject = TypedValue.GetValue(source);
+    Argument.That.NotNull(sourceObject);
+    var sourceType = TypedValue.GetType(source)!;
+
+    return TryGetFieldValueCore(sourceType, sourceObject, name, memberAccessibility, null, valueType, out value);
+  }
+
+  public static bool TryGetInstanceFieldValue<TValue>(object source, string name, MemberAccessibility memberAccessibility, out TValue? value)
+  {
+    Argument.That.NotNull(source);
+    Argument.That.NotNullOrWhitespace(name);
+    var sourceObject = TypedValue.GetValue(source);
+    Argument.That.NotNull(sourceObject);
+    var sourceType = TypedValue.GetType(source)!;
+
+    if (TryGetFieldValueCore(sourceType, sourceObject, name, memberAccessibility, null, typeof(TValue), out var result))
+    {
+      value = (TValue?)result;
+      return true;
+    }
+    else
+    {
+      value = default;
+      return false;
+    }
+  }
+
+  public static bool TryGetInstanceFieldValue<TSource>(TSource source, string name, MemberAccessibility memberAccessibility, Type? valueType, out object? value)
+  {
+    Argument.That.NotNull(source);
+    Argument.That.NotNullOrWhitespace(name);
+
+    return TryGetFieldValueCore(typeof(TSource), source, name, memberAccessibility, null, valueType, out value);
+  }
+
+  public static bool TryGetInstanceFieldValue<TSource, TValue>(TSource source, string name, MemberAccessibility memberAccessibility, out TValue? value)
+  {
+    Argument.That.NotNull(source);
+    Argument.That.NotNullOrWhitespace(name);
+
+    if (TryGetFieldValueCore(typeof(TSource), source, name, memberAccessibility, null, typeof(TValue), out var result))
+    {
+      value = (TValue?)result;
+      return true;
+    }
+    else
+    {
+      value = default;
+      return false;
+    }
+  }
+
+  #endregion
+  #region Try set methods
+
+  public static bool TrySetInstanceFieldValue(object source, string name, MemberAccessibility memberAccessibility, object? value)
+  {
+    Argument.That.NotNull(source);
+    Argument.That.NotNullOrWhitespace(name);
+    var sourceObject = TypedValue.GetValue(source);
+    Argument.That.NotNull(sourceObject);
+    var sourceType = TypedValue.GetType(source)!;
+
+    return TrySetFieldValueCore(sourceType, sourceObject, name, memberAccessibility, null, TypedValue.GetType(value), TypedValue.GetValue(value));
+  }
+
+  public static bool TrySetInstanceFieldValue<TValue>(object source, string name, MemberAccessibility memberAccessibility, TValue? value)
+  {
+    Argument.That.NotNull(source);
+    Argument.That.NotNullOrWhitespace(name);
+    var sourceObject = TypedValue.GetValue(source);
+    Argument.That.NotNull(sourceObject);
+    var sourceType = TypedValue.GetType(source)!;
+
+    return TrySetFieldValueCore(sourceType, sourceObject, name, memberAccessibility, null, typeof(TValue), value);
+  }
+
+  public static bool TrySetInstanceFieldValue<TSource>(TSource source, string name, MemberAccessibility memberAccessibility, object? value)
+  {
+    Argument.That.NotNull(source);
+    Argument.That.NotNullOrWhitespace(name);
+
+    return TrySetFieldValueCore(typeof(TSource), source, name, memberAccessibility, null, TypedValue.GetType(value), TypedValue.GetValue(value));
+  }
+
+  public static bool TrySetInstanceFieldValue<TSource, TValue>(TSource source, string name, MemberAccessibility memberAccessibility, TValue? value)
+  {
+    Argument.That.NotNull(source);
+    Argument.That.NotNullOrWhitespace(name);
+
+    return TrySetFieldValueCore(typeof(TSource), source, name, memberAccessibility, null, typeof(TValue), value);
+  }
+
+  #endregion
+  #region Try replace methods
+
+  public static bool TryReplaceInstanceFieldValue(object source, string name, MemberAccessibility memberAccessibility, object? newValue, out object? oldValue)
+  {
+    Argument.That.NotNull(source);
+    Argument.That.NotNullOrWhitespace(name);
+    var sourceObject = TypedValue.GetValue(source);
+    Argument.That.NotNull(sourceObject);
+    var sourceType = TypedValue.GetType(source)!;
+
+    return TryReplaceFieldValueCore(sourceType, sourceObject, name, memberAccessibility, null, TypedValue.GetType(newValue), TypedValue.GetValue(newValue), out oldValue);
+  }
+
+  public static bool TryReplaceInstanceFieldValue<TValue>(object source, string name, MemberAccessibility memberAccessibility, TValue? newValue, out TValue? oldValue)
+  {
+    Argument.That.NotNull(source);
+    Argument.That.NotNullOrWhitespace(name);
+    var sourceObject = TypedValue.GetValue(source);
+    Argument.That.NotNull(sourceObject);
+    var sourceType = TypedValue.GetType(source)!;
+
+    if (TryReplaceFieldValueCore(sourceType, sourceObject, name, memberAccessibility, null, typeof(TValue), newValue, out var result))
+    {
+      oldValue = (TValue?)result;
+      return true;
+    }
+    else
     {
       oldValue = default;
       return false;
     }
-    oldValue = (TValue?)fieldInfo.GetValue(source);
-    fieldInfo.SetValue(source, newValue);
-    return true;
   }
 
-  public static bool TryExchangeField(object source, string name, MemberAccessibility memberAccessibility, ref object? value)
+  public static bool TryReplaceInstanceFieldValue<TSource>(TSource source, string name, MemberAccessibility memberAccessibility, object? newValue, out object? oldValue)
+  {
+    Argument.That.NotNull(source);
+    Argument.That.NotNullOrWhitespace(name);
+
+    return TryReplaceFieldValueCore(typeof(TSource), source, name, memberAccessibility, null, TypedValue.GetType(newValue), TypedValue.GetValue(newValue), out oldValue);
+  }
+
+  public static bool TryReplaceInstanceFieldValue<TSource, TValue>(TSource source, string name, MemberAccessibility memberAccessibility, TValue? newValue, out TValue? oldValue)
+  {
+    Argument.That.NotNull(source);
+    Argument.That.NotNullOrWhitespace(name);
+
+    if (TryReplaceFieldValueCore(typeof(TSource), source, name, memberAccessibility, null, typeof(TValue), newValue, out var result))
+    {
+      oldValue = (TValue?)result;
+      return true;
+    }
+    else
+    {
+      oldValue = default;
+      return false;
+    }
+  }
+
+  #endregion
+  #region Try exchange methods
+
+  public static bool TryExchangeInstanceFieldValue(object source, string name, MemberAccessibility memberAccessibility, ref object? value)
   {
     Argument.That.NotNull(source);
     Argument.That.NotNullOrWhitespace(name);
@@ -475,16 +608,13 @@ public static class Reflector
     Argument.That.NotNull(sourceObject);
     var sourceType = TypedValue.GetType(source)!;
 
-    var fieldInfo = MatchField(sourceType, false, name, memberAccessibility, true, false, null, TypedValue.GetType(value), TypeVariance.Contravariant);
-    if (fieldInfo is null)
+    if (!TryReplaceFieldValueCore(sourceType, sourceObject, name, memberAccessibility, null, TypedValue.GetType(value), TypedValue.GetValue(value), out var result))
       return false;
-    var result = fieldInfo.GetValue(sourceObject);
-    fieldInfo.SetValue(sourceObject, TypedValue.GetValue(value));
     value = result;
     return true;
   }
 
-  public static bool TryExchangeField<TValue>(object source, string name, MemberAccessibility memberAccessibility, ref TValue? value)
+  public static bool TryExchangeInstanceFieldValue<TValue>(object source, string name, MemberAccessibility memberAccessibility, ref TValue? value)
   {
     Argument.That.NotNull(source);
     Argument.That.NotNullOrWhitespace(name);
@@ -492,47 +622,38 @@ public static class Reflector
     Argument.That.NotNull(sourceObject);
     var sourceType = TypedValue.GetType(source)!;
 
-    var fieldInfo = MatchField(sourceType, false, name, memberAccessibility, true, false, null, typeof(TValue?), TypeVariance.Invariant);
-    if (fieldInfo is null)
+    if (!TryReplaceFieldValueCore(sourceType, sourceObject, name, memberAccessibility, null, typeof(TValue), value, out var result))
       return false;
-    var result = (TValue?)fieldInfo.GetValue(sourceObject);
-    fieldInfo.SetValue(sourceObject, value);
-    value = result;
+    value = (TValue?)result;
     return true;
   }
 
-  public static bool TryExchangeField<TSource>(TSource source, string name, MemberAccessibility memberAccessibility, ref object? value)
+  public static bool TryExchangeInstanceFieldValue<TSource>(TSource source, string name, MemberAccessibility memberAccessibility, ref object? value)
   {
     Argument.That.NotNull(source);
     Argument.That.NotNullOrWhitespace(name);
 
-    var fieldInfo = MatchField(typeof(TSource), false, name, memberAccessibility, true, false, null, TypedValue.GetType(value), TypeVariance.Contravariant);
-    if (fieldInfo is null)
+    if (!TryReplaceFieldValueCore(typeof(TSource), source, name, memberAccessibility, null, TypedValue.GetType(value), TypedValue.GetValue(value), out var result))
       return false;
-    var result = fieldInfo.GetValue(source);
-    fieldInfo.SetValue(source, TypedValue.GetValue(value));
     value = result;
     return true;
   }
 
-  public static bool TryExchangeField<TSource, TValue>(TSource source, string name, MemberAccessibility memberAccessibility, ref TValue? value)
+  public static bool TryExchangeInstanceFieldValue<TSource, TValue>(TSource source, string name, MemberAccessibility memberAccessibility, ref TValue? value)
   {
     Argument.That.NotNull(source);
     Argument.That.NotNullOrWhitespace(name);
 
-    var fieldInfo = MatchField(typeof(TSource), false, name, memberAccessibility, true, false, null, typeof(TValue?), TypeVariance.Invariant);
-    if (fieldInfo is null)
+    if (!TryReplaceFieldValueCore(typeof(TSource), source, name, memberAccessibility, null, typeof(TValue), value, out var result))
       return false;
-    var result = (TValue?)fieldInfo.GetValue(source);
-    fieldInfo.SetValue(source, value);
-    value = result;
+    value = (TValue?)result;
     return true;
   }
 
   #endregion
-  #region Direct methods
+  #region Direct info methods
 
-  public static object? GetField(object source, string name, MemberAccessibility memberAccessibility, Type? valueType)
+  public static FieldInfo GetInstanceField(object source, string name, MemberAccessibility memberAccessibility, Type? valueType)
   {
     Argument.That.NotNull(source);
     Argument.That.NotNullOrWhitespace(name);
@@ -540,11 +661,10 @@ public static class Reflector
     Argument.That.NotNull(sourceObject);
     var sourceType = TypedValue.GetType(source)!;
 
-    var fieldInfo = MatchField(sourceType, false, name, memberAccessibility, false, true, null, valueType ?? typeof(object), TypeVariance.Covariant)!;
-    return fieldInfo.GetValue(sourceObject);
+    return GetFieldCore(sourceType, sourceObject, name, memberAccessibility, null, valueType);
   }
 
-  public static TValue? GetField<TValue>(object source, string name, MemberAccessibility memberAccessibility)
+  public static FieldInfo GetInstanceField<TValue>(object source, string name, MemberAccessibility memberAccessibility)
   {
     Argument.That.NotNull(source);
     Argument.That.NotNullOrWhitespace(name);
@@ -552,41 +672,29 @@ public static class Reflector
     Argument.That.NotNull(sourceObject);
     var sourceType = TypedValue.GetType(source)!;
 
-    var fieldInfo = MatchField(sourceType, false, name, memberAccessibility, false, true, null, typeof(TValue?), TypeVariance.Covariant)!;
-    return (TValue?)fieldInfo.GetValue(sourceObject);
+    return GetFieldCore(sourceType, sourceObject, name, memberAccessibility, null, typeof(TValue));
   }
 
-  public static object? GetField<TSource>(TSource source, string name, MemberAccessibility memberAccessibility, Type? valueType)
+  public static FieldInfo GetInstanceField<TSource>(TSource source, string name, MemberAccessibility memberAccessibility, Type? valueType)
   {
     Argument.That.NotNull(source);
     Argument.That.NotNullOrWhitespace(name);
 
-    var fieldInfo = MatchField(typeof(TSource), false, name, memberAccessibility, false, true, null, valueType ?? typeof(object), TypeVariance.Covariant)!;
-    return fieldInfo.GetValue(source);
+    return GetFieldCore(typeof(TSource), source, name, memberAccessibility, null, valueType);
   }
 
-  public static TValue? GetField<TSource, TValue>(TSource source, string name, MemberAccessibility memberAccessibility)
+  public static FieldInfo GetInstanceField<TSource, TValue>(TSource source, string name, MemberAccessibility memberAccessibility)
   {
     Argument.That.NotNull(source);
     Argument.That.NotNullOrWhitespace(name);
 
-    var fieldInfo = MatchField(typeof(TSource), false, name, memberAccessibility, false, true, null, typeof(TValue?), TypeVariance.Covariant)!;
-    return (TValue?)fieldInfo.GetValue(source);
+    return GetFieldCore(typeof(TSource), source, name, memberAccessibility, null, typeof(TValue));
   }
 
-  public static void SetField(object source, string name, MemberAccessibility memberAccessibility, object? value)
-  {
-    Argument.That.NotNull(source);
-    Argument.That.NotNullOrWhitespace(name);
-    var sourceObject = TypedValue.GetValue(source);
-    Argument.That.NotNull(sourceObject);
-    var sourceType = TypedValue.GetType(source)!;
+  #endregion
+  #region Direct get methods
 
-    var fieldInfo = MatchField(sourceType, false, name, memberAccessibility, true, true, null, TypedValue.GetType(value), TypeVariance.Contravariant)!;
-    fieldInfo.SetValue(sourceObject, TypedValue.GetValue(value));
-  }
-
-  public static void SetField<TValue>(object source, string name, MemberAccessibility memberAccessibility, TValue? value)
+  public static object? GetInstanceFieldValue(object source, string name, MemberAccessibility memberAccessibility, Type? valueType)
   {
     Argument.That.NotNull(source);
     Argument.That.NotNullOrWhitespace(name);
@@ -594,29 +702,10 @@ public static class Reflector
     Argument.That.NotNull(sourceObject);
     var sourceType = TypedValue.GetType(source)!;
 
-    var fieldInfo = MatchField(sourceType, false, name, memberAccessibility, true, true, null, typeof(TValue?), TypeVariance.Contravariant)!;
-    fieldInfo.SetValue(sourceObject, value);
+    return GetFieldValueCore(sourceType, sourceObject, name, memberAccessibility, null, valueType);
   }
 
-  public static void SetField<TSource>(TSource source, string name, MemberAccessibility memberAccessibility, object? value)
-  {
-    Argument.That.NotNull(source);
-    Argument.That.NotNullOrWhitespace(name);
-
-    var fieldInfo = MatchField(typeof(TSource), false, name, memberAccessibility, true, true, null, TypedValue.GetType(value), TypeVariance.Contravariant)!;
-    fieldInfo.SetValue(source, TypedValue.GetValue(value));
-  }
-
-  public static void SetField<TSource, TValue>(TSource source, string name, MemberAccessibility memberAccessibility, TValue? value)
-  {
-    Argument.That.NotNull(source);
-    Argument.That.NotNullOrWhitespace(name);
-
-    var fieldInfo = MatchField(typeof(TSource), false, name, memberAccessibility, true, true, null, typeof(TValue?), TypeVariance.Contravariant)!;
-    fieldInfo.SetValue(source, value);
-  }
-
-  public static object? ReplaceField(object source, string name, MemberAccessibility memberAccessibility, object? value)
+  public static TValue? GetInstanceFieldValue<TValue>(object source, string name, MemberAccessibility memberAccessibility)
   {
     Argument.That.NotNull(source);
     Argument.That.NotNullOrWhitespace(name);
@@ -624,13 +713,29 @@ public static class Reflector
     Argument.That.NotNull(sourceObject);
     var sourceType = TypedValue.GetType(source)!;
 
-    var fieldInfo = MatchField(sourceType, false, name, memberAccessibility, true, true, null, TypedValue.GetType(value), TypeVariance.Contravariant)!;
-    var result = fieldInfo.GetValue(sourceObject);
-    fieldInfo.SetValue(sourceObject, TypedValue.GetValue(value));
-    return result;
+    return (TValue?)GetFieldValueCore(sourceType, sourceObject, name, memberAccessibility, null, typeof(TValue));
   }
 
-  public static TValue? ReplaceField<TValue>(object source, string name, MemberAccessibility memberAccessibility, TValue? value)
+  public static object? GetInstanceFieldValue<TSource>(TSource source, string name, MemberAccessibility memberAccessibility, Type? valueType)
+  {
+    Argument.That.NotNull(source);
+    Argument.That.NotNullOrWhitespace(name);
+
+    return GetFieldValueCore(typeof(TSource), source, name, memberAccessibility, null, valueType);
+  }
+
+  public static TValue? GetInstanceFieldValue<TSource, TValue>(TSource source, string name, MemberAccessibility memberAccessibility)
+  {
+    Argument.That.NotNull(source);
+    Argument.That.NotNullOrWhitespace(name);
+
+    return (TValue?)GetFieldValueCore(typeof(TSource), source, name, memberAccessibility, null, typeof(TValue));
+  }
+
+  #endregion
+  #region Direct set methods
+
+  public static void SetInstanceFieldValue(object source, string name, MemberAccessibility memberAccessibility, object? value)
   {
     Argument.That.NotNull(source);
     Argument.That.NotNullOrWhitespace(name);
@@ -638,35 +743,10 @@ public static class Reflector
     Argument.That.NotNull(sourceObject);
     var sourceType = TypedValue.GetType(source)!;
 
-    var fieldInfo = MatchField(sourceType, false, name, memberAccessibility, true, true, null, typeof(TValue?), TypeVariance.Invariant)!;
-    var result = (TValue?)fieldInfo.GetValue(sourceObject);
-    fieldInfo.SetValue(sourceObject, value);
-    return result;
+    SetFieldValueCore(sourceType, sourceObject, name, memberAccessibility, null, TypedValue.GetType(value), TypedValue.GetValue(value));
   }
 
-  public static object? ReplaceField<TSource>(TSource source, string name, MemberAccessibility memberAccessibility, object? value)
-  {
-    Argument.That.NotNull(source);
-    Argument.That.NotNullOrWhitespace(name);
-
-    var fieldInfo = MatchField(typeof(TSource), false, name, memberAccessibility, true, true, null, TypedValue.GetType(value), TypeVariance.Contravariant)!;
-    var result = fieldInfo.GetValue(source);
-    fieldInfo.SetValue(source, TypedValue.GetValue(value));
-    return result;
-  }
-
-  public static TValue? ReplaceField<TSource, TValue>(TSource source, string name, MemberAccessibility memberAccessibility, TValue? value)
-  {
-    Argument.That.NotNull(source);
-    Argument.That.NotNullOrWhitespace(name);
-
-    var fieldInfo = MatchField(typeof(TSource), false, name, memberAccessibility, true, true, null, typeof(TValue?), TypeVariance.Invariant)!;
-    var result = (TValue?)fieldInfo.GetValue(source);
-    fieldInfo.SetValue(source, value);
-    return result;
-  }
-
-  public static void ExchangeField(object source, string name, MemberAccessibility memberAccessibility, ref object? value)
+  public static void SetInstanceFieldValue<TValue>(object source, string name, MemberAccessibility memberAccessibility, TValue? value)
   {
     Argument.That.NotNull(source);
     Argument.That.NotNullOrWhitespace(name);
@@ -674,13 +754,29 @@ public static class Reflector
     Argument.That.NotNull(sourceObject);
     var sourceType = TypedValue.GetType(source)!;
 
-    var fieldInfo = MatchField(sourceType, false, name, memberAccessibility, true, true, null, TypedValue.GetType(value), TypeVariance.Contravariant)!;
-    var result = fieldInfo.GetValue(sourceObject);
-    fieldInfo.SetValue(sourceObject, TypedValue.GetValue(value));
-    value = result;
+    SetFieldValueCore(sourceType, sourceObject, name, memberAccessibility, null, typeof(TValue), value);
   }
 
-  public static void ExchangeField<TValue>(object source, string name, MemberAccessibility memberAccessibility, ref TValue? value)
+  public static void SetInstanceFieldValue<TSource>(TSource source, string name, MemberAccessibility memberAccessibility, object? value)
+  {
+    Argument.That.NotNull(source);
+    Argument.That.NotNullOrWhitespace(name);
+
+    SetFieldValueCore(typeof(TSource), source, name, memberAccessibility, null, TypedValue.GetType(value), TypedValue.GetValue(value));
+  }
+
+  public static void SetInstanceFieldValue<TSource, TValue>(TSource source, string name, MemberAccessibility memberAccessibility, TValue? value)
+  {
+    Argument.That.NotNull(source);
+    Argument.That.NotNullOrWhitespace(name);
+
+    SetFieldValueCore(typeof(TSource), source, name, memberAccessibility, null, typeof(TValue), value);
+  }
+
+  #endregion
+  #region Direct replace methods
+
+  public static object? ReplaceInstanceFieldValue(object source, string name, MemberAccessibility memberAccessibility, object? value)
   {
     Argument.That.NotNull(source);
     Argument.That.NotNullOrWhitespace(name);
@@ -688,444 +784,459 @@ public static class Reflector
     Argument.That.NotNull(sourceObject);
     var sourceType = TypedValue.GetType(source)!;
 
-    var fieldInfo = MatchField(sourceType, false, name, memberAccessibility, true, true, null, typeof(TValue?), TypeVariance.Invariant)!;
-    var result = (TValue?)fieldInfo.GetValue(sourceObject);
-    fieldInfo.SetValue(sourceObject, value);
-    value = result;
+    return ReplaceFieldValueCore(sourceType, sourceObject, name, memberAccessibility, null, TypedValue.GetType(value), TypedValue.GetValue(value));
   }
 
-  public static void ExchangeField<TSource>(TSource source, string name, MemberAccessibility memberAccessibility, ref object? value)
+  public static TValue? ReplaceInstanceFieldValue<TValue>(object source, string name, MemberAccessibility memberAccessibility, TValue? value)
+  {
+    Argument.That.NotNull(source);
+    Argument.That.NotNullOrWhitespace(name);
+    var sourceObject = TypedValue.GetValue(source);
+    Argument.That.NotNull(sourceObject);
+    var sourceType = TypedValue.GetType(source)!;
+
+    return (TValue?)ReplaceFieldValueCore(sourceType, sourceObject, name, memberAccessibility, null, typeof(TValue), value);
+  }
+
+  public static object? ReplaceInstanceFieldValue<TSource>(TSource source, string name, MemberAccessibility memberAccessibility, object? value)
   {
     Argument.That.NotNull(source);
     Argument.That.NotNullOrWhitespace(name);
 
-    var fieldInfo = MatchField(typeof(TSource), false, name, memberAccessibility, true, true, null, TypedValue.GetType(value), TypeVariance.Contravariant)!;
-    var result = fieldInfo.GetValue(source);
-    fieldInfo.SetValue(source, TypedValue.GetValue(value));
-    value = result;
+    return ReplaceFieldValueCore(typeof(TSource), source, name, memberAccessibility, null, TypedValue.GetType(value), TypedValue.GetValue(value));
   }
 
-  public static void ExchangeField<TSource, TValue>(TSource source, string name, MemberAccessibility memberAccessibility, ref TValue? value)
+  public static TValue? ReplaceInstanceFieldValue<TSource, TValue>(TSource source, string name, MemberAccessibility memberAccessibility, TValue? value)
   {
     Argument.That.NotNull(source);
     Argument.That.NotNullOrWhitespace(name);
 
-    var fieldInfo = MatchField(typeof(TSource), false, name, memberAccessibility, true, true, null, typeof(TValue?), TypeVariance.Invariant)!;
-    var result = (TValue?)fieldInfo.GetValue(source);
-    fieldInfo.SetValue(source, value);
-    value = result;
+    return (TValue?)ReplaceFieldValueCore(typeof(TSource), source, name, memberAccessibility, null, typeof(TValue), value);
+  }
+
+  #endregion
+  #region Direct exchange methods
+
+  public static void ExchangeInstanceFieldValue(object source, string name, MemberAccessibility memberAccessibility, ref object? value)
+  {
+    Argument.That.NotNull(source);
+    Argument.That.NotNullOrWhitespace(name);
+    var sourceObject = TypedValue.GetValue(source);
+    Argument.That.NotNull(sourceObject);
+    var sourceType = TypedValue.GetType(source)!;
+
+    value = ReplaceFieldValueCore(sourceType, sourceObject, name, memberAccessibility, null, TypedValue.GetType(value), TypedValue.GetValue(value));
+  }
+
+  public static void ExchangeInstanceFieldValue<TValue>(object source, string name, MemberAccessibility memberAccessibility, ref TValue? value)
+  {
+    Argument.That.NotNull(source);
+    Argument.That.NotNullOrWhitespace(name);
+    var sourceObject = TypedValue.GetValue(source);
+    Argument.That.NotNull(sourceObject);
+    var sourceType = TypedValue.GetType(source)!;
+
+    value = (TValue?)ReplaceFieldValueCore(sourceType, sourceObject, name, memberAccessibility, null, typeof(TValue), value);
+  }
+
+  public static void ExchangeInstanceFieldValue<TSource>(TSource source, string name, MemberAccessibility memberAccessibility, ref object? value)
+  {
+    Argument.That.NotNull(source);
+    Argument.That.NotNullOrWhitespace(name);
+
+    value = ReplaceFieldValueCore(typeof(TSource), source, name, memberAccessibility, null, TypedValue.GetType(value), TypedValue.GetValue(value));
+  }
+
+  public static void ExchangeInstanceFieldValue<TSource, TValue>(TSource source, string name, MemberAccessibility memberAccessibility, ref TValue? value)
+  {
+    Argument.That.NotNull(source);
+    Argument.That.NotNullOrWhitespace(name);
+
+    value = (TValue?)ReplaceFieldValueCore(typeof(TSource), source, name, memberAccessibility, null, typeof(TValue), value);
   }
 
   #endregion
   #endregion
   #region Static field public methods
-  #region Try methods
+  #region Try info methods
 
-  public static bool TryGetField(Type type, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, Type? valueType, out object? value)
+  public static bool TryGetStaticField(Type sourceType, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, Type? valueType,
+    [NotNullWhen(true)] out FieldInfo? fieldInfo)
   {
-    Argument.That.NotNull(type);
+    Argument.That.NotNull(sourceType);
     Argument.That.NotNullOrWhitespace(name);
 
-    var fieldInfo = MatchField(type, true, name, memberAccessibility, false, false, typeArguments?.AsReadOnly(), valueType ?? typeof(object), TypeVariance.Covariant);
-    if (fieldInfo is null)
+    return TryGetFieldCore(sourceType, null, name, memberAccessibility, typeArguments, valueType, out fieldInfo);
+  }
+
+  public static bool TryGetStaticField<TValue>(Type sourceType, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments,
+    [NotNullWhen(true)] out FieldInfo? fieldInfo)
+  {
+    Argument.That.NotNull(sourceType);
+    Argument.That.NotNullOrWhitespace(name);
+
+    return TryGetFieldCore(sourceType, null, name, memberAccessibility, typeArguments, typeof(TValue), out fieldInfo);
+  }
+
+  public static bool TryGetStaticField<TSource>(string name, MemberAccessibility memberAccessibility, Type? valueType,
+    [NotNullWhen(true)] out FieldInfo? fieldInfo)
+  {
+    Argument.That.NotNullOrWhitespace(name);
+
+    return TryGetFieldCore(typeof(TSource), null, name, memberAccessibility, null, valueType, out fieldInfo);
+  }
+
+  public static bool TryGetStaticField<TSource, TValue>(string name, MemberAccessibility memberAccessibility,
+    [NotNullWhen(true)] out FieldInfo? fieldInfo)
+  {
+    Argument.That.NotNullOrWhitespace(name);
+
+    return TryGetFieldCore(typeof(TSource), null, name, memberAccessibility, null, typeof(TValue), out fieldInfo);
+  }
+
+  #endregion
+  #region Try get methods
+
+  public static bool TryGetStaticFieldValue(Type sourceType, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, Type? valueType, out object? value)
+  {
+    Argument.That.NotNull(sourceType);
+    Argument.That.NotNullOrWhitespace(name);
+
+    return TryGetFieldValueCore(sourceType, null, name, memberAccessibility, typeArguments, valueType, out value);
+  }
+
+  public static bool TryGetStaticFieldValue<TValue>(Type sourceType, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, out TValue? value)
+  {
+    Argument.That.NotNull(sourceType);
+    Argument.That.NotNullOrWhitespace(name);
+
+    if (TryGetFieldValueCore(sourceType, null, name, memberAccessibility, typeArguments, typeof(TValue), out var result))
+    {
+      value = (TValue?)result;
+      return true;
+    }
+    else
     {
       value = default;
       return false;
     }
-    if (fieldInfo.DeclaringType is not null)
-      SetArgumentTypes(fieldInfo.DeclaringType.GetGenericArguments(), typeArguments);
-    value = fieldInfo.GetValue(null);
-    return true;
   }
 
-  public static bool TryGetField<TValue>(Type type, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, out TValue? value)
+  public static bool TryGetStaticFieldValue<TSource>(string name, MemberAccessibility memberAccessibility, Type? valueType, out object? value)
   {
-    Argument.That.NotNull(type);
     Argument.That.NotNullOrWhitespace(name);
 
-    var fieldInfo = MatchField(type, true, name, memberAccessibility, false, false, typeArguments?.AsReadOnly(), typeof(TValue?), TypeVariance.Covariant);
-    if (fieldInfo is null)
+    return TryGetFieldValueCore(typeof(TSource), null, name, memberAccessibility, null, valueType, out value);
+  }
+
+  public static bool TryGetStaticFieldValue<TSource, TValue>(string name, MemberAccessibility memberAccessibility, out TValue? value)
+  {
+    Argument.That.NotNullOrWhitespace(name);
+
+    if (TryGetFieldValueCore(typeof(TSource), null, name, memberAccessibility, null, typeof(TValue), out var result))
+    {
+      value = (TValue?)result;
+      return true;
+    }
+    else
     {
       value = default;
       return false;
     }
-    if (fieldInfo.DeclaringType is not null)
-      SetArgumentTypes(fieldInfo.DeclaringType.GetGenericArguments(), typeArguments);
-    value = (TValue?)fieldInfo.GetValue(null);
-    return true;
   }
 
-  public static bool TryGetField<TSource>(string name, MemberAccessibility memberAccessibility, Type? valueType, out object? value)
+  #endregion
+  #region Try set methods
+
+  public static bool TrySetStaticFieldValue(Type sourceType, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, object? value)
+  {
+    Argument.That.NotNull(sourceType);
+    Argument.That.NotNullOrWhitespace(name);
+
+    return TrySetFieldValueCore(sourceType, null, name, memberAccessibility, typeArguments, TypedValue.GetType(value), TypedValue.GetValue(value));
+  }
+
+  public static bool TrySetStaticFieldValue<TValue>(Type sourceType, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, TValue? value)
+  {
+    Argument.That.NotNull(sourceType);
+    Argument.That.NotNullOrWhitespace(name);
+
+    return TrySetFieldValueCore(sourceType, null, name, memberAccessibility, typeArguments, typeof(TValue), value);
+  }
+
+  public static bool TrySetStaticFieldValue<TSource>(string name, MemberAccessibility memberAccessibility, object? value)
   {
     Argument.That.NotNullOrWhitespace(name);
 
-    var fieldInfo = MatchField(typeof(TSource), true, name, memberAccessibility, false, false, null, valueType ?? typeof(object), TypeVariance.Covariant);
-    if (fieldInfo is null)
+    return TrySetFieldValueCore(typeof(TSource), null, name, memberAccessibility, null, TypedValue.GetType(value), TypedValue.GetValue(value));
+  }
+
+  public static bool TrySetStaticFieldValue<TSource, TValue>(string name, MemberAccessibility memberAccessibility, TValue? value)
+  {
+    Argument.That.NotNullOrWhitespace(name);
+
+    return TrySetFieldValueCore(typeof(TSource), null, name, memberAccessibility, null, typeof(TValue), value);
+  }
+
+  #endregion
+  #region Try replace methods
+
+  public static bool TryReplaceStaticFieldValue(Type sourceType, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, object? newValue, out object? oldValue)
+  {
+    Argument.That.NotNull(sourceType);
+    Argument.That.NotNullOrWhitespace(name);
+
+    return TryReplaceFieldValueCore(sourceType, null, name, memberAccessibility, typeArguments, TypedValue.GetType(newValue), TypedValue.GetValue(newValue), out oldValue);
+  }
+
+  public static bool TryReplaceStaticFieldValue<TValue>(Type sourceType, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, TValue? newValue, out TValue? oldValue)
+  {
+    Argument.That.NotNull(sourceType);
+    Argument.That.NotNullOrWhitespace(name);
+
+    if (TryReplaceFieldValueCore(sourceType, null, name, memberAccessibility, typeArguments, typeof(TValue), newValue, out var result))
     {
-      value = default;
-      return false;
+      oldValue = (TValue?)result;
+      return true;
     }
-    value = fieldInfo.GetValue(null);
-    return true;
-  }
-
-  public static bool TryGetField<TSource, TValue>(string name, MemberAccessibility memberAccessibility, out TValue? value)
-  {
-    Argument.That.NotNullOrWhitespace(name);
-
-    var fieldInfo = MatchField(typeof(TSource), true, name, memberAccessibility, false, false, null, typeof(TValue?), TypeVariance.Covariant);
-    if (fieldInfo is null)
-    {
-      value = default;
-      return false;
-    }
-    value = (TValue?)fieldInfo.GetValue(null);
-    return true;
-  }
-
-  public static bool TrySetField(Type type, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, object? value)
-  {
-    Argument.That.NotNull(type);
-    Argument.That.NotNullOrWhitespace(name);
-
-    var fieldInfo = MatchField(type, true, name, memberAccessibility, true, false, typeArguments?.AsReadOnly(), TypedValue.GetType(value), TypeVariance.Contravariant);
-    if (fieldInfo is null)
-      return false;
-    if (fieldInfo.DeclaringType is not null)
-      SetArgumentTypes(fieldInfo.DeclaringType.GetGenericArguments(), typeArguments);
-    fieldInfo.SetValue(null, TypedValue.GetValue(value));
-    return true;
-  }
-
-  public static bool TrySetField<TValue>(Type type, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, TValue? value)
-  {
-    Argument.That.NotNull(type);
-    Argument.That.NotNullOrWhitespace(name);
-
-    var fieldInfo = MatchField(type, true, name, memberAccessibility, true, false, typeArguments?.AsReadOnly(), typeof(TValue?), TypeVariance.Contravariant);
-    if (fieldInfo is null)
-      return false;
-    if (fieldInfo.DeclaringType is not null)
-      SetArgumentTypes(fieldInfo.DeclaringType.GetGenericArguments(), typeArguments);
-    fieldInfo.SetValue(null, value);
-    return true;
-  }
-
-  public static bool TrySetField<TSource>(string name, MemberAccessibility memberAccessibility, object? value)
-  {
-    Argument.That.NotNullOrWhitespace(name);
-
-    var fieldInfo = MatchField(typeof(TSource), true, name, memberAccessibility, true, false, null, TypedValue.GetType(value), TypeVariance.Contravariant);
-    if (fieldInfo is null)
-      return false;
-    fieldInfo.SetValue(null, TypedValue.GetValue(value));
-    return true;
-  }
-
-  public static bool TrySetField<TSource, TValue>(string name, MemberAccessibility memberAccessibility, TValue? value)
-  {
-    Argument.That.NotNullOrWhitespace(name);
-
-    var fieldInfo = MatchField(typeof(TSource), true, name, memberAccessibility, true, false, null, typeof(TValue?), TypeVariance.Contravariant);
-    if (fieldInfo is null)
-      return false;
-    fieldInfo.SetValue(null, value);
-    return true;
-  }
-
-  public static bool TryReplaceField(Type type, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, object? newValue, out object? oldValue)
-  {
-    Argument.That.NotNull(type);
-    Argument.That.NotNullOrWhitespace(name);
-
-    var fieldInfo = MatchField(type, true, name, memberAccessibility, true, false, typeArguments?.AsReadOnly(), TypedValue.GetType(newValue), TypeVariance.Contravariant);
-    if (fieldInfo is null)
+    else
     {
       oldValue = default;
       return false;
     }
-    if (fieldInfo.DeclaringType is not null)
-      SetArgumentTypes(fieldInfo.DeclaringType.GetGenericArguments(), typeArguments);
-    oldValue = fieldInfo.GetValue(null);
-    fieldInfo.SetValue(null, TypedValue.GetValue(newValue));
-    return true;
   }
 
-  public static bool TryReplaceField<TValue>(Type type, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, TValue? newValue, out TValue? oldValue)
+  public static bool TryReplaceStaticFieldValue<TSource>(string name, MemberAccessibility memberAccessibility, object? newValue, out object? oldValue)
   {
-    Argument.That.NotNull(type);
     Argument.That.NotNullOrWhitespace(name);
 
-    var fieldInfo = MatchField(type, true, name, memberAccessibility, true, false, typeArguments?.AsReadOnly(), typeof(TValue?), TypeVariance.Invariant);
-    if (fieldInfo is null)
+    return TryReplaceFieldValueCore(typeof(TSource), null, name, memberAccessibility, null, TypedValue.GetType(newValue), TypedValue.GetValue(newValue), out oldValue);
+  }
+
+  public static bool TryReplaceStaticFieldValue<TSource, TValue>(string name, MemberAccessibility memberAccessibility, TValue? newValue, out TValue? oldValue)
+  {
+    Argument.That.NotNullOrWhitespace(name);
+
+    if (TryReplaceFieldValueCore(typeof(TSource), null, name, memberAccessibility, null, typeof(TValue), newValue, out var result))
+    {
+      oldValue = (TValue?)result;
+      return true;
+    }
+    else
     {
       oldValue = default;
       return false;
     }
-    if (fieldInfo.DeclaringType is not null)
-      SetArgumentTypes(fieldInfo.DeclaringType.GetGenericArguments(), typeArguments);
-    oldValue = (TValue?)fieldInfo.GetValue(null);
-    fieldInfo.SetValue(null, newValue);
-    return true;
   }
 
-  public static bool TryReplaceField<TSource>(string name, MemberAccessibility memberAccessibility, object? newValue, out object? oldValue)
+  #endregion
+  #region Try exchange methods
+
+  public static bool TryExchangeStaticFieldValue(Type sourceType, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, ref object? value)
   {
+    Argument.That.NotNull(sourceType);
     Argument.That.NotNullOrWhitespace(name);
 
-    var fieldInfo = MatchField(typeof(TSource), true, name, memberAccessibility, true, false, null, TypedValue.GetType(newValue), TypeVariance.Contravariant);
-    if (fieldInfo is null)
-    {
-      oldValue = default;
+    if (!TryReplaceFieldValueCore(sourceType, null, name, memberAccessibility, typeArguments, TypedValue.GetType(value), TypedValue.GetValue(value), out var result))
       return false;
-    }
-    oldValue = fieldInfo.GetValue(null);
-    fieldInfo.SetValue(null, TypedValue.GetValue(newValue));
-    return true;
-  }
-
-  public static bool TryReplaceField<TSource, TValue>(string name, MemberAccessibility memberAccessibility, TValue? newValue, out TValue? oldValue)
-  {
-    Argument.That.NotNullOrWhitespace(name);
-
-    var fieldInfo = MatchField(typeof(TSource), true, name, memberAccessibility, true, false, null, typeof(TValue?), TypeVariance.Invariant);
-    if (fieldInfo is null)
-    {
-      oldValue = default;
-      return false;
-    }
-    oldValue = (TValue?)fieldInfo.GetValue(null);
-    fieldInfo.SetValue(null, newValue);
-    return true;
-  }
-
-  public static bool TryExchangeField(Type type, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, ref object? value)
-  {
-    Argument.That.NotNull(type);
-    Argument.That.NotNullOrWhitespace(name);
-
-    var fieldInfo = MatchField(type, true, name, memberAccessibility, true, false, typeArguments?.AsReadOnly(), TypedValue.GetType(value), TypeVariance.Contravariant);
-    if (fieldInfo is null)
-      return false;
-    if (fieldInfo.DeclaringType is not null)
-      SetArgumentTypes(fieldInfo.DeclaringType.GetGenericArguments(), typeArguments);
-    var result = fieldInfo.GetValue(null);
-    fieldInfo.SetValue(null, TypedValue.GetValue(value));
     value = result;
     return true;
   }
 
-  public static bool TryExchangeField<TValue>(Type type, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, ref TValue? value)
+  public static bool TryExchangeStaticFieldValue<TValue>(Type sourceType, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, ref TValue? value)
   {
-    Argument.That.NotNull(type);
+    Argument.That.NotNull(sourceType);
     Argument.That.NotNullOrWhitespace(name);
 
-    var fieldInfo = MatchField(type, true, name, memberAccessibility, true, false, typeArguments?.AsReadOnly(), typeof(TValue?), TypeVariance.Invariant);
-    if (fieldInfo is null)
+    if (!TryReplaceFieldValueCore(sourceType, null, name, memberAccessibility, typeArguments, typeof(TValue), value, out var result))
       return false;
-    if (fieldInfo.DeclaringType is not null)
-      SetArgumentTypes(fieldInfo.DeclaringType.GetGenericArguments(), typeArguments);
-    var result = (TValue?)fieldInfo.GetValue(null);
-    fieldInfo.SetValue(null, value);
+    value = (TValue?)result;
+    return true;
+  }
+
+  public static bool TryExchangeStaticFieldValue<TSource>(string name, MemberAccessibility memberAccessibility, ref object? value)
+  {
+    Argument.That.NotNullOrWhitespace(name);
+
+    if (!TryReplaceFieldValueCore(typeof(TSource), null, name, memberAccessibility, null, TypedValue.GetType(value), TypedValue.GetValue(value), out var result))
+      return false;
     value = result;
     return true;
   }
 
-  public static bool TryExchangeField<TSource>(string name, MemberAccessibility memberAccessibility, ref object? value)
+  public static bool TryExchangeStaticFieldValue<TSource, TValue>(string name, MemberAccessibility memberAccessibility, ref TValue? value)
   {
     Argument.That.NotNullOrWhitespace(name);
 
-    var fieldInfo = MatchField(typeof(TSource), true, name, memberAccessibility, true, false, null, TypedValue.GetType(value), TypeVariance.Contravariant);
-    if (fieldInfo is null)
+    if (!TryReplaceFieldValueCore(typeof(TSource), null, name, memberAccessibility, null, typeof(TValue), value, out var result))
       return false;
-    var result = fieldInfo.GetValue(null);
-    fieldInfo.SetValue(null, TypedValue.GetValue(value));
-    value = result;
-    return true;
-  }
-
-  public static bool TryExchangeField<TSource, TValue>(string name, MemberAccessibility memberAccessibility, ref TValue? value)
-  {
-    Argument.That.NotNullOrWhitespace(name);
-
-    var fieldInfo = MatchField(typeof(TSource), true, name, memberAccessibility, true, false, null, typeof(TValue?), TypeVariance.Invariant);
-    if (fieldInfo is null)
-      return false;
-    var result = (TValue?)fieldInfo.GetValue(null);
-    fieldInfo.SetValue(null, value);
-    value = result;
+    value = (TValue?)result;
     return true;
   }
 
   #endregion
-  #region Direct methods
+  #region Direct info methods
 
-  public static object? GetField(Type type, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, Type? valueType)
+  public static FieldInfo GetStaticField(Type sourceType, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, Type? valueType)
   {
-    Argument.That.NotNull(type);
+    Argument.That.NotNull(sourceType);
     Argument.That.NotNullOrWhitespace(name);
 
-    var fieldInfo = MatchField(type, true, name, memberAccessibility, false, true, typeArguments?.AsReadOnly(), valueType ?? typeof(object), TypeVariance.Covariant)!;
-    if (fieldInfo.DeclaringType is not null)
-      SetArgumentTypes(fieldInfo.DeclaringType.GetGenericArguments(), typeArguments);
-    return fieldInfo.GetValue(null);
+    return GetFieldCore(sourceType, null, name, memberAccessibility, typeArguments, valueType);
   }
 
-  public static TValue? GetField<TValue>(Type type, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments)
+  public static FieldInfo GetStaticField<TValue>(Type sourceType, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments)
   {
-    Argument.That.NotNull(type);
+    Argument.That.NotNull(sourceType);
     Argument.That.NotNullOrWhitespace(name);
 
-    var fieldInfo = MatchField(type, true, name, memberAccessibility, false, true, typeArguments?.AsReadOnly(), typeof(TValue?), TypeVariance.Covariant)!;
-    if (fieldInfo.DeclaringType is not null)
-      SetArgumentTypes(fieldInfo.DeclaringType.GetGenericArguments(), typeArguments);
-    return (TValue?)fieldInfo.GetValue(null);
+    return GetFieldCore(sourceType, null, name, memberAccessibility, typeArguments, typeof(TValue));
   }
 
-  public static object? GetField<TSource>(string name, MemberAccessibility memberAccessibility, Type? valueType)
+  public static FieldInfo GetStaticField<TSource>(string name, MemberAccessibility memberAccessibility, Type? valueType)
   {
     Argument.That.NotNullOrWhitespace(name);
 
-    var fieldInfo = MatchField(typeof(TSource), true, name, memberAccessibility, false, true, null, valueType, TypeVariance.Covariant)!;
-    return fieldInfo.GetValue(null);
+    return GetFieldCore(typeof(TSource), null, name, memberAccessibility, null, valueType);
   }
 
-  public static TValue? GetField<TSource, TValue>(string name, MemberAccessibility memberAccessibility)
+  public static FieldInfo GetStaticField<TSource, TValue>(string name, MemberAccessibility memberAccessibility)
   {
     Argument.That.NotNullOrWhitespace(name);
 
-    var fieldInfo = MatchField(typeof(TSource), true, name, memberAccessibility, false, true, null, typeof(TValue?), TypeVariance.Covariant)!;
-    return (TValue?)fieldInfo.GetValue(null);
+    return GetFieldCore(typeof(TSource), null, name, memberAccessibility, null, typeof(TValue));
   }
 
-  public static void SetField(Type type, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, object? value)
+  #endregion
+  #region Direct get methods
+
+  public static object? GetStaticFieldValue(Type sourceType, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, Type? valueType)
   {
-    Argument.That.NotNull(type);
+    Argument.That.NotNull(sourceType);
     Argument.That.NotNullOrWhitespace(name);
 
-    var fieldInfo = MatchField(type, true, name, memberAccessibility, true, true, typeArguments?.AsReadOnly(), TypedValue.GetType(value), TypeVariance.Contravariant)!;
-    if (fieldInfo.DeclaringType is not null)
-      SetArgumentTypes(fieldInfo.DeclaringType.GetGenericArguments(), typeArguments);
-    fieldInfo.SetValue(null, TypedValue.GetValue(value));
+    return GetFieldValueCore(sourceType, null, name, memberAccessibility, typeArguments, valueType);
   }
 
-  public static void SetField<TValue>(Type type, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, TValue? value)
+  public static TValue? GetStaticFieldValue<TValue>(Type sourceType, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments)
   {
-    Argument.That.NotNull(type);
+    Argument.That.NotNull(sourceType);
     Argument.That.NotNullOrWhitespace(name);
 
-    var fieldInfo = MatchField(type, true, name, memberAccessibility, true, true, typeArguments?.AsReadOnly(), typeof(TValue?), TypeVariance.Contravariant)!;
-    if (fieldInfo.DeclaringType is not null)
-      SetArgumentTypes(fieldInfo.DeclaringType.GetGenericArguments(), typeArguments);
-    fieldInfo.SetValue(null, value);
+    return (TValue?)GetFieldValueCore(sourceType, null, name, memberAccessibility, typeArguments, typeof(TValue));
   }
 
-  public static void SetField<TSource>(string name, MemberAccessibility memberAccessibility, object? value)
+  public static object? GetStaticFieldValue<TSource>(string name, MemberAccessibility memberAccessibility, Type? valueType)
   {
     Argument.That.NotNullOrWhitespace(name);
 
-    var fieldInfo = MatchField(typeof(TSource), true, name, memberAccessibility, true, true, null, TypedValue.GetType(value), TypeVariance.Contravariant)!;
-    fieldInfo.SetValue(null, TypedValue.GetValue(value));
+    return GetFieldValueCore(typeof(TSource), null, name, memberAccessibility, null, valueType);
   }
 
-  public static void SetField<TSource, TValue>(string name, MemberAccessibility memberAccessibility, TValue? value)
+  public static TValue? GetStaticFieldValue<TSource, TValue>(string name, MemberAccessibility memberAccessibility)
   {
     Argument.That.NotNullOrWhitespace(name);
 
-    var fieldInfo = MatchField(typeof(TSource), true, name, memberAccessibility, true, true, null, typeof(TValue?), TypeVariance.Contravariant)!;
-    fieldInfo.SetValue(null, value);
+    return (TValue?)GetFieldValueCore(typeof(TSource), null, name, memberAccessibility, null, typeof(TValue));
   }
 
-  public static object? ReplaceField(Type type, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, object? value)
+  #endregion
+  #region Direct set methods
+
+  public static void SetStaticFieldValue(Type sourceType, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, object? value)
   {
-    Argument.That.NotNull(type);
+    Argument.That.NotNull(sourceType);
     Argument.That.NotNullOrWhitespace(name);
 
-    var fieldInfo = MatchField(type, true, name, memberAccessibility, true, true, typeArguments?.AsReadOnly(), TypedValue.GetType(value), TypeVariance.Contravariant)!;
-    if (fieldInfo.DeclaringType is not null)
-      SetArgumentTypes(fieldInfo.DeclaringType.GetGenericArguments(), typeArguments);
-    var result = fieldInfo.GetValue(null);
-    fieldInfo.SetValue(null, TypedValue.GetValue(value));
-    return result;
+    SetFieldValueCore(sourceType, null, name, memberAccessibility, typeArguments, TypedValue.GetType(value), TypedValue.GetValue(value));
   }
 
-  public static TValue? ReplaceField<TValue>(Type type, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, TValue? value)
+  public static void SetStaticFieldValue<TValue>(Type sourceType, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, TValue? value)
   {
-    Argument.That.NotNull(type);
+    Argument.That.NotNull(sourceType);
     Argument.That.NotNullOrWhitespace(name);
 
-    var fieldInfo = MatchField(type, true, name, memberAccessibility, true, true, typeArguments?.AsReadOnly(), typeof(TValue?), TypeVariance.Invariant)!;
-    if (fieldInfo.DeclaringType is not null)
-      SetArgumentTypes(fieldInfo.DeclaringType.GetGenericArguments(), typeArguments);
-    var result = (TValue?)fieldInfo.GetValue(null);
-    fieldInfo.SetValue(null, value);
-    return result;
+    SetFieldValueCore(sourceType, null, name, memberAccessibility, typeArguments, typeof(TValue), value);
   }
 
-  public static object? ReplaceField<TSource>(string name, MemberAccessibility memberAccessibility, object? value)
+  public static void SetStaticFieldValue<TSource>(string name, MemberAccessibility memberAccessibility, object? value)
   {
     Argument.That.NotNullOrWhitespace(name);
 
-    var fieldInfo = MatchField(typeof(TSource), true, name, memberAccessibility, true, true, null, TypedValue.GetType(value), TypeVariance.Contravariant)!;
-    var result = fieldInfo.GetValue(null);
-    fieldInfo.SetValue(null, TypedValue.GetValue(value));
-    return result;
+    SetFieldValueCore(typeof(TSource), null, name, memberAccessibility, null, TypedValue.GetType(value), TypedValue.GetValue(value));
   }
 
-  public static TValue? ReplaceField<TSource, TValue>(string name, MemberAccessibility memberAccessibility, TValue? value)
+  public static void SetStaticFieldValue<TSource, TValue>(string name, MemberAccessibility memberAccessibility, TValue? value)
   {
     Argument.That.NotNullOrWhitespace(name);
 
-    var fieldInfo = MatchField(typeof(TSource), true, name, memberAccessibility, true, true, null, typeof(TValue?), TypeVariance.Invariant)!;
-    var result = (TValue?)fieldInfo.GetValue(null);
-    fieldInfo.SetValue(null, value);
-    return result;
+    SetFieldValueCore(typeof(TSource), null, name, memberAccessibility, null, typeof(TValue), value);
   }
 
-  public static void ExchangeField(Type type, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, ref object? value)
+  #endregion
+  #region Direct replace methods
+
+  public static object? ReplaceStaticFieldValue(Type sourceType, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, object? value)
   {
-    Argument.That.NotNull(type);
+    Argument.That.NotNull(sourceType);
     Argument.That.NotNullOrWhitespace(name);
 
-    var fieldInfo = MatchField(type, true, name, memberAccessibility, true, true, typeArguments?.AsReadOnly(), TypedValue.GetType(value), TypeVariance.Contravariant)!;
-    if (fieldInfo.DeclaringType is not null)
-      SetArgumentTypes(fieldInfo.DeclaringType.GetGenericArguments(), typeArguments);
-    var result = fieldInfo.GetValue(null);
-    fieldInfo.SetValue(null, TypedValue.GetValue(value));
-    value = result;
+    return ReplaceFieldValueCore(sourceType, null, name, memberAccessibility, typeArguments, TypedValue.GetType(value), TypedValue.GetValue(value));
   }
 
-  public static void ExchangeField<TValue>(Type type, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, ref TValue? value)
+  public static TValue? ReplaceStaticFieldValue<TValue>(Type sourceType, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, TValue? value)
   {
-    Argument.That.NotNull(type);
+    Argument.That.NotNull(sourceType);
     Argument.That.NotNullOrWhitespace(name);
 
-    var fieldInfo = MatchField(type, true, name, memberAccessibility, true, true, typeArguments?.AsReadOnly(), typeof(TValue?), TypeVariance.Invariant)!;
-    if (fieldInfo.DeclaringType is not null)
-      SetArgumentTypes(fieldInfo.DeclaringType.GetGenericArguments(), typeArguments);
-    var result = (TValue?)fieldInfo.GetValue(null);
-    fieldInfo.SetValue(null, value);
-    value = result;
+    return (TValue?)ReplaceFieldValueCore(sourceType, null, name, memberAccessibility, typeArguments, typeof(TValue), value);
   }
 
-  public static void ExchangeField<TSource>(string name, MemberAccessibility memberAccessibility, ref object? value)
+  public static object? ReplaceStaticFieldValue<TSource>(string name, MemberAccessibility memberAccessibility, object? value)
   {
     Argument.That.NotNullOrWhitespace(name);
 
-    var fieldInfo = MatchField(typeof(TSource), true, name, memberAccessibility, true, true, null, TypedValue.GetType(value), TypeVariance.Contravariant)!;
-    var result = fieldInfo.GetValue(null);
-    fieldInfo.SetValue(null, TypedValue.GetValue(value));
-    value = result;
+    return ReplaceFieldValueCore(typeof(TSource), null, name, memberAccessibility, null, TypedValue.GetType(value), TypedValue.GetValue(value));
   }
 
-  public static void ExchangeField<TSource, TValue>(string name, MemberAccessibility memberAccessibility, ref TValue? value)
+  public static TValue? ReplaceStaticFieldValue<TSource, TValue>(string name, MemberAccessibility memberAccessibility, TValue? value)
   {
     Argument.That.NotNullOrWhitespace(name);
 
-    var fieldInfo = MatchField(typeof(TSource), true, name, memberAccessibility, true, true, null, typeof(TValue?), TypeVariance.Invariant)!;
-    var result = (TValue?)fieldInfo.GetValue(null);
-    fieldInfo.SetValue(null, value);
-    value = result;
+    return (TValue?)ReplaceFieldValueCore(typeof(TSource), null, name, memberAccessibility, null, typeof(TValue), value);
+  }
+
+  #endregion
+  #region Direct exchange methods
+
+  public static void ExchangeStaticFieldValue(Type sourceType, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, ref object? value)
+  {
+    Argument.That.NotNull(sourceType);
+    Argument.That.NotNullOrWhitespace(name);
+
+    value = ReplaceFieldValueCore(sourceType, null, name, memberAccessibility, typeArguments, TypedValue.GetType(value), TypedValue.GetValue(value));
+  }
+
+  public static void ExchangeStaticFieldValue<TValue>(Type sourceType, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, ref TValue? value)
+  {
+    Argument.That.NotNull(sourceType);
+    Argument.That.NotNullOrWhitespace(name);
+
+    value = (TValue?)ReplaceFieldValueCore(sourceType, null, name, memberAccessibility, typeArguments, typeof(TValue), value);
+  }
+
+  public static void ExchangeStaticFieldValue<TSource>(string name, MemberAccessibility memberAccessibility, ref object? value)
+  {
+    Argument.That.NotNullOrWhitespace(name);
+
+    value = ReplaceFieldValueCore(typeof(TSource), null, name, memberAccessibility, null, TypedValue.GetType(value), TypedValue.GetValue(value));
+  }
+
+  public static void ExchangeStaticFieldValue<TSource, TValue>(string name, MemberAccessibility memberAccessibility, ref TValue? value)
+  {
+    Argument.That.NotNullOrWhitespace(name);
+
+    value = (TValue?)ReplaceFieldValueCore(typeof(TSource), null, name, memberAccessibility, null, typeof(TValue), value);
   }
 
   #endregion
@@ -1135,72 +1246,68 @@ public static class Reflector
   private static IEnumerable<PropertyInfo> GetProperties(Type sourceType, bool staticMember, string name, MemberAccessibility memberAccessibility, bool shouldRead, bool shouldWrite)
   {
     var bindingFlags = GetBindingFlags(staticMember, memberAccessibility);
-    var nameComparison = memberAccessibility.IsFlagsSet(MemberAccessibility.IgnoreCase) ? StringComparison.InvariantCultureIgnoreCase : StringComparison.InvariantCulture;
+    var nameComparison = memberAccessibility.IsFlagsSet(MemberAccessibility.IgnoreCase) ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
     var predicate = (PropertyInfo propertyInfo) =>
       string.Equals(propertyInfo.Name, name, nameComparison) &&
-        string.Equals(propertyInfo.Name, name, nameComparison) &&
-        ((shouldRead && propertyInfo.GetMethod is not null &&
-          (propertyInfo.GetMethod.Attributes & MethodAttributes.MemberAccessMask) switch
-          {
-            MethodAttributes.Private => memberAccessibility.IsFlagsSet(MemberAccessibility.Private),
-            MethodAttributes.Public => memberAccessibility.IsFlagsSet(MemberAccessibility.Public),
-            MethodAttributes.Family => memberAccessibility.IsFlagsSet(MemberAccessibility.Family),
-            MethodAttributes.Assembly => memberAccessibility.IsFlagsSet(MemberAccessibility.Assembly),
-            MethodAttributes.FamORAssem => memberAccessibility.IsFlagsSet(MemberAccessibility.FamilyOrAssembly),
-            MethodAttributes.FamANDAssem => memberAccessibility.IsFlagsSet(MemberAccessibility.FamilyAndAssembly),
-            _ => false
-          })
-          || (shouldWrite && propertyInfo.SetMethod is not null &&
-          (propertyInfo.SetMethod.Attributes & MethodAttributes.MemberAccessMask) switch
-          {
-            MethodAttributes.Private => memberAccessibility.IsFlagsSet(MemberAccessibility.Private),
-            MethodAttributes.Public => memberAccessibility.IsFlagsSet(MemberAccessibility.Public),
-            MethodAttributes.Family => memberAccessibility.IsFlagsSet(MemberAccessibility.Family),
-            MethodAttributes.Assembly => memberAccessibility.IsFlagsSet(MemberAccessibility.Assembly),
-            MethodAttributes.FamORAssem => memberAccessibility.IsFlagsSet(MemberAccessibility.FamilyOrAssembly),
-            MethodAttributes.FamANDAssem => memberAccessibility.IsFlagsSet(MemberAccessibility.FamilyAndAssembly),
-            _ => false
-          }));
+      ((shouldRead && propertyInfo.GetMethod is not null &&
+        (propertyInfo.GetMethod.Attributes & MethodAttributes.MemberAccessMask) switch
+        {
+          MethodAttributes.Private => memberAccessibility.IsFlagsSet(MemberAccessibility.Private),
+          MethodAttributes.Public => memberAccessibility.IsFlagsSet(MemberAccessibility.Public),
+          MethodAttributes.Family => memberAccessibility.IsFlagsSet(MemberAccessibility.Family),
+          MethodAttributes.Assembly => memberAccessibility.IsFlagsSet(MemberAccessibility.Assembly),
+          MethodAttributes.FamORAssem => memberAccessibility.IsFlagsSet(MemberAccessibility.FamilyOrAssembly),
+          MethodAttributes.FamANDAssem => memberAccessibility.IsFlagsSet(MemberAccessibility.FamilyAndAssembly),
+          _ => false
+        })
+        || (shouldWrite && propertyInfo.SetMethod is not null &&
+        (propertyInfo.SetMethod.Attributes & MethodAttributes.MemberAccessMask) switch
+        {
+          MethodAttributes.Private => memberAccessibility.IsFlagsSet(MemberAccessibility.Private),
+          MethodAttributes.Public => memberAccessibility.IsFlagsSet(MemberAccessibility.Public),
+          MethodAttributes.Family => memberAccessibility.IsFlagsSet(MemberAccessibility.Family),
+          MethodAttributes.Assembly => memberAccessibility.IsFlagsSet(MemberAccessibility.Assembly),
+          MethodAttributes.FamORAssem => memberAccessibility.IsFlagsSet(MemberAccessibility.FamilyOrAssembly),
+          MethodAttributes.FamANDAssem => memberAccessibility.IsFlagsSet(MemberAccessibility.FamilyAndAssembly),
+          _ => false
+        }));
     return sourceType.GetProperties(bindingFlags).Where(predicate);
   }
 
-  private static bool MatchProperty(PropertyInfo propertyInfo,
-    IReadOnlyList<Type?>? sourceTypeArguments, IList<Type?>? resultTypeArguments, IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes,
-    Type? valueType, TypeVariance variance, out SignatureWeight signatureWeight)
+  private static bool MatchProperty(PropertyInfo propertyInfo, IReadOnlyList<Type?>? sourceTypeArguments, IList<Type?>? resultTypeArguments,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes, Type? valueType, TypeVariance typeVariance,
+    out SignatureWeight signatureWeight)
   {
-    signatureWeight = default;
-    var currentWeight = new SignatureWeight();
     var genericTypeArguments = propertyInfo.DeclaringType?.GetGenericArguments();
-    if (!MatchArguments(genericTypeArguments, sourceTypeArguments, resultTypeArguments, null, null, null))
-      return false;
-    var propertyParameters = propertyInfo.GetIndexParameters();
-    if (propertyParameters.Length < (positionalParameterTypes?.Count ?? 0))
-        return false;
-    if (!MatchParameters(propertyParameters, sourceTypeArguments, resultTypeArguments, null, null, positionalParameterTypes, namedParameterTypes, ref currentWeight))
-        return false;
-    var propertyType = propertyInfo.PropertyType;
-    if (valueType is null)
+    if (MatchArguments(genericTypeArguments, sourceTypeArguments, resultTypeArguments, null, null, null))
     {
-      if (!propertyType.IsNullAssignable())
-        return false;
+      var propertyParameters = propertyInfo.GetIndexParameters();
+      if (propertyParameters.Length >= (positionalParameterTypes?.Count ?? 0))
+      {
+        var currentWeight = new SignatureWeight();
+        if (MatchParameters(propertyParameters, sourceTypeArguments, resultTypeArguments, null, null, positionalParameterTypes, namedParameterTypes, ref currentWeight))
+        {
+          var propertyType = propertyInfo.PropertyType;
+          if (valueType is null
+            ? (typeVariance == TypeVariance.Covariant || propertyType.IsNullAssignable())
+            : MatchType(valueType, typeVariance, propertyType, sourceTypeArguments, resultTypeArguments, null, null))
+          {
+            signatureWeight = currentWeight;
+            return true;
+          }
+        }
+      }
     }
-    else
-    {
-      if (!MatchType(valueType, variance, propertyType, sourceTypeArguments, resultTypeArguments, null, null))
-        return false;
-    }
-    signatureWeight = currentWeight;
-    return true;
+    signatureWeight = default;
+    return false;
   }
 
-  private static PropertyInfo? MatchProperty(Type sourceType,
-    bool staticMember, string name, MemberAccessibility memberAccessibility, bool shouldRead, bool shouldWrite, bool required,
-    IReadOnlyList<Type?>? sourceTypeArguments, IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, Type? valueType, TypeVariance variance)
+  private static PropertyInfo? MatchProperty(Type sourceType, bool staticMember, string name, MemberAccessibility memberAccessibility, bool shouldRead, bool shouldWrite,
+    IReadOnlyList<Type?>? sourceTypeArguments, IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes,
+    Type? valueType, TypeVariance variance)
   {
-    var positionalParameterTypes = positionalParameterValues?.Select(parameterValue => TypedValue.GetType(parameterValue)).ToList();
-    var namedParameterTypes = namedParameterValues?.ToDictionary(parameterItem => parameterItem.Key, parameterItem => TypedValue.GetType(parameterItem.Value),
-      memberAccessibility.IsFlagsSet(MemberAccessibility.IgnoreCase) ? StringComparer.InvariantCultureIgnoreCase : StringComparer.InvariantCulture);
-    var propertyResult = GetProperties(sourceType, staticMember, name, memberAccessibility, shouldRead, shouldWrite)
+    var topHierarchy = memberAccessibility.IsFlagsSet(MemberAccessibility.TopHierarchy);
+    var resultProperties = GetProperties(sourceType, staticMember, name, memberAccessibility, shouldRead, shouldWrite)
       .Select(propertyInfo =>
       {
         var inheritanceLevel = sourceType.GetInheritanceLevel(propertyInfo.DeclaringType!);
@@ -1211,29 +1318,154 @@ public static class Reflector
       .Where(tuple => tuple.propertyInfo is not null)
       .OrderByDescending(tuple => tuple.propertyWeight, SignatureWeightComparer.Value)
       .ThenBy(tuple => tuple.inheritanceLevel)
-      .TakeWhile((signatureWeight: default(SignatureWeight?), inheritanceLevel: -1), (state, item) => (item.propertyWeight, item.inheritanceLevel),
-        (state, item) => state.signatureWeight is null || CompareSignatureWeight(item.propertyWeight, state.signatureWeight.Value) == 0 && state.inheritanceLevel == item.inheritanceLevel)
-      .FirstOrDefault();
-    var propertyInfo = propertyResult.propertyInfo;
+      .TakeWhile((signatureWeight: default(SignatureWeight?), inheritanceLevel: -1),
+        (state, item) => (item.propertyWeight, item.inheritanceLevel),
+        (state, item) => state.signatureWeight is null || CompareSignatureWeight(item.propertyWeight, state.signatureWeight.Value) == 0 && (!topHierarchy || state.inheritanceLevel == item.inheritanceLevel))
+      .Take(2);
+    var propertyInfo = default(PropertyInfo);
+    var typeArguments = default(Type?[]);
+    var inheritanceLevel = default(int);
+    foreach (var resultProperty in resultProperties)
+    {
+      if (propertyInfo is null)
+      {
+        propertyInfo = resultProperty.propertyInfo;
+        typeArguments = resultProperty.typeArguments;
+        inheritanceLevel = resultProperty.inheritanceLevel;
+        continue;
+      }
+      if (!topHierarchy || inheritanceLevel == resultProperty.inheritanceLevel)
+        Operation.That.Failed(FormatMessage(ReflectionMessage.PropertyAmbiguousMatch));
+      break;
+    }
     if (propertyInfo is not null)
     {
-      if (sourceType.IsGenericType && !sourceType.IsConstructedGenericType && propertyResult.typeArguments is not null)
+      if (sourceType.IsGenericType && !sourceType.IsConstructedGenericType && typeArguments is not null)
       {
-        sourceType = sourceType.MakeGenericType(propertyResult.typeArguments);
-        propertyInfo = MatchProperty(sourceType, staticMember, name, memberAccessibility, shouldRead, shouldWrite, required, null, positionalParameterValues, namedParameterValues, valueType, variance);
+        sourceType = sourceType.MakeGenericType(typeArguments);
+        propertyInfo = MatchProperty(sourceType, staticMember, name, memberAccessibility, shouldRead, shouldWrite, sourceTypeArguments, positionalParameterTypes, namedParameterTypes, valueType, variance);
       }
     }
-    if (required && propertyInfo is null)
-      throw new InvalidOperationException(FormatMessage(ReflectionMessage.PropertyNotFound));
     return propertyInfo;
+  }
+
+  private static bool TryGetPropertyCore(Type sourceType, object? source, string name, MemberAccessibility memberAccessibility,
+    IList<Type?>? typeArguments, IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes, Type? valueType,
+    [NotNullWhen(true)] out PropertyInfo? result)
+  {
+    var propertyInfo = MatchProperty(sourceType, source is null, name, memberAccessibility, false, false,
+      typeArguments?.AsReadOnly(), positionalParameterTypes, namedParameterTypes, valueType, TypeVariance.Covariant);
+    if (propertyInfo is null)
+    {
+      result = null;
+      return false;
+    }
+    propertyInfo.ReflectedType?.GetGenericArguments().SetArgumentTypes(typeArguments);
+    result = propertyInfo;
+    return true;
+  }
+
+  private static PropertyInfo GetPropertyCore(Type sourceType, object? source, string name, MemberAccessibility memberAccessibility,
+    IList<Type?>? typeArguments, IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes, Type? valueType)
+  {
+    var propertyInfo = MatchProperty(sourceType, source is null, name, memberAccessibility, false, false,
+      typeArguments?.AsReadOnly(), positionalParameterTypes, namedParameterTypes, valueType, TypeVariance.Covariant);
+    Operation.That.IsValid(propertyInfo is not null, FormatMessage(ReflectionMessage.PropertyNotFound));
+    propertyInfo.ReflectedType?.GetGenericArguments().SetArgumentTypes(typeArguments);
+    return propertyInfo;
+  }
+
+  private static bool TryGetPropertyValueCore(Type sourceType, object? source, string name, MemberAccessibility memberAccessibility,
+    IList<Type?>? typeArguments, IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, Type? valueType, out object? value)
+  {
+    var propertyInfo = MatchProperty(sourceType, source is null, name, memberAccessibility, true, false, typeArguments?.AsReadOnly(),
+      positionalParameterValues?.GetTypesOfValues(), namedParameterValues?.GetTypesOfValues(memberAccessibility.IsFlagsSet(MemberAccessibility.IgnoreCase)), valueType, TypeVariance.Covariant);
+    if (propertyInfo is null)
+    {
+      value = default;
+      return false;
+    }
+    var indices = GetParameterValues(propertyInfo.GetIndexParameters(), positionalParameterValues, namedParameterValues);
+    var result = propertyInfo.GetValue(source, indices);
+    propertyInfo.ReflectedType?.GetGenericArguments().SetArgumentTypes(typeArguments);
+    value = result;
+    return true;
+  }
+
+  private static bool TrySetPropertyValueCore(Type sourceType, object? source, string name, MemberAccessibility memberAccessibility,
+    IList<Type?>? typeArguments, IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, Type? valueType, object? value)
+  {
+    var propertyInfo = MatchProperty(sourceType, source is null, name, memberAccessibility, false, true, typeArguments?.AsReadOnly(),
+      positionalParameterValues?.GetTypesOfValues(), namedParameterValues?.GetTypesOfValues(memberAccessibility.IsFlagsSet(MemberAccessibility.IgnoreCase)), TypedValue.GetType(value), TypeVariance.Contravariant);
+    if (propertyInfo is null)
+      return false;
+    var indices = GetParameterValues(propertyInfo.GetIndexParameters(), positionalParameterValues, namedParameterValues);
+    propertyInfo.SetValue(source, value, indices);
+    propertyInfo.ReflectedType?.GetGenericArguments().SetArgumentTypes(typeArguments);
+    return true;
+  }
+
+  private static bool TryReplacePropertyValueCore(Type sourceType, object? source, string name, MemberAccessibility memberAccessibility,
+    IList<Type?>? typeArguments, IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, Type? valueType, object? newValue, out object? oldValue)
+  {
+    var propertyInfo = MatchProperty(sourceType, source is null, name, memberAccessibility, true, true, typeArguments?.AsReadOnly(),
+      positionalParameterValues?.GetTypesOfValues(), namedParameterValues?.GetTypesOfValues(memberAccessibility.IsFlagsSet(MemberAccessibility.IgnoreCase)), valueType, TypeVariance.Invariant);
+    if (propertyInfo is null)
+    {
+      oldValue = default;
+      return false;
+    }
+    var indices = GetParameterValues(propertyInfo.GetIndexParameters(), positionalParameterValues, namedParameterValues);
+    var result = propertyInfo.GetValue(source, indices);
+    propertyInfo.SetValue(source, newValue, indices);
+    propertyInfo.ReflectedType?.GetGenericArguments().SetArgumentTypes(typeArguments);
+    oldValue = result;
+    return true;
+  }
+
+  private static object? GetPropertyValueCore(Type sourceType, object? source, string name, MemberAccessibility memberAccessibility,
+    IList<Type?>? typeArguments, IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, Type? valueType)
+  {
+    var propertyInfo = MatchProperty(sourceType, source is null, name, memberAccessibility, true, false, typeArguments?.AsReadOnly(),
+      positionalParameterValues?.GetTypesOfValues(), namedParameterValues?.GetTypesOfValues(memberAccessibility.IsFlagsSet(MemberAccessibility.IgnoreCase)), valueType, TypeVariance.Covariant);
+    Operation.That.IsValid(propertyInfo is not null, FormatMessage(ReflectionMessage.PropertyNotFound));
+    var indices = GetParameterValues(propertyInfo.GetIndexParameters(), positionalParameterValues, namedParameterValues);
+    var result = propertyInfo.GetValue(source, indices);
+    propertyInfo.ReflectedType?.GetGenericArguments().SetArgumentTypes(typeArguments);
+    return result;
+  }
+
+  private static void SetPropertyValueCore(Type sourceType, object? source, string name, MemberAccessibility memberAccessibility,
+    IList<Type?>? typeArguments, IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, Type? valueType, object? value)
+  {
+    var propertyInfo = MatchProperty(sourceType, source is null, name, memberAccessibility, false, true, typeArguments?.AsReadOnly(),
+      positionalParameterValues?.GetTypesOfValues(), namedParameterValues?.GetTypesOfValues(memberAccessibility.IsFlagsSet(MemberAccessibility.IgnoreCase)), valueType, TypeVariance.Contravariant);
+    Operation.That.IsValid(propertyInfo is not null, FormatMessage(ReflectionMessage.PropertyNotFound));
+    var indices = GetParameterValues(propertyInfo.GetIndexParameters(), positionalParameterValues, namedParameterValues);
+    propertyInfo.SetValue(source, value, indices);
+    propertyInfo.ReflectedType?.GetGenericArguments().SetArgumentTypes(typeArguments);
+  }
+
+  private static object? ReplacePropertyValueCore(Type sourceType, object? source, string name, MemberAccessibility memberAccessibility,
+    IList<Type?>? typeArguments, IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, Type? valueType, object? value)
+  {
+    var propertyInfo = MatchProperty(sourceType, source is null, name, memberAccessibility, true, true, typeArguments?.AsReadOnly(),
+      positionalParameterValues?.GetTypesOfValues(), namedParameterValues?.GetTypesOfValues(memberAccessibility.IsFlagsSet(MemberAccessibility.IgnoreCase)), valueType, TypeVariance.Invariant);
+    Operation.That.IsValid(propertyInfo is not null, FormatMessage(ReflectionMessage.PropertyNotFound));
+    var indices = GetParameterValues(propertyInfo.GetIndexParameters(), positionalParameterValues, namedParameterValues);
+    var result = propertyInfo.GetValue(source, indices);
+    propertyInfo.SetValue(source, value, indices);
+    propertyInfo.ReflectedType?.GetGenericArguments().SetArgumentTypes(typeArguments);
+    return result;
   }
 
   #endregion
   #region Instance property public methods
   #region Without parameters
-  #region Try methods
+  #region Try info methods
 
-  public static bool TryGetProperty(object source, string name, MemberAccessibility memberAccessibility, Type? valueType, out object? value)
+  public static bool TryGetInstanceProperty(object source, string name, MemberAccessibility memberAccessibility, Type? valueType,
+    [NotNullWhen(true)] out PropertyInfo? propertyInfo)
   {
     Argument.That.NotNull(source);
     Argument.That.NotNullOrWhitespace(name);
@@ -1241,138 +1473,202 @@ public static class Reflector
     Argument.That.NotNull(sourceObject);
     var sourceType = TypedValue.GetType(source)!;
 
-    var propertyInfo = MatchProperty(sourceType, false, name, memberAccessibility, true, false, false, null, null, null, valueType ?? typeof(object), TypeVariance.Covariant);
-    if (propertyInfo is null)
+    return TryGetPropertyCore(sourceType, sourceObject, name, memberAccessibility, null, null, null, valueType, out propertyInfo);
+  }
+
+  public static bool TryGetInstanceProperty<TValue>(object source, string name, MemberAccessibility memberAccessibility,
+    [NotNullWhen(true)] out PropertyInfo? propertyInfo)
+  {
+    Argument.That.NotNull(source);
+    Argument.That.NotNullOrWhitespace(name);
+    var sourceObject = TypedValue.GetValue(source);
+    Argument.That.NotNull(sourceObject);
+    var sourceType = TypedValue.GetType(source)!;
+
+    return TryGetPropertyCore(sourceType, sourceObject, name, memberAccessibility, null, null, null, typeof(TValue), out propertyInfo);
+  }
+
+  public static bool TryGetInstanceProperty<TSource>(TSource source, string name, MemberAccessibility memberAccessibility, Type? valueType,
+    [NotNullWhen(true)] out PropertyInfo? propertyInfo)
+  {
+    Argument.That.NotNull(source);
+    Argument.That.NotNullOrWhitespace(name);
+
+    return TryGetPropertyCore(typeof(TSource), source, name, memberAccessibility, null, null, null, valueType, out propertyInfo);
+  }
+
+  public static bool TryGetInstanceProperty<TSource, TValue>(TSource source, string name, MemberAccessibility memberAccessibility,
+    [NotNullWhen(true)] out PropertyInfo? propertyInfo)
+  {
+    Argument.That.NotNull(source);
+    Argument.That.NotNullOrWhitespace(name);
+
+    return TryGetPropertyCore(typeof(TSource), source, name, memberAccessibility, null, null, null, typeof(TValue), out propertyInfo);
+  }
+
+  #endregion
+  #region Try get methods
+
+  public static bool TryGetInstancePropertyValue(object source, string name, MemberAccessibility memberAccessibility, Type? valueType, out object? value)
+  {
+    Argument.That.NotNull(source);
+    Argument.That.NotNullOrWhitespace(name);
+    var sourceObject = TypedValue.GetValue(source);
+    Argument.That.NotNull(sourceObject);
+    var sourceType = TypedValue.GetType(source)!;
+
+    return TryGetPropertyValueCore(sourceType, sourceObject, name, memberAccessibility, null, null, null, valueType, out value);
+  }
+
+  public static bool TryGetInstancePropertyValue<TValue>(object source, string name, MemberAccessibility memberAccessibility, out TValue? value)
+  {
+    Argument.That.NotNull(source);
+    Argument.That.NotNullOrWhitespace(name);
+    var sourceObject = TypedValue.GetValue(source);
+    Argument.That.NotNull(sourceObject);
+    var sourceType = TypedValue.GetType(source)!;
+
+    if (TryGetPropertyValueCore(sourceType, sourceObject, name, memberAccessibility, null, null, null, typeof(TValue?), out var result))
+    {
+      value = (TValue?)result;
+      return true;
+    }
+    else
     {
       value = default;
       return false;
     }
-    value = propertyInfo.GetValue(sourceObject);
-    return true;
   }
 
-  public static bool TryGetProperty<TValue>(object source, string name, MemberAccessibility memberAccessibility, out TValue? value)
+  public static bool TryGetInstancePropertyValue<TSource>(TSource source, string name, MemberAccessibility memberAccessibility, Type? valueType, out object? value)
   {
     Argument.That.NotNull(source);
     Argument.That.NotNullOrWhitespace(name);
-    var sourceObject = TypedValue.GetValue(source);
-    Argument.That.NotNull(sourceObject);
-    var sourceType = TypedValue.GetType(source)!;
 
-    var propertyInfo = MatchProperty(sourceType, false, name, memberAccessibility, true, false, false, null, null, null, typeof(TValue?), TypeVariance.Covariant);
-    if (propertyInfo is null)
+    return TryGetPropertyValueCore(typeof(TSource), source, name, memberAccessibility, null, null, null, valueType, out value);
+  }
+
+  public static bool TryGetInstancePropertyValue<TSource, TValue>(TSource source, string name, MemberAccessibility memberAccessibility, out TValue? value)
+  {
+    Argument.That.NotNull(source);
+    Argument.That.NotNullOrWhitespace(name);
+
+    if (TryGetPropertyValueCore(typeof(TSource), source, name, memberAccessibility, null, null, null, typeof(TValue?), out var result))
+    {
+      value = (TValue?)result;
+      return true;
+    }
+    else
     {
       value = default;
       return false;
     }
-    value = (TValue?)propertyInfo.GetValue(sourceObject);
-    return true;
   }
 
-  public static bool TryGetProperty<TSource>(TSource source, string name, MemberAccessibility memberAccessibility, Type? valueType, out object? value)
+  #endregion
+  #region Try set methods
+
+  public static bool TrySetInstancePropertyValue(object source, string name, MemberAccessibility memberAccessibility, object? value)
+  {
+    Argument.That.NotNull(source);
+    Argument.That.NotNullOrWhitespace(name);
+    var sourceObject = TypedValue.GetValue(source);
+    Argument.That.NotNull(sourceObject);
+    var sourceType = TypedValue.GetType(source)!;
+
+    return TrySetPropertyValueCore(sourceType, sourceObject, name, memberAccessibility, null, null, null, TypedValue.GetType(value), TypedValue.GetValue(value));
+  }
+
+  public static bool TrySetInstancePropertyValue<TValue>(object source, string name, MemberAccessibility memberAccessibility, TValue? value)
+  {
+    Argument.That.NotNull(source);
+    Argument.That.NotNullOrWhitespace(name);
+    var sourceObject = TypedValue.GetValue(source);
+    Argument.That.NotNull(sourceObject);
+    var sourceType = TypedValue.GetType(source)!;
+
+    return TrySetPropertyValueCore(sourceType, sourceObject, name, memberAccessibility, null, null, null, typeof(TValue?), value);
+  }
+
+  public static bool TrySetInstancePropertyValue<TSource>(TSource source, string name, MemberAccessibility memberAccessibility, object? value)
   {
     Argument.That.NotNull(source);
     Argument.That.NotNullOrWhitespace(name);
 
-    var propertyInfo = MatchProperty(typeof(TSource), false, name, memberAccessibility, true, false, false, null, null, null, valueType ?? typeof(object), TypeVariance.Covariant);
-    if (propertyInfo is null)
+    return TrySetPropertyValueCore(typeof(TSource), source, name, memberAccessibility, null, null, null, TypedValue.GetType(value), TypedValue.GetValue(value));
+  }
+
+  public static bool TrySetInstancePropertyValue<TSource, TValue>(TSource source, string name, MemberAccessibility memberAccessibility, TValue? value)
+  {
+    Argument.That.NotNull(source);
+    Argument.That.NotNullOrWhitespace(name);
+
+    return TrySetPropertyValueCore(typeof(TSource), source, name, memberAccessibility, null, null, null, typeof(TValue?), value);
+  }
+
+  #endregion
+  #region Try replace methods
+
+  public static bool TryReplaceInstancePropertyValue(object source, string name, MemberAccessibility memberAccessibility, object? newValue, out object? oldValue)
+  {
+    Argument.That.NotNull(source);
+    Argument.That.NotNullOrWhitespace(name);
+    var sourceObject = TypedValue.GetValue(source);
+    Argument.That.NotNull(sourceObject);
+    var sourceType = TypedValue.GetType(source)!;
+
+    return TryReplacePropertyValueCore(sourceType, sourceObject, name, memberAccessibility, null, null, null, TypedValue.GetType(newValue), TypedValue.GetValue(newValue), out oldValue);
+  }
+
+  public static bool TryReplaceInstancePropertyValue<TValue>(object source, string name, MemberAccessibility memberAccessibility, TValue? newValue, out TValue? oldValue)
+  {
+    Argument.That.NotNull(source);
+    Argument.That.NotNullOrWhitespace(name);
+    var sourceObject = TypedValue.GetValue(source);
+    Argument.That.NotNull(sourceObject);
+    var sourceType = TypedValue.GetType(source)!;
+
+    if (TryReplacePropertyValueCore(sourceType, sourceObject, name, memberAccessibility, null, null, null, typeof(TValue), newValue, out var result))
     {
-      value = null;
-      return false;
+      oldValue = (TValue?)result;
+      return true;
     }
-    value = propertyInfo.GetValue(source);
-    return true;
-  }
-
-  public static bool TryGetProperty<TSource, TValue>(TSource source, string name, MemberAccessibility memberAccessibility, out TValue? value)
-  {
-    Argument.That.NotNull(source);
-    Argument.That.NotNullOrWhitespace(name);
-
-    var propertyInfo = MatchProperty(typeof(TSource), false, name, memberAccessibility, true, false, false, null, null, null, typeof(TValue?), TypeVariance.Covariant);
-    if (propertyInfo is null)
-    {
-      value = default;
-      return false;
-    }
-    value = (TValue?)propertyInfo.GetValue(source);
-    return true;
-  }
-
-  public static bool TrySetProperty(object source, string name, MemberAccessibility memberAccessibility, object? value)
-  {
-    Argument.That.NotNull(source);
-    Argument.That.NotNullOrWhitespace(name);
-    var sourceObject = TypedValue.GetValue(source);
-    Argument.That.NotNull(sourceObject);
-    var sourceType = TypedValue.GetType(source)!;
-
-    var propertyInfo = MatchProperty(sourceType, false, name, memberAccessibility, false, true, false, null, null, null, TypedValue.GetType(value), TypeVariance.Contravariant);
-    if (propertyInfo is null)
-      return false;
-    propertyInfo.SetValue(sourceObject, TypedValue.GetValue(value));
-    return true;
-  }
-
-  public static bool TrySetProperty<TValue>(object source, string name, MemberAccessibility memberAccessibility, TValue? value)
-  {
-    Argument.That.NotNull(source);
-    Argument.That.NotNullOrWhitespace(name);
-    var sourceObject = TypedValue.GetValue(source);
-    Argument.That.NotNull(sourceObject);
-    var sourceType = TypedValue.GetType(source)!;
-
-    var propertyInfo = MatchProperty(sourceType, false, name, memberAccessibility, false, true, false, null, null, null, typeof(TValue?), TypeVariance.Contravariant);
-    if (propertyInfo is null)
-      return false;
-    propertyInfo.SetValue(sourceObject, value);
-    return true;
-  }
-
-  public static bool TrySetProperty<TSource>(TSource source, string name, MemberAccessibility memberAccessibility, object? value)
-  {
-    Argument.That.NotNull(source);
-    Argument.That.NotNullOrWhitespace(name);
-
-    var propertyInfo = MatchProperty(typeof(TSource), false, name, memberAccessibility, false, true, false, null, null, null, TypedValue.GetType(value), TypeVariance.Contravariant);
-    if (propertyInfo is null)
-      return false;
-    propertyInfo.SetValue(source, TypedValue.GetValue(value));
-    return true;
-  }
-
-  public static bool TrySetProperty<TSource, TValue>(TSource source, string name, MemberAccessibility memberAccessibility, TValue? value)
-  {
-    Argument.That.NotNull(source);
-    Argument.That.NotNullOrWhitespace(name);
-
-    var propertyInfo = MatchProperty(typeof(TSource), false, name, memberAccessibility, false, true, false, null, null, null, typeof(TValue?), TypeVariance.Contravariant);
-    if (propertyInfo is null)
-      return false;
-    propertyInfo.SetValue(source, value);
-    return true;
-  }
-
-  public static bool TryReplaceProperty(object source, string name, MemberAccessibility memberAccessibility, object? newValue, out object? oldValue)
-  {
-    Argument.That.NotNull(source);
-    Argument.That.NotNullOrWhitespace(name);
-    var sourceObject = TypedValue.GetValue(source);
-    Argument.That.NotNull(sourceObject);
-    var sourceType = TypedValue.GetType(source)!;
-
-    var propertyInfo = MatchProperty(sourceType, false, name, memberAccessibility, true, true, false, null, null, null, TypedValue.GetType(newValue), TypeVariance.Contravariant);
-    if (propertyInfo is null)
+    else
     {
       oldValue = default;
       return false;
     }
-    oldValue = propertyInfo.GetValue(sourceObject);
-    propertyInfo.SetValue(sourceObject, TypedValue.GetValue(newValue));
-    return true;
   }
 
-  public static bool TryReplaceProperty<TValue>(object source, string name, MemberAccessibility memberAccessibility, TValue? newValue, out TValue? oldValue)
+  public static bool TryReplaceInstancePropertyValue<TSource>(TSource source, string name, MemberAccessibility memberAccessibility, object? newValue, out object? oldValue)
+  {
+    Argument.That.NotNull(source);
+    Argument.That.NotNullOrWhitespace(name);
+
+    return TryReplacePropertyValueCore(typeof(TSource), source, name, memberAccessibility, null, null, null, TypedValue.GetType(newValue), TypedValue.GetValue(newValue), out oldValue);
+  }
+
+  public static bool TryReplaceInstancePropertyValue<TSource, TValue>(TSource source, string name, MemberAccessibility memberAccessibility, TValue? newValue, out TValue? oldValue)
+  {
+    Argument.That.NotNull(source);
+    Argument.That.NotNullOrWhitespace(name);
+
+    if (TryReplacePropertyValueCore(typeof(TSource), source, name, memberAccessibility, null, null, null, typeof(TValue), newValue, out var result))
+    {
+      oldValue = (TValue?)result;
+      return true;
+    }
+    else
+    {
+      oldValue = default;
+      return false;
+    }
+  }
+
+  #endregion
+  #region Try exchange methods
+
+  public static bool TryExchangeInstancePropertyValue(object source, string name, MemberAccessibility memberAccessibility, ref object? value)
   {
     Argument.That.NotNull(source);
     Argument.That.NotNullOrWhitespace(name);
@@ -1380,50 +1676,13 @@ public static class Reflector
     Argument.That.NotNull(sourceObject);
     var sourceType = TypedValue.GetType(source)!;
 
-    var propertyInfo = MatchProperty(sourceType, false, name, memberAccessibility, true, true, false, null, null, null, typeof(TValue?), TypeVariance.Invariant);
-    if (propertyInfo is null)
-    {
-      oldValue = default;
+    if (!TryReplacePropertyValueCore(sourceType, sourceObject, name, memberAccessibility, null, null, null, TypedValue.GetType(value), TypedValue.GetValue(value), out var result))
       return false;
-    }
-    oldValue = (TValue?)propertyInfo.GetValue(sourceObject);
-    propertyInfo.SetValue(sourceObject, newValue);
+    value = result;
     return true;
   }
 
-  public static bool TryReplaceProperty<TSource>(TSource source, string name, MemberAccessibility memberAccessibility, object? newValue, out object? oldValue)
-  {
-    Argument.That.NotNull(source);
-    Argument.That.NotNullOrWhitespace(name);
-
-    var propertyInfo = MatchProperty(typeof(TSource), false, name, memberAccessibility, true, true, false, null, null, null, TypedValue.GetType(newValue), TypeVariance.Contravariant);
-    if (propertyInfo is null)
-    {
-      oldValue = default;
-      return false;
-    }
-    oldValue = propertyInfo.GetValue(source);
-    propertyInfo.SetValue(source, TypedValue.GetValue(newValue));
-    return true;
-  }
-
-  public static bool TryReplaceProperty<TSource, TValue>(TSource source, string name, MemberAccessibility memberAccessibility, TValue? newValue, out TValue? oldValue)
-  {
-    Argument.That.NotNull(source);
-    Argument.That.NotNullOrWhitespace(name);
-
-    var propertyInfo = MatchProperty(typeof(TSource), false, name, memberAccessibility, true, true, false, null, null, null, typeof(TValue?), TypeVariance.Invariant);
-    if (propertyInfo is null)
-    {
-      oldValue = default;
-      return false;
-    }
-    oldValue = (TValue?)propertyInfo.GetValue(source);
-    propertyInfo.SetValue(source, newValue);
-    return true;
-  }
-
-  public static bool TryExchangeProperty(object source, string name, MemberAccessibility memberAccessibility, ref object? value)
+  public static bool TryExchangeInstancePropertyValue<TValue>(object source, string name, MemberAccessibility memberAccessibility, ref TValue? value)
   {
     Argument.That.NotNull(source);
     Argument.That.NotNullOrWhitespace(name);
@@ -1431,64 +1690,38 @@ public static class Reflector
     Argument.That.NotNull(sourceObject);
     var sourceType = TypedValue.GetType(source)!;
 
-    var propertyInfo = MatchProperty(sourceType, false, name, memberAccessibility, true, true, false, null, null, null, TypedValue.GetType(value), TypeVariance.Contravariant);
-    if (propertyInfo is null)
+    if (!TryReplacePropertyValueCore(sourceType, sourceObject, name, memberAccessibility, null, null, null, typeof(TValue), value, out var result))
       return false;
-    var result = propertyInfo.GetValue(sourceObject);
-    propertyInfo.SetValue(sourceObject, TypedValue.GetValue(value));
-    value = result;
+    value = (TValue?)result;
     return true;
   }
 
-  public static bool TryExchangeProperty<TValue>(object source, string name, MemberAccessibility memberAccessibility, ref TValue? value)
-  {
-    Argument.That.NotNull(source);
-    Argument.That.NotNullOrWhitespace(name);
-    var sourceObject = TypedValue.GetValue(source);
-    Argument.That.NotNull(sourceObject);
-    var sourceType = TypedValue.GetType(source)!;
-
-    var propertyInfo = MatchProperty(sourceType, false, name, memberAccessibility, true, true, false, null, null, null, typeof(TValue?), TypeVariance.Invariant);
-    if (propertyInfo is null)
-      return false;
-    var result = (TValue?)propertyInfo.GetValue(sourceObject);
-    propertyInfo.SetValue(sourceObject, value);
-    value = result;
-    return true;
-  }
-
-  public static bool TryExchangeProperty<TSource>(TSource source, string name, MemberAccessibility memberAccessibility, ref object? value)
+  public static bool TryExchangeInstancePropertyValue<TSource>(TSource source, string name, MemberAccessibility memberAccessibility, ref object? value)
   {
     Argument.That.NotNull(source);
     Argument.That.NotNullOrWhitespace(name);
 
-    var propertyInfo = MatchProperty(typeof(TSource), false, name, memberAccessibility, true, true, false, null, null, null, TypedValue.GetType(value), TypeVariance.Contravariant);
-    if (propertyInfo is null)
+    if (!TryReplacePropertyValueCore(typeof(TSource), source, name, memberAccessibility, null, null, null, TypedValue.GetType(value), TypedValue.GetValue(value), out var result))
       return false;
-    var result = propertyInfo.GetValue(source);
-    propertyInfo.SetValue(source, TypedValue.GetValue(value));
     value = result;
     return true;
   }
 
-  public static bool TryExchangeProperty<TSource, TValue>(TSource source, string name, MemberAccessibility memberAccessibility, ref TValue? value)
+  public static bool TryExchangeInstancePropertyValue<TSource, TValue>(TSource source, string name, MemberAccessibility memberAccessibility, ref TValue? value)
   {
     Argument.That.NotNull(source);
     Argument.That.NotNullOrWhitespace(name);
 
-    var propertyInfo = MatchProperty(typeof(TSource), false, name, memberAccessibility, true, true, false, null, null, null, typeof(TValue?), TypeVariance.Invariant);
-    if (propertyInfo is null)
+    if (!TryReplacePropertyValueCore(typeof(TSource), source, name, memberAccessibility, null, null, null, typeof(TValue), value, out var result))
       return false;
-    var result = (TValue?)propertyInfo.GetValue(source);
-    propertyInfo.SetValue(source, value);
-    value = result;
+    value = (TValue?)result;
     return true;
   }
 
   #endregion
-  #region Direct methods
+  #region Direct info methods
 
-  public static object? GetProperty(object source, string name, MemberAccessibility memberAccessibility, Type? valueType)
+  public static PropertyInfo GetInstanceProperty(object source, string name, MemberAccessibility memberAccessibility, Type? valueType)
   {
     Argument.That.NotNull(source);
     Argument.That.NotNullOrWhitespace(name);
@@ -1496,11 +1729,10 @@ public static class Reflector
     Argument.That.NotNull(sourceObject);
     var sourceType = TypedValue.GetType(source)!;
 
-    var propertyInfo = MatchProperty(sourceType, false, name, memberAccessibility, true, false, true, null, null, null, valueType ?? typeof(object), TypeVariance.Covariant)!;
-    return propertyInfo.GetValue(sourceObject);
+    return GetPropertyCore(sourceType, sourceObject, name, memberAccessibility, null, null, null, valueType);
   }
 
-  public static TValue? GetProperty<TValue>(object source, string name, MemberAccessibility memberAccessibility)
+  public static PropertyInfo GetInstanceProperty<TValue>(object source, string name, MemberAccessibility memberAccessibility)
   {
     Argument.That.NotNull(source);
     Argument.That.NotNullOrWhitespace(name);
@@ -1508,41 +1740,29 @@ public static class Reflector
     Argument.That.NotNull(sourceObject);
     var sourceType = TypedValue.GetType(source)!;
 
-    var propertyInfo = MatchProperty(sourceType, false, name, memberAccessibility, true, false, true, null, null, null, typeof(TValue?), TypeVariance.Covariant)!;
-    return (TValue?)propertyInfo.GetValue(sourceObject);
+    return GetPropertyCore(sourceType, sourceObject, name, memberAccessibility, null, null, null, typeof(TValue));
   }
 
-  public static object? GetProperty<TSource>(TSource source, string name, MemberAccessibility memberAccessibility, Type? valueType)
+  public static PropertyInfo GetInstanceProperty<TSource>(TSource source, string name, MemberAccessibility memberAccessibility, Type? valueType)
   {
     Argument.That.NotNull(source);
     Argument.That.NotNullOrWhitespace(name);
 
-    var propertyInfo = MatchProperty(typeof(TSource), false, name, memberAccessibility, true, false, true, null, null, null, valueType ?? typeof(object), TypeVariance.Covariant)!;
-    return propertyInfo.GetValue(source);
+    return GetPropertyCore(typeof(TSource), source, name, memberAccessibility, null, null, null, valueType);
   }
 
-  public static TValue? GetProperty<TSource, TValue>(TSource source, string name, MemberAccessibility memberAccessibility)
+  public static PropertyInfo GetInstanceProperty<TSource, TValue>(TSource source, string name, MemberAccessibility memberAccessibility)
   {
     Argument.That.NotNull(source);
     Argument.That.NotNullOrWhitespace(name);
 
-    var propertyInfo = MatchProperty(typeof(TSource), false, name, memberAccessibility, true, false, true, null, null, null, typeof(TValue?), TypeVariance.Covariant)!;
-    return (TValue?)propertyInfo.GetValue(source);
+    return GetPropertyCore(typeof(TSource), source, name, memberAccessibility, null, null, null, typeof(TValue));
   }
 
-  public static void SetProperty(object source, string name, MemberAccessibility memberAccessibility, object? value)
-  {
-    Argument.That.NotNull(source);
-    Argument.That.NotNullOrWhitespace(name);
-    var sourceObject = TypedValue.GetValue(source);
-    Argument.That.NotNull(sourceObject);
-    var sourceType = TypedValue.GetType(source)!;
+  #endregion
+  #region Direct get methods
 
-    var propertyInfo = MatchProperty(sourceType, false, name, memberAccessibility, false, true, true, null, null, null, TypedValue.GetType(value), TypeVariance.Contravariant)!;
-    propertyInfo.SetValue(sourceObject, TypedValue.GetValue(value));
-  }
-
-  public static void SetProperty<TValue>(object source, string name, MemberAccessibility memberAccessibility, TValue? value)
+  public static object? GetInstancePropertyValue(object source, string name, MemberAccessibility memberAccessibility, Type? valueType)
   {
     Argument.That.NotNull(source);
     Argument.That.NotNullOrWhitespace(name);
@@ -1550,29 +1770,10 @@ public static class Reflector
     Argument.That.NotNull(sourceObject);
     var sourceType = TypedValue.GetType(source)!;
 
-    var propertyInfo = MatchProperty(sourceType, false, name, memberAccessibility, false, true, true, null, null, null, typeof(TValue?), TypeVariance.Contravariant)!;
-    propertyInfo.SetValue(sourceObject, value);
+    return GetPropertyValueCore(sourceType, sourceObject, name, memberAccessibility, null, null, null, valueType);
   }
 
-  public static void SetProperty<TSource>(TSource source, string name, MemberAccessibility memberAccessibility, object? value)
-  {
-    Argument.That.NotNull(source);
-    Argument.That.NotNullOrWhitespace(name);
-
-    var propertyInfo = MatchProperty(typeof(TSource), false, name, memberAccessibility, false, true, true, null, null, null, TypedValue.GetType(value), TypeVariance.Contravariant)!;
-    propertyInfo.SetValue(source, TypedValue.GetValue(value));
-  }
-
-  public static void SetProperty<TSource, TValue>(TSource source, string name, MemberAccessibility memberAccessibility, TValue? value)
-  {
-    Argument.That.NotNull(source);
-    Argument.That.NotNullOrWhitespace(name);
-
-    var propertyInfo = MatchProperty(typeof(TSource), false, name, memberAccessibility, false, true, true, null, null, null, typeof(TValue?), TypeVariance.Contravariant)!;
-    propertyInfo.SetValue(source, value);
-  }
-
-  public static object? ReplaceProperty(object source, string name, MemberAccessibility memberAccessibility, object? value)
+  public static TValue? GetInstancePropertyValue<TValue>(object source, string name, MemberAccessibility memberAccessibility)
   {
     Argument.That.NotNull(source);
     Argument.That.NotNullOrWhitespace(name);
@@ -1580,13 +1781,29 @@ public static class Reflector
     Argument.That.NotNull(sourceObject);
     var sourceType = TypedValue.GetType(source)!;
 
-    var propertyInfo = MatchProperty(sourceType, false, name, memberAccessibility, true, true, true, null, null, null, TypedValue.GetType(value), TypeVariance.Contravariant)!;
-    var result = propertyInfo.GetValue(sourceObject);
-    propertyInfo.SetValue(sourceObject, TypedValue.GetValue(value));
-    return result;
+    return (TValue?)GetPropertyValueCore(sourceType, sourceObject, name, memberAccessibility, null, null, null, typeof(TValue));
   }
 
-  public static TValue? ReplaceProperty<TValue>(object source, string name, MemberAccessibility memberAccessibility, TValue? value)
+  public static object? GetInstancePropertyValue<TSource>(TSource source, string name, MemberAccessibility memberAccessibility, Type? valueType)
+  {
+    Argument.That.NotNull(source);
+    Argument.That.NotNullOrWhitespace(name);
+
+    return GetPropertyValueCore(typeof(TSource), source, name, memberAccessibility, null, null, null, valueType);
+  }
+
+  public static TValue? GetInstancePropertyValue<TSource, TValue>(TSource source, string name, MemberAccessibility memberAccessibility)
+  {
+    Argument.That.NotNull(source);
+    Argument.That.NotNullOrWhitespace(name);
+
+    return (TValue?)GetPropertyValueCore(typeof(TSource), source, name, memberAccessibility, null, null, null, typeof(TValue));
+  }
+
+  #endregion
+  #region Direct set methods
+
+  public static void SetInstancePropertyValue(object source, string name, MemberAccessibility memberAccessibility, object? value)
   {
     Argument.That.NotNull(source);
     Argument.That.NotNullOrWhitespace(name);
@@ -1594,35 +1811,10 @@ public static class Reflector
     Argument.That.NotNull(sourceObject);
     var sourceType = TypedValue.GetType(source)!;
 
-    var propertyInfo = MatchProperty(sourceType, false, name, memberAccessibility, true, true, true, null, null, null, typeof(TValue?), TypeVariance.Invariant)!;
-    var result = (TValue?)propertyInfo.GetValue(sourceObject);
-    propertyInfo.SetValue(sourceObject, value);
-    return result;
+    SetPropertyValueCore(sourceType, sourceObject, name, memberAccessibility, null, null, null, TypedValue.GetType(value), TypedValue.GetValue(value));
   }
 
-  public static object? ReplaceProperty<TSource>(TSource source, string name, MemberAccessibility memberAccessibility, object? value)
-  {
-    Argument.That.NotNull(source);
-    Argument.That.NotNullOrWhitespace(name);
-
-    var propertyInfo = MatchProperty(typeof(TSource), false, name, memberAccessibility, true, true, true, null, null, null, TypedValue.GetType(value), TypeVariance.Contravariant)!;
-    var result = propertyInfo.GetValue(source);
-    propertyInfo.SetValue(source, TypedValue.GetValue(value));
-    return result;
-  }
-
-  public static TValue? ReplaceProperty<TSource, TValue>(TSource source, string name, MemberAccessibility memberAccessibility, TValue? value)
-  {
-    Argument.That.NotNull(source);
-    Argument.That.NotNullOrWhitespace(name);
-
-    var propertyInfo = MatchProperty(typeof(TSource), false, name, memberAccessibility, true, true, true, null, null, null, typeof(TValue?), TypeVariance.Invariant)!;
-    var result = (TValue?)propertyInfo.GetValue(source);
-    propertyInfo.SetValue(source, value);
-    return result;
-  }
-
-  public static void ExchangeProperty(object source, string name, MemberAccessibility memberAccessibility, ref object? value)
+  public static void SetInstancePropertyValue<TValue>(object source, string name, MemberAccessibility memberAccessibility, TValue? value)
   {
     Argument.That.NotNull(source);
     Argument.That.NotNullOrWhitespace(name);
@@ -1630,13 +1822,29 @@ public static class Reflector
     Argument.That.NotNull(sourceObject);
     var sourceType = TypedValue.GetType(source)!;
 
-    var propertyInfo = MatchProperty(sourceType, false, name, memberAccessibility, true, true, true, null, null, null, TypedValue.GetType(value), TypeVariance.Contravariant)!;
-    var result = propertyInfo.GetValue(sourceObject);
-    propertyInfo.SetValue(sourceObject, TypedValue.GetValue(value));
-    value = result;
+    SetPropertyValueCore(sourceType, sourceObject, name, memberAccessibility, null, null, null, typeof(TValue), value);
   }
 
-  public static void ExchangeProperty<TValue>(object source, string name, MemberAccessibility memberAccessibility, ref TValue? value)
+  public static void SetInstancePropertyValue<TSource>(TSource source, string name, MemberAccessibility memberAccessibility, object? value)
+  {
+    Argument.That.NotNull(source);
+    Argument.That.NotNullOrWhitespace(name);
+
+    SetPropertyValueCore(typeof(TSource), source, name, memberAccessibility, null, null, null, TypedValue.GetType(value), TypedValue.GetValue(value));
+  }
+
+  public static void SetInstancePropertyValue<TSource, TValue>(TSource source, string name, MemberAccessibility memberAccessibility, TValue? value)
+  {
+    Argument.That.NotNull(source);
+    Argument.That.NotNullOrWhitespace(name);
+
+    SetPropertyValueCore(typeof(TSource), source, name, memberAccessibility, null, null, null, typeof(TValue), value);
+  }
+
+  #endregion
+  #region Direct replace methods
+
+  public static object? ReplaceInstancePropertyValue(object source, string name, MemberAccessibility memberAccessibility, object? value)
   {
     Argument.That.NotNull(source);
     Argument.That.NotNullOrWhitespace(name);
@@ -1644,40 +1852,132 @@ public static class Reflector
     Argument.That.NotNull(sourceObject);
     var sourceType = TypedValue.GetType(source)!;
 
-    var propertyInfo = MatchProperty(sourceType, false, name, memberAccessibility, true, true, true, null, null, null, typeof(TValue?), TypeVariance.Invariant)!;
-    var result = (TValue?)propertyInfo.GetValue(sourceObject);
-    propertyInfo.SetValue(sourceObject, value);
-    value = result;
+    return ReplacePropertyValueCore(sourceType, sourceObject, name, memberAccessibility, null, null, null, TypedValue.GetType(value), TypedValue.GetValue(value));
   }
 
-  public static void ExchangeProperty<TSource>(TSource source, string name, MemberAccessibility memberAccessibility, ref object? value)
+  public static TValue? ReplaceInstancePropertyValue<TValue>(object source, string name, MemberAccessibility memberAccessibility, TValue? value)
+  {
+    Argument.That.NotNull(source);
+    Argument.That.NotNullOrWhitespace(name);
+    var sourceObject = TypedValue.GetValue(source);
+    Argument.That.NotNull(sourceObject);
+    var sourceType = TypedValue.GetType(source)!;
+
+    return (TValue?)ReplacePropertyValueCore(sourceType, sourceObject, name, memberAccessibility, null, null, null, typeof(TValue), value);
+  }
+
+  public static object? ReplaceInstancePropertyValue<TSource>(TSource source, string name, MemberAccessibility memberAccessibility, object? value)
   {
     Argument.That.NotNull(source);
     Argument.That.NotNullOrWhitespace(name);
 
-    var propertyInfo = MatchProperty(typeof(TSource), false, name, memberAccessibility, true, true, true, null, null, null, TypedValue.GetType(value), TypeVariance.Contravariant)!;
-    var result = propertyInfo.GetValue(source);
-    propertyInfo.SetValue(source, TypedValue.GetValue(value));
-    value = result;
+    return ReplacePropertyValueCore(typeof(TSource), source, name, memberAccessibility, null, null, null, TypedValue.GetType(value), TypedValue.GetValue(value));
   }
 
-  public static void ExchangeProperty<TSource, TValue>(TSource source, string name, MemberAccessibility memberAccessibility, ref TValue? value)
+  public static TValue? ReplaceInstancePropertyValue<TSource, TValue>(TSource source, string name, MemberAccessibility memberAccessibility, TValue? value)
   {
     Argument.That.NotNull(source);
     Argument.That.NotNullOrWhitespace(name);
 
-    var propertyInfo = MatchProperty(typeof(TSource), false, name, memberAccessibility, true, true, true, null, null, null, typeof(TValue?), TypeVariance.Invariant)!;
-    var result = (TValue?)propertyInfo.GetValue(source);
-    propertyInfo.SetValue(source, value);
-    value = result;
+    return (TValue?)ReplacePropertyValueCore(typeof(TSource), source, name, memberAccessibility, null, null, null, typeof(TValue), value);
+  }
+
+  #endregion
+  #region Direct exchange methods
+
+  public static void ExchangeInstancePropertyValue(object source, string name, MemberAccessibility memberAccessibility, ref object? value)
+  {
+    Argument.That.NotNull(source);
+    Argument.That.NotNullOrWhitespace(name);
+    var sourceObject = TypedValue.GetValue(source);
+    Argument.That.NotNull(sourceObject);
+    var sourceType = TypedValue.GetType(source)!;
+
+    value = ReplacePropertyValueCore(sourceType, sourceObject, name, memberAccessibility, null, null, null, TypedValue.GetType(value), TypedValue.GetValue(value));
+  }
+
+  public static void ExchangeInstancePropertyValue<TValue>(object source, string name, MemberAccessibility memberAccessibility, ref TValue? value)
+  {
+    Argument.That.NotNull(source);
+    Argument.That.NotNullOrWhitespace(name);
+    var sourceObject = TypedValue.GetValue(source);
+    Argument.That.NotNull(sourceObject);
+    var sourceType = TypedValue.GetType(source)!;
+
+    value = (TValue?)ReplacePropertyValueCore(sourceType, sourceObject, name, memberAccessibility, null, null, null, typeof(TValue), value);
+  }
+
+  public static void ExchangeInstancePropertyValue<TSource>(TSource source, string name, MemberAccessibility memberAccessibility, ref object? value)
+  {
+    Argument.That.NotNull(source);
+    Argument.That.NotNullOrWhitespace(name);
+
+    value = ReplacePropertyValueCore(typeof(TSource), source, name, memberAccessibility, null, null, null, TypedValue.GetType(value), TypedValue.GetValue(value));
+  }
+
+  public static void ExchangeInstancePropertyValue<TSource, TValue>(TSource source, string name, MemberAccessibility memberAccessibility, ref TValue? value)
+  {
+    Argument.That.NotNull(source);
+    Argument.That.NotNullOrWhitespace(name);
+
+    value = (TValue?)ReplacePropertyValueCore(typeof(TSource), source, name, memberAccessibility, null, null, null, typeof(TValue), value);
   }
 
   #endregion
   #endregion
   #region With parameters
-  #region Try methods
+  #region Try info methods
 
-  public static bool TryGetProperty(object source, string name, MemberAccessibility memberAccessibility,
+  public static bool TryGetInstanceProperty(object source, string name, MemberAccessibility memberAccessibility,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes, Type? valueType,
+    [NotNullWhen(true)] out PropertyInfo? propertyInfo)
+  {
+    Argument.That.NotNull(source);
+    Argument.That.NotNullOrWhitespace(name);
+    var sourceObject = TypedValue.GetValue(source);
+    Argument.That.NotNull(sourceObject);
+    var sourceType = TypedValue.GetType(source)!;
+
+    return TryGetPropertyCore(sourceType, sourceObject, name, memberAccessibility, null, positionalParameterTypes, namedParameterTypes, valueType, out propertyInfo);
+  }
+
+  public static bool TryGetInstanceProperty<TValue>(object source, string name, MemberAccessibility memberAccessibility,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes,
+    [NotNullWhen(true)] out PropertyInfo? propertyInfo)
+  {
+    Argument.That.NotNull(source);
+    Argument.That.NotNullOrWhitespace(name);
+    var sourceObject = TypedValue.GetValue(source);
+    Argument.That.NotNull(sourceObject);
+    var sourceType = TypedValue.GetType(source)!;
+
+    return TryGetPropertyCore(sourceType, sourceObject, name, memberAccessibility, null, positionalParameterTypes, namedParameterTypes, typeof(TValue), out propertyInfo);
+  }
+
+  public static bool TryGetInstanceProperty<TSource>(TSource source, string name, MemberAccessibility memberAccessibility,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes, Type? valueType,
+    [NotNullWhen(true)] out PropertyInfo? propertyInfo)
+  {
+    Argument.That.NotNull(source);
+    Argument.That.NotNullOrWhitespace(name);
+
+    return TryGetPropertyCore(typeof(TSource), source, name, memberAccessibility, null, positionalParameterTypes, namedParameterTypes, valueType, out propertyInfo);
+  }
+
+  public static bool TryGetInstanceProperty<TSource, TValue>(TSource source, string name, MemberAccessibility memberAccessibility,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes,
+    [NotNullWhen(true)] out PropertyInfo? propertyInfo)
+  {
+    Argument.That.NotNull(source);
+    Argument.That.NotNullOrWhitespace(name);
+
+    return TryGetPropertyCore(typeof(TSource), source, name, memberAccessibility, null, positionalParameterTypes, namedParameterTypes, typeof(TValue), out propertyInfo);
+  }
+
+  #endregion
+  #region Try get methods
+
+  public static bool TryGetInstancePropertyValue(object source, string name, MemberAccessibility memberAccessibility,
     IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, Type? valueType, out object? value)
   {
     Argument.That.NotNull(source);
@@ -1686,18 +1986,10 @@ public static class Reflector
     Argument.That.NotNull(sourceObject);
     var sourceType = TypedValue.GetType(source)!;
 
-    var propertyInfo = MatchProperty(sourceType, false, name, memberAccessibility, true, false, false, null, positionalParameterValues, namedParameterValues, valueType ?? typeof(object), TypeVariance.Covariant);
-    if (propertyInfo is null)
-    {
-      value = default;
-      return false;
-    }
-    var indices = GetParameterValues(propertyInfo.GetIndexParameters(), positionalParameterValues, namedParameterValues);
-    value = propertyInfo.GetValue(sourceObject, indices);
-    return true;
+    return TryGetPropertyValueCore(sourceType, sourceObject, name, memberAccessibility, null, positionalParameterValues, namedParameterValues, valueType, out value);
   }
 
-  public static bool TryGetProperty<TValue>(object source, string name, MemberAccessibility memberAccessibility,
+  public static bool TryGetInstancePropertyValue<TValue>(object source, string name, MemberAccessibility memberAccessibility,
     IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, out TValue? value)
   {
     Argument.That.NotNull(source);
@@ -1706,52 +1998,49 @@ public static class Reflector
     Argument.That.NotNull(sourceObject);
     var sourceType = TypedValue.GetType(source)!;
 
-    var propertyInfo = MatchProperty(sourceType, false, name, memberAccessibility, true, false, false, null, positionalParameterValues, namedParameterValues, typeof(TValue?), TypeVariance.Covariant);
-    if (propertyInfo is null)
+    if (TryGetPropertyValueCore(sourceType, sourceObject, name, memberAccessibility, null, positionalParameterValues, namedParameterValues, typeof(TValue?), out var result))
+    {
+      value = (TValue?)result;
+      return true;
+    }
+    else
     {
       value = default;
       return false;
     }
-    var indices = GetParameterValues(propertyInfo.GetIndexParameters(), positionalParameterValues, namedParameterValues);
-    value = (TValue?)propertyInfo.GetValue(sourceObject, indices);
-    return true;
   }
 
-  public static bool TryGetProperty<TSource>(TSource source, string name, MemberAccessibility memberAccessibility,
+  public static bool TryGetInstancePropertyValue<TSource>(TSource source, string name, MemberAccessibility memberAccessibility,
     IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, Type? valueType, out object? value)
   {
     Argument.That.NotNull(source);
     Argument.That.NotNullOrWhitespace(name);
 
-    var propertyInfo = MatchProperty(typeof(TSource), false, name, memberAccessibility, true, false, false, null, positionalParameterValues, namedParameterValues, valueType ?? typeof(object), TypeVariance.Covariant);
-    if (propertyInfo is null)
-    {
-      value = default;
-      return false;
-    }
-    var indices = GetParameterValues(propertyInfo.GetIndexParameters(), positionalParameterValues, namedParameterValues);
-    value = propertyInfo.GetValue(source, indices);
-    return true;
+    return TryGetPropertyValueCore(typeof(TSource), source, name, memberAccessibility, null, positionalParameterValues, namedParameterValues, valueType, out value);
   }
 
-  public static bool TryGetProperty<TSource, TValue>(TSource source, string name, MemberAccessibility memberAccessibility,
+  public static bool TryGetInstancePropertyValue<TSource, TValue>(TSource source, string name, MemberAccessibility memberAccessibility,
     IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, out TValue? value)
   {
     Argument.That.NotNull(source);
     Argument.That.NotNullOrWhitespace(name);
 
-    var propertyInfo = MatchProperty(typeof(TSource), false, name, memberAccessibility, true, false, false, null, positionalParameterValues, namedParameterValues, typeof(TValue?), TypeVariance.Covariant);
-    if (propertyInfo is null)
+    if (TryGetPropertyValueCore(typeof(TSource), source, name, memberAccessibility, null, positionalParameterValues, namedParameterValues, typeof(TValue?), out var result))
+    {
+      value = (TValue?)result;
+      return true;
+    }
+    else
     {
       value = default;
       return false;
     }
-    var indices = GetParameterValues(propertyInfo.GetIndexParameters(), positionalParameterValues, namedParameterValues);
-    value = (TValue?)propertyInfo.GetValue(source, indices);
-    return true;
   }
 
-  public static bool TrySetProperty(object source, string name, MemberAccessibility memberAccessibility,
+  #endregion
+  #region Try set methods
+
+  public static bool TrySetInstancePropertyValue(object source, string name, MemberAccessibility memberAccessibility,
     IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, object? value)
   {
     Argument.That.NotNull(source);
@@ -1760,15 +2049,10 @@ public static class Reflector
     Argument.That.NotNull(sourceObject);
     var sourceType = TypedValue.GetType(source)!;
 
-    var propertyInfo = MatchProperty(sourceType, false, name, memberAccessibility, false, true, false, null, positionalParameterValues, namedParameterValues, TypedValue.GetType(value), TypeVariance.Contravariant);
-    if (propertyInfo is null)
-      return false;
-    var indices = GetParameterValues(propertyInfo.GetIndexParameters(), positionalParameterValues, namedParameterValues);
-    propertyInfo.SetValue(sourceObject, TypedValue.GetValue(value), indices);
-    return true;
+    return TrySetPropertyValueCore(sourceType, sourceObject, name, memberAccessibility, null, positionalParameterValues, namedParameterValues, TypedValue.GetType(value), TypedValue.GetValue(value));
   }
 
-  public static bool TrySetProperty<TValue>(object source, string name, MemberAccessibility memberAccessibility,
+  public static bool TrySetInstancePropertyValue<TValue>(object source, string name, MemberAccessibility memberAccessibility,
     IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, TValue? value)
   {
     Argument.That.NotNull(source);
@@ -1777,43 +2061,31 @@ public static class Reflector
     Argument.That.NotNull(sourceObject);
     var sourceType = TypedValue.GetType(source)!;
 
-    var propertyInfo = MatchProperty(sourceType, false, name, memberAccessibility, false, true, false, null, positionalParameterValues, namedParameterValues, typeof(TValue?), TypeVariance.Contravariant);
-    if (propertyInfo is null)
-      return false;
-    var indices = GetParameterValues(propertyInfo.GetIndexParameters(), positionalParameterValues, namedParameterValues);
-    propertyInfo.SetValue(sourceObject, value, indices);
-    return true;
+    return TrySetPropertyValueCore(sourceType, sourceObject, name, memberAccessibility, null, positionalParameterValues, namedParameterValues, typeof(TValue?), value);
   }
 
-  public static bool TrySetProperty<TSource>(TSource source, string name, MemberAccessibility memberAccessibility,
+  public static bool TrySetInstancePropertyValue<TSource>(TSource source, string name, MemberAccessibility memberAccessibility,
     IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, object? value)
   {
     Argument.That.NotNull(source);
     Argument.That.NotNullOrWhitespace(name);
 
-    var propertyInfo = MatchProperty(typeof(TSource), false, name, memberAccessibility, false, true, false, null, positionalParameterValues, namedParameterValues, TypedValue.GetType(value), TypeVariance.Contravariant);
-    if (propertyInfo is null)
-      return false;
-    var indices = GetParameterValues(propertyInfo.GetIndexParameters(), positionalParameterValues, namedParameterValues);
-    propertyInfo.SetValue(source, TypedValue.GetValue(value), indices);
-    return true;
+    return TrySetPropertyValueCore(typeof(TSource), source, name, memberAccessibility, null, positionalParameterValues, namedParameterValues, TypedValue.GetType(value), TypedValue.GetValue(value));
   }
 
-  public static bool TrySetProperty<TSource, TValue>(TSource source, string name, MemberAccessibility memberAccessibility,
+  public static bool TrySetInstancePropertyValue<TSource, TValue>(TSource source, string name, MemberAccessibility memberAccessibility,
     IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, TValue? value)
   {
     Argument.That.NotNull(source);
     Argument.That.NotNullOrWhitespace(name);
 
-    var propertyInfo = MatchProperty(typeof(TSource), false, name, memberAccessibility, false, true, false, null, positionalParameterValues, namedParameterValues, typeof(TValue?), TypeVariance.Contravariant);
-    if (propertyInfo is null)
-      return false;
-    var indices = GetParameterValues(propertyInfo.GetIndexParameters(), positionalParameterValues, namedParameterValues);
-    propertyInfo.SetValue(source, value, indices);
-    return true;
+    return TrySetPropertyValueCore(typeof(TSource), source, name, memberAccessibility, null, positionalParameterValues, namedParameterValues, typeof(TValue?), value);
   }
 
-  public static bool TryReplaceProperty(object source, string name, MemberAccessibility memberAccessibility,
+  #endregion
+  #region Try replace methods
+
+  public static bool TryReplaceInstancePropertyValue(object source, string name, MemberAccessibility memberAccessibility,
     IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, object? newValue, out object? oldValue)
   {
     Argument.That.NotNull(source);
@@ -1822,19 +2094,10 @@ public static class Reflector
     Argument.That.NotNull(sourceObject);
     var sourceType = TypedValue.GetType(source)!;
 
-    var propertyInfo = MatchProperty(sourceType, false, name, memberAccessibility, true, true, false, null, positionalParameterValues, namedParameterValues, TypedValue.GetType(newValue), TypeVariance.Contravariant);
-    if (propertyInfo is null)
-    {
-      oldValue = default;
-      return false;
-    }
-    var indices = GetParameterValues(propertyInfo.GetIndexParameters(), positionalParameterValues, namedParameterValues);
-    oldValue = propertyInfo.GetValue(sourceObject, indices);
-    propertyInfo.SetValue(sourceObject, TypedValue.GetValue(newValue), indices);
-    return true;
+    return TryReplacePropertyValueCore(sourceType, sourceObject, name, memberAccessibility, null, positionalParameterValues, namedParameterValues, TypedValue.GetType(newValue), TypedValue.GetValue(newValue), out oldValue);
   }
 
-  public static bool TryReplaceProperty<TValue>(object source, string name, MemberAccessibility memberAccessibility,
+  public static bool TryReplaceInstancePropertyValue<TValue>(object source, string name, MemberAccessibility memberAccessibility,
     IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, TValue? newValue, out TValue? oldValue)
   {
     Argument.That.NotNull(source);
@@ -1843,55 +2106,49 @@ public static class Reflector
     Argument.That.NotNull(sourceObject);
     var sourceType = TypedValue.GetType(source)!;
 
-    var propertyInfo = MatchProperty(sourceType, false, name, memberAccessibility, true, true, false, null, positionalParameterValues, namedParameterValues, typeof(TValue?), TypeVariance.Invariant);
-    if (propertyInfo is null)
+    if (TryReplacePropertyValueCore(sourceType, sourceObject, name, memberAccessibility, null, positionalParameterValues, namedParameterValues, typeof(TValue), newValue, out var result))
+    {
+      oldValue = (TValue?)result;
+      return true;
+    }
+    else
     {
       oldValue = default;
       return false;
     }
-    var indices = GetParameterValues(propertyInfo.GetIndexParameters(), positionalParameterValues, namedParameterValues);
-    oldValue = (TValue?)propertyInfo.GetValue(sourceObject, indices);
-    propertyInfo.SetValue(sourceObject, newValue, indices);
-    return true;
   }
 
-  public static bool TryReplaceProperty<TSource>(TSource source, string name, MemberAccessibility memberAccessibility,
+  public static bool TryReplaceInstancePropertyValue<TSource>(TSource source, string name, MemberAccessibility memberAccessibility,
     IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, object? newValue, out object? oldValue)
   {
     Argument.That.NotNull(source);
     Argument.That.NotNullOrWhitespace(name);
 
-    var propertyInfo = MatchProperty(typeof(TSource), false, name, memberAccessibility, true, true, false, null, positionalParameterValues, namedParameterValues, TypedValue.GetType(newValue), TypeVariance.Contravariant);
-    if (propertyInfo is null)
-    {
-      oldValue = default;
-      return false;
-    }
-    var indices = GetParameterValues(propertyInfo.GetIndexParameters(), positionalParameterValues, namedParameterValues);
-    oldValue = propertyInfo.GetValue(source, indices);
-    propertyInfo.SetValue(source, TypedValue.GetValue(newValue), indices);
-    return true;
+    return TryReplacePropertyValueCore(typeof(TSource), source, name, memberAccessibility, null, positionalParameterValues, namedParameterValues, TypedValue.GetType(newValue), TypedValue.GetValue(newValue), out oldValue);
   }
 
-  public static bool TryReplaceProperty<TSource, TValue>(TSource source, string name, MemberAccessibility memberAccessibility,
+  public static bool TryReplaceInstancePropertyValue<TSource, TValue>(TSource source, string name, MemberAccessibility memberAccessibility,
     IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, TValue? newValue, out TValue? oldValue)
   {
     Argument.That.NotNull(source);
     Argument.That.NotNullOrWhitespace(name);
 
-    var propertyInfo = MatchProperty(typeof(TSource), false, name, memberAccessibility, true, true, false, null, positionalParameterValues, namedParameterValues, typeof(TValue?), TypeVariance.Invariant);
-    if (propertyInfo is null)
+    if (TryReplacePropertyValueCore(typeof(TSource), source, name, memberAccessibility, null, positionalParameterValues, namedParameterValues, typeof(TValue), newValue, out var result))
+    {
+      oldValue = (TValue?)result;
+      return true;
+    }
+    else
     {
       oldValue = default;
       return false;
     }
-    var indices = GetParameterValues(propertyInfo.GetIndexParameters(), positionalParameterValues, namedParameterValues);
-    oldValue = (TValue?)propertyInfo.GetValue(source, indices);
-    propertyInfo.SetValue(source, newValue, indices);
-    return true;
   }
 
-  public static bool TryExchangeProperty(object source, string name, MemberAccessibility memberAccessibility,
+  #endregion
+  #region Try exchange methods
+
+  public static bool TryExchangeInstancePropertyValue(object source, string name, MemberAccessibility memberAccessibility,
     IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, ref object? value)
   {
     Argument.That.NotNull(source);
@@ -1900,17 +2157,13 @@ public static class Reflector
     Argument.That.NotNull(sourceObject);
     var sourceType = TypedValue.GetType(source)!;
 
-    var propertyInfo = MatchProperty(sourceType, false, name, memberAccessibility, true, true, false, null, positionalParameterValues, namedParameterValues, TypedValue.GetType(value), TypeVariance.Contravariant);
-    if (propertyInfo is null)
+    if (!TryReplacePropertyValueCore(sourceType, sourceObject, name, memberAccessibility, null, positionalParameterValues, namedParameterValues, TypedValue.GetType(value), TypedValue.GetValue(value), out var result))
       return false;
-    var indices = GetParameterValues(propertyInfo.GetIndexParameters(), positionalParameterValues, namedParameterValues);
-    var result = propertyInfo.GetValue(sourceObject, indices);
-    propertyInfo.SetValue(sourceObject, TypedValue.GetValue(value), indices);
     value = result;
     return true;
   }
 
-  public static bool TryExchangeProperty<TValue>(object source, string name, MemberAccessibility memberAccessibility,
+  public static bool TryExchangeInstancePropertyValue<TValue>(object source, string name, MemberAccessibility memberAccessibility,
     IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, ref TValue? value)
   {
     Argument.That.NotNull(source);
@@ -1919,52 +2172,40 @@ public static class Reflector
     Argument.That.NotNull(sourceObject);
     var sourceType = TypedValue.GetType(source)!;
 
-    var propertyInfo = MatchProperty(sourceType, false, name, memberAccessibility, true, true, false, null, positionalParameterValues, namedParameterValues, typeof(TValue?), TypeVariance.Invariant);
-    if (propertyInfo is null)
+    if (!TryReplacePropertyValueCore(sourceType, sourceObject, name, memberAccessibility, null, positionalParameterValues, namedParameterValues, typeof(TValue), value, out var result))
       return false;
-    var indices = GetParameterValues(propertyInfo.GetIndexParameters(), positionalParameterValues, namedParameterValues);
-    var result = (TValue?)propertyInfo.GetValue(sourceObject, indices);
-    propertyInfo.SetValue(sourceObject, value, indices);
-    value = result;
+    value = (TValue?)result;
     return true;
   }
 
-  public static bool TryExchangeProperty<TSource>(TSource source, string name, MemberAccessibility memberAccessibility,
+  public static bool TryExchangeInstancePropertyValue<TSource>(TSource source, string name, MemberAccessibility memberAccessibility,
     IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, ref object? value)
   {
     Argument.That.NotNull(source);
     Argument.That.NotNullOrWhitespace(name);
 
-    var propertyInfo = MatchProperty(typeof(TSource), false, name, memberAccessibility, true, true, false, null, positionalParameterValues, namedParameterValues, TypedValue.GetType(value), TypeVariance.Contravariant);
-    if (propertyInfo is null)
+    if (!TryReplacePropertyValueCore(typeof(TSource), source, name, memberAccessibility, null, positionalParameterValues, namedParameterValues, TypedValue.GetType(value), TypedValue.GetValue(value), out var result))
       return false;
-    var indices = GetParameterValues(propertyInfo.GetIndexParameters(), positionalParameterValues, namedParameterValues);
-    var result = propertyInfo.GetValue(source, indices);
-    propertyInfo.SetValue(source, TypedValue.GetValue(value), indices);
     value = result;
     return true;
   }
 
-  public static bool TryExchangeProperty<TSource, TValue>(TSource source, string name, MemberAccessibility memberAccessibility,
+  public static bool TryExchangeInstancePropertyValue<TSource, TValue>(TSource source, string name, MemberAccessibility memberAccessibility,
     IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, ref TValue? value)
   {
     Argument.That.NotNull(source);
     Argument.That.NotNullOrWhitespace(name);
 
-    var propertyInfo = MatchProperty(typeof(TSource), false, name, memberAccessibility, true, true, false, null, positionalParameterValues, namedParameterValues, typeof(TValue?), TypeVariance.Invariant);
-    if (propertyInfo is null)
+    if (!TryReplacePropertyValueCore(typeof(TSource), source, name, memberAccessibility, null, positionalParameterValues, namedParameterValues, typeof(TValue), value, out var result))
       return false;
-    var indices = GetParameterValues(propertyInfo.GetIndexParameters(), positionalParameterValues, namedParameterValues);
-    var result = (TValue?)propertyInfo.GetValue(source, indices);
-    propertyInfo.SetValue(source, value, indices);
-    value = result;
+    value = (TValue?)result;
     return true;
   }
 
   #endregion
-  #region Direct methods
+  #region Direct info methods
 
-  public static object? GetProperty(object source, string name, MemberAccessibility memberAccessibility,
+  public static PropertyInfo GetInstanceProperty(object source, string name, MemberAccessibility memberAccessibility,
     IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, Type? valueType)
   {
     Argument.That.NotNull(source);
@@ -1973,12 +2214,11 @@ public static class Reflector
     Argument.That.NotNull(sourceObject);
     var sourceType = TypedValue.GetType(source)!;
 
-    var propertyInfo = MatchProperty(sourceType, false, name, memberAccessibility, true, false, true, null, positionalParameterValues, namedParameterValues, valueType, TypeVariance.Covariant)!;
-    var indices = GetParameterValues(propertyInfo.GetIndexParameters(), positionalParameterValues, namedParameterValues);
-    return propertyInfo.GetValue(sourceObject, indices);
+    return GetPropertyCore(sourceType, sourceObject, name, memberAccessibility, null,
+      positionalParameterValues?.GetTypesOfValues(), namedParameterValues?.GetTypesOfValues(memberAccessibility.IsFlagsSet(MemberAccessibility.IgnoreCase)), valueType);
   }
 
-  public static TValue? GetProperty<TValue>(object source, string name, MemberAccessibility memberAccessibility,
+  public static PropertyInfo GetInstanceProperty<TValue>(object source, string name, MemberAccessibility memberAccessibility,
     IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues)
   {
     Argument.That.NotNull(source);
@@ -1987,34 +2227,79 @@ public static class Reflector
     Argument.That.NotNull(sourceObject);
     var sourceType = TypedValue.GetType(source)!;
 
-    var propertyInfo = MatchProperty(sourceType, false, name, memberAccessibility, true, false, true, null, positionalParameterValues, namedParameterValues, typeof(TValue?), TypeVariance.Covariant)!;
-    var indices = GetParameterValues(propertyInfo.GetIndexParameters(), positionalParameterValues, namedParameterValues);
-    return (TValue?)propertyInfo.GetValue(sourceObject, indices);
+    return GetPropertyCore(sourceType, sourceObject, name, memberAccessibility, null,
+      positionalParameterValues?.GetTypesOfValues(), namedParameterValues?.GetTypesOfValues(memberAccessibility.IsFlagsSet(MemberAccessibility.IgnoreCase)), typeof(TValue));
   }
 
-  public static object? GetProperty<TSource>(TSource source, string name, MemberAccessibility memberAccessibility,
+  public static PropertyInfo GetInstanceProperty<TSource>(TSource source, string name, MemberAccessibility memberAccessibility,
     IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, Type? valueType)
   {
     Argument.That.NotNull(source);
     Argument.That.NotNullOrWhitespace(name);
 
-    var propertyInfo = MatchProperty(typeof(TSource), false, name, memberAccessibility, true, false, true, null, positionalParameterValues, namedParameterValues, valueType, TypeVariance.Covariant)!;
-    var indices = GetParameterValues(propertyInfo.GetIndexParameters(), positionalParameterValues, namedParameterValues);
-    return propertyInfo.GetValue(source, indices);
+    return GetPropertyCore(typeof(TSource), source, name, memberAccessibility, null,
+      positionalParameterValues?.GetTypesOfValues(), namedParameterValues?.GetTypesOfValues(memberAccessibility.IsFlagsSet(MemberAccessibility.IgnoreCase)), valueType);
   }
 
-  public static TValue? GetProperty<TSource, TValue>(TSource source, string name, MemberAccessibility memberAccessibility,
+  public static PropertyInfo GetInstanceProperty<TSource, TValue>(TSource source, string name, MemberAccessibility memberAccessibility,
     IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues)
   {
     Argument.That.NotNull(source);
     Argument.That.NotNullOrWhitespace(name);
 
-    var propertyInfo = MatchProperty(typeof(TSource), false, name, memberAccessibility, true, false, true, null, positionalParameterValues, namedParameterValues, typeof(TValue?), TypeVariance.Covariant)!;
-    var indices = GetParameterValues(propertyInfo.GetIndexParameters(), positionalParameterValues, namedParameterValues);
-    return (TValue?)propertyInfo.GetValue(source, indices);
+    return GetPropertyCore(typeof(TSource), source, name, memberAccessibility, null,
+      positionalParameterValues?.GetTypesOfValues(), namedParameterValues?.GetTypesOfValues(memberAccessibility.IsFlagsSet(MemberAccessibility.IgnoreCase)), typeof(TValue));
   }
 
-  public static void SetProperty(object source, string name, MemberAccessibility memberAccessibility,
+  #endregion
+  #region Direct get methods
+
+  public static object? GetInstancePropertyValue(object source, string name, MemberAccessibility memberAccessibility,
+    IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, Type? valueType)
+  {
+    Argument.That.NotNull(source);
+    Argument.That.NotNullOrWhitespace(name);
+    var sourceObject = TypedValue.GetValue(source);
+    Argument.That.NotNull(sourceObject);
+    var sourceType = TypedValue.GetType(source)!;
+
+    return GetPropertyValueCore(sourceType, sourceObject, name, memberAccessibility, null, positionalParameterValues, namedParameterValues, valueType);
+  }
+
+  public static TValue? GetInstancePropertyValue<TValue>(object source, string name, MemberAccessibility memberAccessibility,
+    IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues)
+  {
+    Argument.That.NotNull(source);
+    Argument.That.NotNullOrWhitespace(name);
+    var sourceObject = TypedValue.GetValue(source);
+    Argument.That.NotNull(sourceObject);
+    var sourceType = TypedValue.GetType(source)!;
+
+    return (TValue?)GetPropertyValueCore(sourceType, sourceObject, name, memberAccessibility, null, positionalParameterValues, namedParameterValues, typeof(TValue));
+  }
+
+  public static object? GetInstancePropertyValue<TSource>(TSource source, string name, MemberAccessibility memberAccessibility,
+    IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, Type? valueType)
+  {
+    Argument.That.NotNull(source);
+    Argument.That.NotNullOrWhitespace(name);
+
+    return GetPropertyValueCore(typeof(TSource), source, name, memberAccessibility, null, positionalParameterValues, namedParameterValues, valueType);
+  }
+
+  public static TValue? GetInstancePropertyValue<TSource, TValue>(TSource source, string name, MemberAccessibility memberAccessibility,
+    IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues)
+  {
+    Argument.That.NotNull(source);
+    Argument.That.NotNullOrWhitespace(name);
+
+    return (TValue?)GetPropertyValueCore(typeof(TSource), source, name, memberAccessibility, null, positionalParameterValues, namedParameterValues, typeof(TValue));
+  }
+
+  #endregion
+  #region Direct set methods
+
+  public static void SetInstancePropertyValue(object source, string name, MemberAccessibility memberAccessibility,
     IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, object? value)
   {
     Argument.That.NotNull(source);
@@ -2023,12 +2308,10 @@ public static class Reflector
     Argument.That.NotNull(sourceObject);
     var sourceType = TypedValue.GetType(source)!;
 
-    var propertyInfo = MatchProperty(sourceType, false, name, memberAccessibility, false, true, true, null, positionalParameterValues, namedParameterValues, TypedValue.GetType(value), TypeVariance.Contravariant)!;
-    var indices = GetParameterValues(propertyInfo.GetIndexParameters(), positionalParameterValues, namedParameterValues);
-    propertyInfo.SetValue(sourceObject, TypedValue.GetValue(value), indices);
+    SetPropertyValueCore(sourceType, sourceObject, name, memberAccessibility, null, positionalParameterValues, namedParameterValues, TypedValue.GetType(value), TypedValue.GetValue(value));
   }
 
-  public static void SetProperty<TValue>(object source, string name, MemberAccessibility memberAccessibility,
+  public static void SetInstancePropertyValue<TValue>(object source, string name, MemberAccessibility memberAccessibility,
     IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, TValue? value)
   {
     Argument.That.NotNull(source);
@@ -2037,34 +2320,31 @@ public static class Reflector
     Argument.That.NotNull(sourceObject);
     var sourceType = TypedValue.GetType(source)!;
 
-    var propertyInfo = MatchProperty(sourceType, false, name, memberAccessibility, false, true, true, null, positionalParameterValues, namedParameterValues, typeof(TValue?), TypeVariance.Contravariant)!;
-    var indices = GetParameterValues(propertyInfo.GetIndexParameters(), positionalParameterValues, namedParameterValues);
-    propertyInfo.SetValue(sourceObject, value, indices);
+    SetPropertyValueCore(sourceType, sourceObject, name, memberAccessibility, null, positionalParameterValues, namedParameterValues, typeof(TValue), value);
   }
 
-  public static void SetProperty<TSource>(TSource source, string name, MemberAccessibility memberAccessibility,
+  public static void SetInstancePropertyValue<TSource>(TSource source, string name, MemberAccessibility memberAccessibility,
     IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, object? value)
   {
     Argument.That.NotNull(source);
     Argument.That.NotNullOrWhitespace(name);
 
-    var propertyInfo = MatchProperty(typeof(TSource), false, name, memberAccessibility, false, true, true, null, positionalParameterValues, namedParameterValues, TypedValue.GetType(value), TypeVariance.Contravariant)!;
-    var indices = GetParameterValues(propertyInfo.GetIndexParameters(), positionalParameterValues, namedParameterValues);
-    propertyInfo.SetValue(source, TypedValue.GetValue(value), indices);
+    SetPropertyValueCore(typeof(TSource), source, name, memberAccessibility, null, positionalParameterValues, namedParameterValues, TypedValue.GetType(value), TypedValue.GetValue(value));
   }
 
-  public static void SetProperty<TSource, TValue>(TSource source, string name, MemberAccessibility memberAccessibility,
+  public static void SetInstancePropertyValue<TSource, TValue>(TSource source, string name, MemberAccessibility memberAccessibility,
     IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, TValue? value)
   {
     Argument.That.NotNull(source);
     Argument.That.NotNullOrWhitespace(name);
 
-    var propertyInfo = MatchProperty(typeof(TSource), false, name, memberAccessibility, false, true, true, null, positionalParameterValues, namedParameterValues, typeof(TValue?), TypeVariance.Contravariant)!;
-    var indices = GetParameterValues(propertyInfo.GetIndexParameters(), positionalParameterValues, namedParameterValues);
-    propertyInfo.SetValue(source, value, indices);
+    SetPropertyValueCore(typeof(TSource), source, name, memberAccessibility, null, positionalParameterValues, namedParameterValues, typeof(TValue), value);
   }
 
-  public static object? ReplaceProperty(object source, string name, MemberAccessibility memberAccessibility,
+  #endregion
+  #region Direct replace methods
+
+  public static object? ReplaceInstancePropertyValue(object source, string name, MemberAccessibility memberAccessibility,
     IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, object? value)
   {
     Argument.That.NotNull(source);
@@ -2073,14 +2353,10 @@ public static class Reflector
     Argument.That.NotNull(sourceObject);
     var sourceType = TypedValue.GetType(source)!;
 
-    var propertyInfo = MatchProperty(sourceType, false, name, memberAccessibility, true, true, true, null, positionalParameterValues, namedParameterValues, TypedValue.GetType(value), TypeVariance.Contravariant)!;
-    var indices = GetParameterValues(propertyInfo.GetIndexParameters(), positionalParameterValues, namedParameterValues);
-    var result = propertyInfo.GetValue(sourceObject, indices);
-    propertyInfo.SetValue(sourceObject, TypedValue.GetValue(value), indices);
-    return result;
+    return ReplacePropertyValueCore(sourceType, sourceObject, name, memberAccessibility, null, positionalParameterValues, namedParameterValues, TypedValue.GetType(value), TypedValue.GetValue(value));
   }
 
-  public static TValue? ReplaceProperty<TValue>(object source, string name, MemberAccessibility memberAccessibility,
+  public static TValue? ReplaceInstancePropertyValue<TValue>(object source, string name, MemberAccessibility memberAccessibility,
     IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, TValue? value)
   {
     Argument.That.NotNull(source);
@@ -2089,40 +2365,31 @@ public static class Reflector
     Argument.That.NotNull(sourceObject);
     var sourceType = TypedValue.GetType(source)!;
 
-    var propertyInfo = MatchProperty(sourceType, false, name, memberAccessibility, true, true, true, null, positionalParameterValues, namedParameterValues, typeof(TValue?), TypeVariance.Invariant)!;
-    var indices = GetParameterValues(propertyInfo.GetIndexParameters(), positionalParameterValues, namedParameterValues);
-    var result = (TValue?)propertyInfo.GetValue(sourceObject, indices);
-    propertyInfo.SetValue(sourceObject, value, indices);
-    return result;
+    return (TValue?)ReplacePropertyValueCore(sourceType, sourceObject, name, memberAccessibility, null, positionalParameterValues, namedParameterValues, typeof(TValue), value);
   }
 
-  public static object? ReplaceProperty<TSource>(TSource source, string name, MemberAccessibility memberAccessibility,
+  public static object? ReplaceInstancePropertyValue<TSource>(TSource source, string name, MemberAccessibility memberAccessibility,
     IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, object? value)
   {
     Argument.That.NotNull(source);
     Argument.That.NotNullOrWhitespace(name);
 
-    var propertyInfo = MatchProperty(typeof(TSource), false, name, memberAccessibility, true, true, true, null, positionalParameterValues, namedParameterValues, TypedValue.GetType(value), TypeVariance.Contravariant)!;
-    var indices = GetParameterValues(propertyInfo.GetIndexParameters(), positionalParameterValues, namedParameterValues);
-    var result = propertyInfo.GetValue(source, indices);
-    propertyInfo.SetValue(source, TypedValue.GetValue(value), indices);
-    return result;
+    return ReplacePropertyValueCore(typeof(TSource), source, name, memberAccessibility, null, positionalParameterValues, namedParameterValues, TypedValue.GetType(value), TypedValue.GetValue(value));
   }
 
-  public static TValue? ReplaceProperty<TSource, TValue>(TSource source, string name, MemberAccessibility memberAccessibility,
+  public static TValue? ReplaceInstancePropertyValue<TSource, TValue>(TSource source, string name, MemberAccessibility memberAccessibility,
     IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, TValue? value)
   {
     Argument.That.NotNull(source);
     Argument.That.NotNullOrWhitespace(name);
 
-    var propertyInfo = MatchProperty(typeof(TSource), false, name, memberAccessibility, true, true, true, null, positionalParameterValues, namedParameterValues, typeof(TValue?), TypeVariance.Invariant)!;
-    var indices = GetParameterValues(propertyInfo.GetIndexParameters(), positionalParameterValues, namedParameterValues);
-    var result = (TValue?)propertyInfo.GetValue(source, indices);
-    propertyInfo.SetValue(source, value, indices);
-    return result;
+    return (TValue?)ReplacePropertyValueCore(typeof(TSource), source, name, memberAccessibility, null, positionalParameterValues, namedParameterValues, typeof(TValue), value);
   }
 
-  public static void ExchangeProperty(object source, string name, MemberAccessibility memberAccessibility,
+  #endregion
+  #region Direct exchange methods
+
+  public static void ExchangeInstancePropertyValue(object source, string name, MemberAccessibility memberAccessibility,
     IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, ref object? value)
   {
     Argument.That.NotNull(source);
@@ -2131,14 +2398,10 @@ public static class Reflector
     Argument.That.NotNull(sourceObject);
     var sourceType = TypedValue.GetType(source)!;
 
-    var propertyInfo = MatchProperty(sourceType, false, name, memberAccessibility, true, true, true, null, positionalParameterValues, namedParameterValues, TypedValue.GetType(value), TypeVariance.Contravariant)!;
-    var indices = GetParameterValues(propertyInfo.GetIndexParameters(), positionalParameterValues, namedParameterValues);
-    var result = propertyInfo.GetValue(sourceObject, indices);
-    propertyInfo.SetValue(sourceObject, TypedValue.GetValue(value), indices);
-    value = result;
+    value = ReplacePropertyValueCore(sourceType, sourceObject, name, memberAccessibility, null, positionalParameterValues, namedParameterValues, TypedValue.GetType(value), TypedValue.GetValue(value));
   }
 
-  public static void ExchangeProperty<TValue>(object source, string name, MemberAccessibility memberAccessibility,
+  public static void ExchangeInstancePropertyValue<TValue>(object source, string name, MemberAccessibility memberAccessibility,
     IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, ref TValue? value)
   {
     Argument.That.NotNull(source);
@@ -2147,37 +2410,25 @@ public static class Reflector
     Argument.That.NotNull(sourceObject);
     var sourceType = TypedValue.GetType(source)!;
 
-    var propertyInfo = MatchProperty(sourceType, false, name, memberAccessibility, true, true, true, null, positionalParameterValues, namedParameterValues, typeof(TValue?), TypeVariance.Invariant)!;
-    var indices = GetParameterValues(propertyInfo.GetIndexParameters(), positionalParameterValues, namedParameterValues);
-    var result = (TValue?)propertyInfo.GetValue(source, indices);
-    propertyInfo.SetValue(source, value, indices);
-    value = result;
+    value = (TValue?)ReplacePropertyValueCore(sourceType, sourceObject, name, memberAccessibility, null, positionalParameterValues, namedParameterValues, typeof(TValue), value);
   }
 
-  public static void ExchangeProperty<TSource>(TSource source, string name, MemberAccessibility memberAccessibility,
+  public static void ExchangeInstancePropertyValue<TSource>(TSource source, string name, MemberAccessibility memberAccessibility,
     IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, ref object? value)
   {
     Argument.That.NotNull(source);
     Argument.That.NotNullOrWhitespace(name);
 
-    var propertyInfo = MatchProperty(typeof(TSource), false, name, memberAccessibility, true, true, true, null, positionalParameterValues, namedParameterValues, TypedValue.GetType(value), TypeVariance.Contravariant)!;
-    var indices = GetParameterValues(propertyInfo.GetIndexParameters(), positionalParameterValues, namedParameterValues);
-    var result = propertyInfo.GetValue(source, indices);
-    propertyInfo.SetValue(source, TypedValue.GetValue(value), indices);
-    value = result;
+    value = ReplacePropertyValueCore(typeof(TSource), source, name, memberAccessibility, null, positionalParameterValues, namedParameterValues, TypedValue.GetType(value), TypedValue.GetValue(value));
   }
 
-  public static void ExchangeProperty<TSource, TValue>(TSource source, string name, MemberAccessibility memberAccessibility,
+  public static void ExchangeInstancePropertyValue<TSource, TValue>(TSource source, string name, MemberAccessibility memberAccessibility,
     IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, ref TValue? value)
   {
     Argument.That.NotNull(source);
     Argument.That.NotNullOrWhitespace(name);
 
-    var propertyInfo = MatchProperty(typeof(TSource), false, name, memberAccessibility, true, true, true, null, positionalParameterValues, namedParameterValues, typeof(TValue?), TypeVariance.Invariant)!;
-    var indices = GetParameterValues(propertyInfo.GetIndexParameters(), positionalParameterValues, namedParameterValues);
-    var result = (TValue?)propertyInfo.GetValue(source, indices);
-    propertyInfo.SetValue(source, value, indices);
-    value = result;
+    value = (TValue?)ReplacePropertyValueCore(typeof(TSource), source, name, memberAccessibility, null, positionalParameterValues, namedParameterValues, typeof(TValue), value);
   }
 
   #endregion
@@ -2185,480 +2436,504 @@ public static class Reflector
   #endregion
   #region Static property public methods
   #region Without parameters
-  #region Try methods
+  #region Try info methods
 
-  public static bool TryGetProperty(Type type, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, Type? valueType, out object? value)
+  public static bool TryGetStaticProperty(Type sourceType, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, Type? valueType,
+    [NotNullWhen(true)] out PropertyInfo? propertyInfo)
   {
-    Argument.That.NotNull(type);
+    Argument.That.NotNull(sourceType);
     Argument.That.NotNullOrWhitespace(name);
 
-    var propertyInfo = MatchProperty(type, true, name, memberAccessibility, true, false, false, typeArguments?.AsReadOnly(), null, null, valueType ?? typeof(object), TypeVariance.Covariant);
-    if (propertyInfo is null)
+    return TryGetPropertyCore(sourceType, null, name, memberAccessibility, typeArguments, null, null, valueType, out propertyInfo);
+  }
+
+  public static bool TryGetStaticProperty<TValue>(Type sourceType, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments,
+    [NotNullWhen(true)] out PropertyInfo? propertyInfo)
+  {
+    Argument.That.NotNull(sourceType);
+    Argument.That.NotNullOrWhitespace(name);
+
+    return TryGetPropertyCore(sourceType, null, name, memberAccessibility, typeArguments, null, null, typeof(TValue), out propertyInfo);
+  }
+
+  public static bool TryGetStaticProperty<TSource>(string name, MemberAccessibility memberAccessibility, Type? valueType,
+    [NotNullWhen(true)] out PropertyInfo? propertyInfo)
+  {
+    Argument.That.NotNullOrWhitespace(name);
+
+    return TryGetPropertyCore(typeof(TSource), null, name, memberAccessibility, null, null, null, valueType, out propertyInfo);
+  }
+
+  public static bool TryGetStaticProperty<TSource, TValue>(string name, MemberAccessibility memberAccessibility,
+    [NotNullWhen(true)] out PropertyInfo? propertyInfo)
+  {
+    Argument.That.NotNullOrWhitespace(name);
+
+    return TryGetPropertyCore(typeof(TSource), null, name, memberAccessibility, null, null, null, typeof(TValue), out propertyInfo);
+  }
+
+  #endregion
+  #region Try get methods
+
+  public static bool TryGetStaticPropertyValue(Type sourceType, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, Type? valueType, out object? value)
+  {
+    Argument.That.NotNull(sourceType);
+    Argument.That.NotNullOrWhitespace(name);
+
+    return TryGetPropertyValueCore(sourceType, null, name, memberAccessibility, typeArguments, null, null, valueType, out value);
+  }
+
+  public static bool TryGetStaticPropertyValue<TValue>(Type sourceType, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, out TValue? value)
+  {
+    Argument.That.NotNull(sourceType);
+    Argument.That.NotNullOrWhitespace(name);
+
+    if (TryGetPropertyValueCore(sourceType, null, name, memberAccessibility, typeArguments, null, null, typeof(TValue?), out var result))
+    {
+      value = (TValue?)result;
+      return true;
+    }
+    else
     {
       value = default;
       return false;
     }
-    value = propertyInfo.GetValue(null);
-    return true;
   }
 
-  public static bool TryGetProperty<TValue>(Type type, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, out TValue? value)
+  public static bool TryGetStaticPropertyValue<TSource>(string name, MemberAccessibility memberAccessibility, Type? valueType, out object? value)
   {
-    Argument.That.NotNull(type);
     Argument.That.NotNullOrWhitespace(name);
 
-    var propertyInfo = MatchProperty(type, true, name, memberAccessibility, true, false, false, typeArguments?.AsReadOnly(), null, null, typeof(TValue?), TypeVariance.Covariant);
-    if (propertyInfo is null)
+    return TryGetPropertyValueCore(typeof(TSource), null, name, memberAccessibility, null, null, null, valueType, out value);
+  }
+
+  public static bool TryGetStaticPropertyValue<TSource, TValue>(string name, MemberAccessibility memberAccessibility, out TValue? value)
+  {
+    Argument.That.NotNullOrWhitespace(name);
+
+    if (TryGetPropertyValueCore(typeof(TSource), null, name, memberAccessibility, null, null, null, typeof(TValue?), out var result))
+    {
+      value = (TValue?)result;
+      return true;
+    }
+    else
     {
       value = default;
       return false;
     }
-    value = (TValue?)propertyInfo.GetValue(null);
-    return true;
   }
 
-  public static bool TryGetProperty<TSource>(string name, MemberAccessibility memberAccessibility, Type? valueType, out object? value)
+  #endregion
+  #region Try set methods
+
+  public static bool TrySetStaticPropertyValue(Type sourceType, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, object? value)
+  {
+    Argument.That.NotNull(sourceType);
+    Argument.That.NotNullOrWhitespace(name);
+
+    return TrySetPropertyValueCore(sourceType, null, name, memberAccessibility, typeArguments, null, null, TypedValue.GetType(value), TypedValue.GetValue(value));
+  }
+
+  public static bool TrySetStaticPropertyValue<TValue>(Type sourceType, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, TValue? value)
+  {
+    Argument.That.NotNull(sourceType);
+    Argument.That.NotNullOrWhitespace(name);
+
+    return TrySetPropertyValueCore(sourceType, null, name, memberAccessibility, typeArguments, null, null, typeof(TValue?), value);
+  }
+
+  public static bool TrySetStaticPropertyValue<TSource>(string name, MemberAccessibility memberAccessibility, object? value)
   {
     Argument.That.NotNullOrWhitespace(name);
 
-    var propertyInfo = MatchProperty(typeof(TSource), true, name, memberAccessibility, true, false, false, null, null, null, valueType ?? typeof(object), TypeVariance.Covariant);
-    if (propertyInfo is null)
+    return TrySetPropertyValueCore(typeof(TSource), null, name, memberAccessibility, null, null, null, TypedValue.GetType(value), TypedValue.GetValue(value));
+  }
+
+  public static bool TrySetStaticPropertyValue<TSource, TValue>(string name, MemberAccessibility memberAccessibility, TValue? value)
+  {
+    Argument.That.NotNullOrWhitespace(name);
+
+    return TrySetPropertyValueCore(typeof(TSource), null, name, memberAccessibility, null, null, null, typeof(TValue?), value);
+  }
+
+  #endregion
+  #region Try replace methods
+
+  public static bool TryReplaceStaticPropertyValue(Type sourceType, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, object? newValue, out object? oldValue)
+  {
+    Argument.That.NotNull(sourceType);
+    Argument.That.NotNullOrWhitespace(name);
+
+    return TryReplacePropertyValueCore(sourceType, null, name, memberAccessibility, typeArguments, null, null, TypedValue.GetType(newValue), TypedValue.GetValue(newValue), out oldValue);
+  }
+
+  public static bool TryReplaceStaticPropertyValue<TValue>(Type sourceType, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, TValue? newValue, out TValue? oldValue)
+  {
+    Argument.That.NotNull(sourceType);
+    Argument.That.NotNullOrWhitespace(name);
+
+    if (TryReplacePropertyValueCore(sourceType, null, name, memberAccessibility, typeArguments, null, null, typeof(TValue), newValue, out var result))
     {
-      value = default;
-      return false;
+      oldValue = (TValue?)result;
+      return true;
     }
-    value = propertyInfo.GetValue(null);
-    return true;
-  }
-
-  public static bool TryGetProperty<TSource, TValue>(string name, MemberAccessibility memberAccessibility, out TValue? value)
-  {
-    Argument.That.NotNullOrWhitespace(name);
-
-    var propertyInfo = MatchProperty(typeof(TSource), true, name, memberAccessibility, true, false, false, null, null, null, typeof(TValue?), TypeVariance.Covariant);
-    if (propertyInfo is null)
-    {
-      value = default;
-      return false;
-    }
-    value = (TValue?)propertyInfo.GetValue(null);
-    return true;
-  }
-
-  public static bool TrySetProperty(Type type, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, object? value)
-  {
-    Argument.That.NotNull(type);
-    Argument.That.NotNullOrWhitespace(name);
-
-    var propertyInfo = MatchProperty(type, true, name, memberAccessibility, false, true, false, typeArguments?.AsReadOnly(), null, null, TypedValue.GetType(value), TypeVariance.Contravariant);
-    if (propertyInfo is null)
-      return false;
-    propertyInfo.SetValue(null, TypedValue.GetValue(value));
-    return true;
-  }
-
-  public static bool TrySetProperty<TValue>(Type type, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, TValue? value)
-  {
-    Argument.That.NotNull(type);
-    Argument.That.NotNullOrWhitespace(name);
-
-    var propertyInfo = MatchProperty(type, true, name, memberAccessibility, false, true, false, typeArguments?.AsReadOnly(), null, null, typeof(TValue?), TypeVariance.Contravariant);
-    if (propertyInfo is null)
-      return false;
-    propertyInfo.SetValue(null, value);
-    return true;
-  }
-
-  public static bool TrySetProperty<TSource>(string name, MemberAccessibility memberAccessibility, object? value)
-  {
-    Argument.That.NotNullOrWhitespace(name);
-
-    var propertyInfo = MatchProperty(typeof(TSource), true, name, memberAccessibility, false, true, false, null, null, null, TypedValue.GetType(value), TypeVariance.Contravariant);
-    if (propertyInfo is null)
-      return false;
-    propertyInfo.SetValue(null, TypedValue.GetValue(value));
-    return true;
-  }
-
-  public static bool TrySetProperty<TSource, TValue>(string name, MemberAccessibility memberAccessibility, TValue? value)
-  {
-    Argument.That.NotNullOrWhitespace(name);
-
-    var propertyInfo = MatchProperty(typeof(TSource), true, name, memberAccessibility, false, true, false, null, null, null, typeof(TValue?), TypeVariance.Contravariant);
-    if (propertyInfo is null)
-      return false;
-    propertyInfo.SetValue(null, value);
-    return true;
-  }
-
-  public static bool TryReplaceProperty(Type type, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, object? newValue, out object? oldValue)
-  {
-    Argument.That.NotNull(type);
-    Argument.That.NotNullOrWhitespace(name);
-
-    var propertyInfo = MatchProperty(type, true, name, memberAccessibility, true, true, false, typeArguments?.AsReadOnly(), null, null, TypedValue.GetType(newValue), TypeVariance.Contravariant);
-    if (propertyInfo is null)
+    else
     {
       oldValue = default;
       return false;
     }
-    oldValue = propertyInfo.GetValue(null);
-    propertyInfo.SetValue(null, TypedValue.GetValue(newValue));
-    return true;
   }
 
-  public static bool TryReplaceProperty<TValue>(Type type, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, TValue? newValue, out TValue? oldValue)
+  public static bool TryReplaceStaticPropertyValue<TSource>(string name, MemberAccessibility memberAccessibility, object? newValue, out object? oldValue)
   {
-    Argument.That.NotNull(type);
     Argument.That.NotNullOrWhitespace(name);
 
-    var propertyInfo = MatchProperty(type, true, name, memberAccessibility, true, true, false, typeArguments?.AsReadOnly(), null, null, typeof(TValue?), TypeVariance.Invariant);
-    if (propertyInfo is null)
+    return TryReplacePropertyValueCore(typeof(TSource), null, name, memberAccessibility, null, null, null, TypedValue.GetType(newValue), TypedValue.GetValue(newValue), out oldValue);
+  }
+
+  public static bool TryReplaceStaticPropertyValue<TSource, TValue>(string name, MemberAccessibility memberAccessibility, TValue? newValue, out TValue? oldValue)
+  {
+    Argument.That.NotNullOrWhitespace(name);
+
+    if (TryReplacePropertyValueCore(typeof(TSource), null, name, memberAccessibility, null, null, null, typeof(TValue), newValue, out var result))
+    {
+      oldValue = (TValue?)result;
+      return true;
+    }
+    else
     {
       oldValue = default;
       return false;
     }
-    oldValue = (TValue?)propertyInfo.GetValue(null);
-    propertyInfo.SetValue(null, newValue);
-    return true;
   }
 
-  public static bool TryReplaceProperty<TSource>(string name, MemberAccessibility memberAccessibility, object? newValue, out object? oldValue)
+  #endregion
+  #region Try exchange methods
+
+  public static bool TryExchangeStaticPropertyValue(Type sourceType, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, ref object? value)
   {
+    Argument.That.NotNull(sourceType);
     Argument.That.NotNullOrWhitespace(name);
 
-    var propertyInfo = MatchProperty(typeof(TSource), true, name, memberAccessibility, true, true, false, null, null, null, TypedValue.GetType(newValue), TypeVariance.Contravariant);
-    if (propertyInfo is null)
-    {
-      oldValue = default;
+    if (!TryReplacePropertyValueCore(sourceType, null, name, memberAccessibility, typeArguments, null, null, TypedValue.GetType(value), TypedValue.GetValue(value), out var result))
       return false;
-    }
-    oldValue = propertyInfo.GetValue(null);
-    propertyInfo.SetValue(null, TypedValue.GetValue(newValue));
-    return true;
-  }
-
-  public static bool TryReplaceProperty<TSource, TValue>(string name, MemberAccessibility memberAccessibility, TValue? newValue, out TValue? oldValue)
-  {
-    Argument.That.NotNullOrWhitespace(name);
-
-    var propertyInfo = MatchProperty(typeof(TSource), true, name, memberAccessibility, true, true, false, null, null, null, typeof(TValue?), TypeVariance.Invariant);
-    if (propertyInfo is null)
-    {
-      oldValue = default;
-      return false;
-    }
-    oldValue = (TValue?)propertyInfo.GetValue(null);
-    propertyInfo.SetValue(null, newValue);
-    return true;
-  }
-
-  public static bool TryExchangeProperty(Type type, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, ref object? value)
-  {
-    Argument.That.NotNull(type);
-    Argument.That.NotNullOrWhitespace(name);
-
-    var propertyInfo = MatchProperty(type, true, name, memberAccessibility, true, true, false, typeArguments?.AsReadOnly(), null, null, TypedValue.GetType(value), TypeVariance.Contravariant);
-    if (propertyInfo is null)
-      return false;
-    var result = propertyInfo.GetValue(null);
-    propertyInfo.SetValue(null, TypedValue.GetValue(value));
     value = result;
     return true;
   }
 
-  public static bool TryExchangeProperty<TValue>(Type type, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, ref TValue? value)
+  public static bool TryExchangeStaticPropertyValue<TValue>(Type sourceType, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, ref TValue? value)
   {
-    Argument.That.NotNull(type);
+    Argument.That.NotNull(sourceType);
     Argument.That.NotNullOrWhitespace(name);
 
-    var propertyInfo = MatchProperty(type, true, name, memberAccessibility, true, true, false, typeArguments?.AsReadOnly(), null, null, typeof(TValue?), TypeVariance.Invariant);
-    if (propertyInfo is null)
+    if (!TryReplacePropertyValueCore(sourceType, null, name, memberAccessibility, typeArguments, null, null, typeof(TValue), value, out var result))
       return false;
-    var result = (TValue?)propertyInfo.GetValue(null);
-    propertyInfo.SetValue(null, value);
+    value = (TValue?)result;
+    return true;
+  }
+
+  public static bool TryExchangeStaticPropertyValue<TSource>(string name, MemberAccessibility memberAccessibility, ref object? value)
+  {
+    Argument.That.NotNullOrWhitespace(name);
+
+    if (!TryReplacePropertyValueCore(typeof(TSource), null, name, memberAccessibility, null, null, null, TypedValue.GetType(value), TypedValue.GetValue(value), out var result))
+      return false;
     value = result;
     return true;
   }
 
-  public static bool TryExchangeProperty<TSource>(string name, MemberAccessibility memberAccessibility, ref object? value)
+  public static bool TryExchangeStaticPropertyValue<TSource, TValue>(string name, MemberAccessibility memberAccessibility, ref TValue? value)
   {
     Argument.That.NotNullOrWhitespace(name);
 
-    var propertyInfo = MatchProperty(typeof(TSource), true, name, memberAccessibility, true, true, false, null, null, null, TypedValue.GetType(value), TypeVariance.Contravariant);
-    if (propertyInfo is null)
+    if (!TryReplacePropertyValueCore(typeof(TSource), null, name, memberAccessibility, null, null, null, typeof(TValue), value, out var result))
       return false;
-    var result = propertyInfo.GetValue(null);
-    propertyInfo.SetValue(null, TypedValue.GetValue(value));
-    value = result;
-    return true;
-  }
-
-  public static bool TryExchangeProperty<TSource, TValue>(string name, MemberAccessibility memberAccessibility, ref TValue? value)
-  {
-    Argument.That.NotNullOrWhitespace(name);
-
-    var propertyInfo = MatchProperty(typeof(TSource), true, name, memberAccessibility, true, true, false, null, null, null, typeof(TValue?), TypeVariance.Invariant);
-    if (propertyInfo is null)
-      return false;
-    var result = (TValue?)propertyInfo.GetValue(null);
-    propertyInfo.SetValue(null, value);
-    value = result;
+    value = (TValue?)result;
     return true;
   }
 
   #endregion
-  #region Direct methods
+  #region Direct info methods
 
-  public static object? GetProperty(Type type, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, Type? valueType)
+  public static PropertyInfo GetStaticProperty(Type sourceType, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, Type? valueType)
   {
-    Argument.That.NotNull(type);
+    Argument.That.NotNull(sourceType);
     Argument.That.NotNullOrWhitespace(name);
 
-    var propertyInfo = MatchProperty(type, true, name, memberAccessibility, true, false, true, typeArguments?.AsReadOnly(), null, null, valueType ?? typeof(object), TypeVariance.Covariant)!;
-    return propertyInfo.GetValue(null);
+    return GetPropertyCore(sourceType, null, name, memberAccessibility, typeArguments, null, null, valueType);
   }
 
-  public static TValue? GetProperty<TValue>(Type type, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments)
+  public static PropertyInfo GetStaticProperty<TValue>(Type sourceType, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments)
   {
-    Argument.That.NotNull(type);
+    Argument.That.NotNull(sourceType);
     Argument.That.NotNullOrWhitespace(name);
 
-    var propertyInfo = MatchProperty(type, true, name, memberAccessibility, true, false, true, typeArguments?.AsReadOnly(), null, null, typeof(TValue?), TypeVariance.Covariant)!;
-    return (TValue?)propertyInfo.GetValue(null);
+    return GetPropertyCore(sourceType, null, name, memberAccessibility, typeArguments, null, null, typeof(TValue));
   }
 
-  public static object? GetProperty<TSource>(string name, MemberAccessibility memberAccessibility, Type? valueType)
+  public static PropertyInfo GetStaticProperty<TSource>(string name, MemberAccessibility memberAccessibility, Type? valueType)
   {
     Argument.That.NotNullOrWhitespace(name);
 
-    var propertyInfo = MatchProperty(typeof(TSource), true, name, memberAccessibility, true, false, true, null, null, null, valueType ?? typeof(object), TypeVariance.Covariant)!;
-    return propertyInfo.GetValue(null);
+    return GetPropertyCore(typeof(TSource), null, name, memberAccessibility, null, null, null, valueType);
   }
 
-  public static TValue? GetProperty<TSource, TValue>(string name, MemberAccessibility memberAccessibility)
+  public static PropertyInfo GetStaticProperty<TSource, TValue>(string name, MemberAccessibility memberAccessibility)
   {
     Argument.That.NotNullOrWhitespace(name);
 
-    var propertyInfo = MatchProperty(typeof(TSource), true, name, memberAccessibility, true, false, true, null, null, null, typeof(TValue?), TypeVariance.Covariant)!;
-    return (TValue?)propertyInfo.GetValue(null);
+    return GetPropertyCore(typeof(TSource), null, name, memberAccessibility, null, null, null, typeof(TValue));
   }
 
-  public static void SetProperty(Type type, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, object? value)
+  #endregion
+  #region Direct get methods
+
+  public static object? GetStaticPropertyValue(Type sourceType, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, Type? valueType)
   {
-    Argument.That.NotNull(type);
+    Argument.That.NotNull(sourceType);
     Argument.That.NotNullOrWhitespace(name);
 
-    var propertyInfo = MatchProperty(type, true, name, memberAccessibility, false, true, true, typeArguments?.AsReadOnly(), null, null, TypedValue.GetType(value), TypeVariance.Contravariant)!;
-    propertyInfo.SetValue(null, TypedValue.GetValue(value));
+    return GetPropertyValueCore(sourceType, null, name, memberAccessibility, typeArguments, null, null, valueType);
   }
 
-  public static void SetProperty<TValue>(Type type, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, TValue? value)
+  public static TValue? GetStaticPropertyValue<TValue>(Type sourceType, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments)
   {
-    Argument.That.NotNull(type);
+    Argument.That.NotNull(sourceType);
     Argument.That.NotNullOrWhitespace(name);
 
-    var propertyInfo = MatchProperty(type, true, name, memberAccessibility, false, true, true, typeArguments?.AsReadOnly(), null, null, typeof(TValue?), TypeVariance.Contravariant)!;
-    propertyInfo.SetValue(null, value);
+    return (TValue?)GetPropertyValueCore(sourceType, null, name, memberAccessibility, typeArguments, null, null, typeof(TValue));
   }
 
-  public static void SetProperty<TSource>(string name, MemberAccessibility memberAccessibility, object? value)
+  public static object? GetStaticPropertyValue<TSource>(string name, MemberAccessibility memberAccessibility, Type? valueType)
   {
     Argument.That.NotNullOrWhitespace(name);
 
-    var propertyInfo = MatchProperty(typeof(TSource), true, name, memberAccessibility, false, true, true, null, null, null, TypedValue.GetType(value), TypeVariance.Contravariant)!;
-    propertyInfo.SetValue(null, TypedValue.GetValue(value));
+    return GetPropertyValueCore(typeof(TSource), null, name, memberAccessibility, null, null, null, valueType);
   }
 
-  public static void SetProperty<TSource, TValue>(string name, MemberAccessibility memberAccessibility, TValue? value)
+  public static TValue? GetStaticPropertyValue<TSource, TValue>(string name, MemberAccessibility memberAccessibility)
   {
     Argument.That.NotNullOrWhitespace(name);
 
-    var propertyInfo = MatchProperty(typeof(TSource), true, name, memberAccessibility, false, true, true, null, null, null, typeof(TValue?), TypeVariance.Contravariant)!;
-    propertyInfo.SetValue(null, value);
+    return (TValue?)GetPropertyValueCore(typeof(TSource), null, name, memberAccessibility, null, null, null, typeof(TValue));
   }
 
-  public static object? ReplaceProperty(Type type, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, object? value)
+  #endregion
+  #region Direct set methods
+
+  public static void SetStaticPropertyValue(Type sourceType, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, object? value)
   {
-    Argument.That.NotNull(type);
+    Argument.That.NotNull(sourceType);
     Argument.That.NotNullOrWhitespace(name);
 
-    var propertyInfo = MatchProperty(type, true, name, memberAccessibility, true, true, true, typeArguments?.AsReadOnly(), null, null, TypedValue.GetType(value), TypeVariance.Contravariant)!;
-    var result = propertyInfo.GetValue(null);
-    propertyInfo.SetValue(null, TypedValue.GetValue(value));
-    return result;
+    SetPropertyValueCore(sourceType, null, name, memberAccessibility, typeArguments, null, null, TypedValue.GetType(value), TypedValue.GetValue(value));
   }
 
-  public static TValue? ReplaceProperty<TValue>(Type type, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, TValue? value)
+  public static void SetStaticPropertyValue<TValue>(Type sourceType, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, TValue? value)
   {
-    Argument.That.NotNull(type);
+    Argument.That.NotNull(sourceType);
     Argument.That.NotNullOrWhitespace(name);
 
-    var propertyInfo = MatchProperty(type, true, name, memberAccessibility, true, true, true, typeArguments?.AsReadOnly(), null, null, typeof(TValue?), TypeVariance.Invariant)!;
-    var result = (TValue?)propertyInfo.GetValue(null);
-    propertyInfo.SetValue(null, value);
-    return result;
+    SetPropertyValueCore(sourceType, null, name, memberAccessibility, typeArguments, null, null, typeof(TValue), value);
   }
 
-  public static object? ReplaceProperty<TSource>(string name, MemberAccessibility memberAccessibility, object? value)
+  public static void SetStaticPropertyValue<TSource>(string name, MemberAccessibility memberAccessibility, object? value)
   {
     Argument.That.NotNullOrWhitespace(name);
 
-    var propertyInfo = MatchProperty(typeof(TSource), true, name, memberAccessibility, true, true, true, null, null, null, TypedValue.GetType(value), TypeVariance.Contravariant)!;
-    var result = propertyInfo.GetValue(null);
-    propertyInfo.SetValue(null, TypedValue.GetValue(value));
-    return result;
+    SetPropertyValueCore(typeof(TSource), null, name, memberAccessibility, null, null, null, TypedValue.GetType(value), TypedValue.GetValue(value));
   }
 
-  public static TValue? ReplaceProperty<TSource, TValue>(string name, MemberAccessibility memberAccessibility, TValue? value)
+  public static void SetStaticPropertyValue<TSource, TValue>(string name, MemberAccessibility memberAccessibility, TValue? value)
   {
     Argument.That.NotNullOrWhitespace(name);
 
-    var propertyInfo = MatchProperty(typeof(TSource), true, name, memberAccessibility, true, true, true, null, null, null, typeof(TValue?), TypeVariance.Invariant)!;
-    var result = (TValue?)propertyInfo.GetValue(null);
-    propertyInfo.SetValue(null, value);
-    return result;
+    SetPropertyValueCore(typeof(TSource), null, name, memberAccessibility, null, null, null, typeof(TValue), value);
   }
 
-  public static void ExchangeProperty(Type type, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, ref object? value)
+  #endregion
+  #region Direct replace methods
+
+  public static object? ReplaceStaticPropertyValue(Type sourceType, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, object? value)
   {
-    Argument.That.NotNull(type);
+    Argument.That.NotNull(sourceType);
     Argument.That.NotNullOrWhitespace(name);
 
-    var propertyInfo = MatchProperty(type, true, name, memberAccessibility, true, true, true, typeArguments?.AsReadOnly(), null, null, TypedValue.GetType(value), TypeVariance.Contravariant)!;
-    var result = propertyInfo.GetValue(null);
-    propertyInfo.SetValue(null, TypedValue.GetValue(value));
-    value = result;
+    return ReplacePropertyValueCore(sourceType, null, name, memberAccessibility, typeArguments, null, null, TypedValue.GetType(value), TypedValue.GetValue(value));
   }
 
-  public static void ExchangeProperty<TValue>(Type type, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, ref TValue? value)
+  public static TValue? ReplaceStaticPropertyValue<TValue>(Type sourceType, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, TValue? value)
   {
-    Argument.That.NotNull(type);
+    Argument.That.NotNull(sourceType);
     Argument.That.NotNullOrWhitespace(name);
 
-    var propertyInfo = MatchProperty(type, true, name, memberAccessibility, true, true, true, typeArguments?.AsReadOnly(), null, null, typeof(TValue?), TypeVariance.Invariant)!;
-    var result = (TValue?)propertyInfo.GetValue(null);
-    propertyInfo.SetValue(null, value);
-    value = result;
+    return (TValue?)ReplacePropertyValueCore(sourceType, null, name, memberAccessibility, typeArguments, null, null, typeof(TValue), value);
   }
 
-  public static void ExchangeProperty<TSource>(string name, MemberAccessibility memberAccessibility, ref object? value)
+  public static object? ReplaceStaticPropertyValue<TSource>(string name, MemberAccessibility memberAccessibility, object? value)
   {
     Argument.That.NotNullOrWhitespace(name);
 
-    var propertyInfo = MatchProperty(typeof(TSource), true, name, memberAccessibility, true, true, true, null, null, null, TypedValue.GetType(value), TypeVariance.Contravariant)!;
-    var result = propertyInfo.GetValue(null);
-    propertyInfo.SetValue(null, TypedValue.GetValue(value));
-    value = result;
+    return ReplacePropertyValueCore(typeof(TSource), null, name, memberAccessibility, null, null, null, TypedValue.GetType(value), TypedValue.GetValue(value));
   }
 
-  public static void ExchangeProperty<TSource, TValue>(string name, MemberAccessibility memberAccessibility, ref TValue? value)
+  public static TValue? ReplaceStaticPropertyValue<TSource, TValue>(string name, MemberAccessibility memberAccessibility, TValue? value)
   {
     Argument.That.NotNullOrWhitespace(name);
 
-    var propertyInfo = MatchProperty(typeof(TSource), true, name, memberAccessibility, true, true, true, null, null, null, typeof(TValue?), TypeVariance.Invariant)!;
-    var result = (TValue?)propertyInfo.GetValue(null);
-    propertyInfo.SetValue(null, value);
-    value = result;
+    return (TValue?)ReplacePropertyValueCore(typeof(TSource), null, name, memberAccessibility, null, null, null, typeof(TValue), value);
+  }
+
+  #endregion
+  #region Direct exchange methods
+
+  public static void ExchangeStaticPropertyValue(Type sourceType, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, ref object? value)
+  {
+    Argument.That.NotNull(sourceType);
+    Argument.That.NotNullOrWhitespace(name);
+
+    value = ReplacePropertyValueCore(sourceType, null, name, memberAccessibility, typeArguments, null, null, TypedValue.GetType(value), TypedValue.GetValue(value));
+  }
+
+  public static void ExchangeStaticPropertyValue<TValue>(Type sourceType, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments, ref TValue? value)
+  {
+    Argument.That.NotNull(sourceType);
+    Argument.That.NotNullOrWhitespace(name);
+
+    value = (TValue?)ReplacePropertyValueCore(sourceType, null, name, memberAccessibility, null, null, null, typeof(TValue), value);
+  }
+
+  public static void ExchangeStaticPropertyValue<TSource>(string name, MemberAccessibility memberAccessibility, ref object? value)
+  {
+    Argument.That.NotNullOrWhitespace(name);
+
+    value = ReplacePropertyValueCore(typeof(TSource), null, name, memberAccessibility, null, null, null, TypedValue.GetType(value), TypedValue.GetValue(value));
+  }
+
+  public static void ExchangeStaticPropertyValue<TSource, TValue>(string name, MemberAccessibility memberAccessibility, ref TValue? value)
+  {
+    Argument.That.NotNullOrWhitespace(name);
+
+    value = (TValue?)ReplacePropertyValueCore(typeof(TSource), null, name, memberAccessibility, null, null, null, typeof(TValue), value);
   }
 
   #endregion
   #endregion
   #region With parameters
-  #region Try methods
+  #region Try info methods
 
-  public static bool TryGetProperty(Type type, string name, MemberAccessibility memberAccessibility,
-    IList<Type?>? typeArguments, IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, Type? valueType, out object? value)
+  public static bool TryGetStaticProperty(Type sourceType, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes, Type? valueType,
+    [NotNullWhen(true)] out PropertyInfo? propertyInfo)
   {
-    Argument.That.NotNull(type);
+    Argument.That.NotNull(sourceType);
     Argument.That.NotNullOrWhitespace(name);
 
-    var propertyInfo = MatchProperty(type, true, name, memberAccessibility, true, false, false, typeArguments?.AsReadOnly(), positionalParameterValues, namedParameterValues, valueType ?? typeof(object), TypeVariance.Covariant);
-    if (propertyInfo is null)
-    {
-      value = default;
-      return false;
-    }
-    var indices = GetParameterValues(propertyInfo.GetIndexParameters(), positionalParameterValues, namedParameterValues);
-    value = propertyInfo.GetValue(null, indices);
-    return true;
+    return TryGetPropertyCore(sourceType, null, name, memberAccessibility, typeArguments, positionalParameterTypes, namedParameterTypes, valueType, out propertyInfo);
   }
 
-  public static bool TryGetProperty<TValue>(Type type, string name, MemberAccessibility memberAccessibility,
+  public static bool TryGetStaticProperty<TValue>(Type sourceType, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes,
+    [NotNullWhen(true)] out PropertyInfo? propertyInfo)
+  {
+    Argument.That.NotNull(sourceType);
+    Argument.That.NotNullOrWhitespace(name);
+
+    return TryGetPropertyCore(sourceType, null, name, memberAccessibility, typeArguments, positionalParameterTypes, namedParameterTypes, typeof(TValue), out propertyInfo);
+  }
+
+  public static bool TryGetStaticProperty<TSource>(string name, MemberAccessibility memberAccessibility,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes, Type? valueType,
+    [NotNullWhen(true)] out PropertyInfo? propertyInfo)
+  {
+    Argument.That.NotNullOrWhitespace(name);
+
+    return TryGetPropertyCore(typeof(TSource), null, name, memberAccessibility, null, positionalParameterTypes, namedParameterTypes, valueType, out propertyInfo);
+  }
+
+  public static bool TryGetStaticProperty<TSource, TValue>(string name, MemberAccessibility memberAccessibility,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes,
+    [NotNullWhen(true)] out PropertyInfo? propertyInfo)
+  {
+    Argument.That.NotNullOrWhitespace(name);
+
+    return TryGetPropertyCore(typeof(TSource), null, name, memberAccessibility, null, positionalParameterTypes, namedParameterTypes, typeof(TValue), out propertyInfo);
+  }
+
+  #endregion
+  #region Try get methods
+
+  public static bool TryGetStaticPropertyValue(Type sourceType, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments,
+    IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, Type? valueType, out object? value)
+  {
+    Argument.That.NotNull(sourceType);
+    Argument.That.NotNullOrWhitespace(name);
+
+    return TryGetPropertyValueCore(sourceType, null, name, memberAccessibility, typeArguments, positionalParameterValues, namedParameterValues, valueType, out value);
+  }
+
+  public static bool TryGetStaticPropertyValue<TValue>(Type sourceType, string name, MemberAccessibility memberAccessibility,
     IList<Type?>? typeArguments, IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, out TValue? value)
   {
-    Argument.That.NotNull(type);
+    Argument.That.NotNull(sourceType);
     Argument.That.NotNullOrWhitespace(name);
 
-    var propertyInfo = MatchProperty(type, true, name, memberAccessibility, true, false, false, typeArguments?.AsReadOnly(), positionalParameterValues, namedParameterValues, typeof(TValue?), TypeVariance.Covariant);
-    if (propertyInfo is null)
+    if (TryGetPropertyValueCore(sourceType, null, name, memberAccessibility, typeArguments, positionalParameterValues, namedParameterValues, typeof(TValue?), out var result))
+    {
+      value = (TValue?)result;
+      return true;
+    }
+    else
     {
       value = default;
       return false;
     }
-    var indices = GetParameterValues(propertyInfo.GetIndexParameters(), positionalParameterValues, namedParameterValues);
-    value = (TValue?)propertyInfo.GetValue(null, indices);
-    return true;
   }
 
-  public static bool TryGetProperty<TSource>(string name, MemberAccessibility memberAccessibility,
+  public static bool TryGetStaticPropertyValue<TSource>(string name, MemberAccessibility memberAccessibility,
     IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, Type? valueType, out object? value)
   {
     Argument.That.NotNullOrWhitespace(name);
 
-    var propertyInfo = MatchProperty(typeof(TSource), true, name, memberAccessibility, true, false, false, null, positionalParameterValues, namedParameterValues, valueType ?? typeof(object), TypeVariance.Covariant);
-    if (propertyInfo is null)
-    {
-      value = default;
-      return false;
-    }
-    var indices = GetParameterValues(propertyInfo.GetIndexParameters(), positionalParameterValues, namedParameterValues);
-    value = propertyInfo.GetValue(null, indices);
-    return true;
+    return TryGetPropertyValueCore(typeof(TSource), null, name, memberAccessibility, null, positionalParameterValues, namedParameterValues, valueType, out value);
   }
 
-  public static bool TryGetProperty<TSource, TValue>(string name, MemberAccessibility memberAccessibility,
+  public static bool TryGetStaticPropertyValue<TSource, TValue>(string name, MemberAccessibility memberAccessibility,
     IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, out TValue? value)
   {
     Argument.That.NotNullOrWhitespace(name);
 
-    var propertyInfo = MatchProperty(typeof(TSource), true, name, memberAccessibility, true, false, false, null, positionalParameterValues, namedParameterValues, typeof(TValue?), TypeVariance.Covariant);
-    if (propertyInfo is null)
+    if (TryGetPropertyValueCore(typeof(TSource), null, name, memberAccessibility, null, positionalParameterValues, namedParameterValues, typeof(TValue?), out var result))
+    {
+      value = (TValue?)result;
+      return true;
+    }
+    else
     {
       value = default;
       return false;
     }
-    var indices = GetParameterValues(propertyInfo.GetIndexParameters(), positionalParameterValues, namedParameterValues);
-    value = (TValue?)propertyInfo.GetValue(null, indices);
-    return true;
   }
 
-  public static bool TrySetProperty(Type type, string name, MemberAccessibility memberAccessibility,
-    IList<Type?>? typeArguments, IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, object? value)
+  #endregion
+  #region Try set methods
+
+  public static bool TrySetProperty(Type sourceType, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments,
+    IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, object? value)
   {
-    Argument.That.NotNull(type);
+    Argument.That.NotNull(sourceType);
     Argument.That.NotNullOrWhitespace(name);
 
-    var propertyInfo = MatchProperty(type, true, name, memberAccessibility, false, true, false, typeArguments?.AsReadOnly(), positionalParameterValues, namedParameterValues, TypedValue.GetType(value), TypeVariance.Contravariant);
-    if (propertyInfo is null)
-      return false;
-    var indices = GetParameterValues(propertyInfo.GetIndexParameters(), positionalParameterValues, namedParameterValues);
-    propertyInfo.SetValue(null, TypedValue.GetValue(value), indices);
-    return true;
+    return TrySetPropertyValueCore(sourceType, null, name, memberAccessibility, typeArguments, positionalParameterValues, namedParameterValues, TypedValue.GetType(value), TypedValue.GetValue(value));
   }
 
-  public static bool TrySetProperty<TValue>(Type type, string name, MemberAccessibility memberAccessibility,
-    IList<Type?>? typeArguments, IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, TValue? value)
+  public static bool TrySetProperty<TValue>(Type sourceType, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments,
+    IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, TValue? value)
   {
-    Argument.That.NotNull(type);
+    Argument.That.NotNull(sourceType);
     Argument.That.NotNullOrWhitespace(name);
 
-    var propertyInfo = MatchProperty(type, true, name, memberAccessibility, false, true, false, typeArguments?.AsReadOnly(), positionalParameterValues, namedParameterValues, typeof(TValue?), TypeVariance.Contravariant);
-    if (propertyInfo is null)
-      return false;
-    var indices = GetParameterValues(propertyInfo.GetIndexParameters(), positionalParameterValues, namedParameterValues);
-    propertyInfo.SetValue(null, value, indices);
-    return true;
+    return TrySetPropertyValueCore(sourceType, null, name, memberAccessibility, typeArguments, positionalParameterValues, namedParameterValues, typeof(TValue?), value);
   }
 
   public static bool TrySetProperty<TSource>(string name, MemberAccessibility memberAccessibility,
@@ -2666,12 +2941,7 @@ public static class Reflector
   {
     Argument.That.NotNullOrWhitespace(name);
 
-    var propertyInfo = MatchProperty(typeof(TSource), true, name, memberAccessibility, false, true, false, null, positionalParameterValues, namedParameterValues, TypedValue.GetType(value), TypeVariance.Contravariant);
-    if (propertyInfo is null)
-      return false;
-    var indices = GetParameterValues(propertyInfo.GetIndexParameters(), positionalParameterValues, namedParameterValues);
-    propertyInfo.SetValue(null, TypedValue.GetValue(value), indices);
-    return true;
+    return TrySetPropertyValueCore(typeof(TSource), null, name, memberAccessibility, null, positionalParameterValues, namedParameterValues, TypedValue.GetType(value), TypedValue.GetValue(value));
   }
 
   public static bool TrySetProperty<TSource, TValue>(string name, MemberAccessibility memberAccessibility,
@@ -2679,331 +2949,300 @@ public static class Reflector
   {
     Argument.That.NotNullOrWhitespace(name);
 
-    var propertyInfo = MatchProperty(typeof(TSource), true, name, memberAccessibility, false, true, false, null, positionalParameterValues, namedParameterValues, typeof(TValue?), TypeVariance.Contravariant);
-    if (propertyInfo is null)
-      return false;
-    var indices = GetParameterValues(propertyInfo.GetIndexParameters(), positionalParameterValues, namedParameterValues);
-    propertyInfo.SetValue(null, value, indices);
-    return true;
+    return TrySetPropertyValueCore(typeof(TSource), null, name, memberAccessibility, null, positionalParameterValues, namedParameterValues, typeof(TValue?), value);
   }
 
-  public static bool TryReplaceProperty(Type type, string name, MemberAccessibility memberAccessibility,
-    IList<Type?>? typeArguments, IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, object? newValue, out object? oldValue)
+  #endregion
+  #region Try replace methods
+
+  public static bool TryReplaceStaticPropertyValue(Type sourceType, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments,
+    IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, object? newValue, out object? oldValue)
   {
-    Argument.That.NotNull(type);
+    Argument.That.NotNull(sourceType);
     Argument.That.NotNullOrWhitespace(name);
 
-    var propertyInfo = MatchProperty(type, true, name, memberAccessibility, true, true, false, typeArguments?.AsReadOnly(), positionalParameterValues, namedParameterValues, TypedValue.GetType(newValue), TypeVariance.Contravariant);
-    if (propertyInfo is null)
+    return TryReplacePropertyValueCore(sourceType, null, name, memberAccessibility, typeArguments, positionalParameterValues, namedParameterValues, TypedValue.GetType(newValue), TypedValue.GetValue(newValue), out oldValue);
+  }
+
+  public static bool TryReplaceStaticPropertyValue<TValue>(Type sourceType, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments,
+    IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, TValue? newValue, out TValue? oldValue)
+  {
+    Argument.That.NotNull(sourceType);
+    Argument.That.NotNullOrWhitespace(name);
+
+    if (TryReplacePropertyValueCore(sourceType, null, name, memberAccessibility, typeArguments, positionalParameterValues, namedParameterValues, typeof(TValue), newValue, out var result))
+    {
+      oldValue = (TValue?)result;
+      return true;
+    }
+    else
     {
       oldValue = default;
       return false;
     }
-    var indices = GetParameterValues(propertyInfo.GetIndexParameters(), positionalParameterValues, namedParameterValues);
-    oldValue = propertyInfo.GetValue(null, indices);
-    propertyInfo.SetValue(null, TypedValue.GetValue(newValue), indices);
-    return true;
   }
 
-  public static bool TryReplaceProperty<TValue>(Type type, string name, MemberAccessibility memberAccessibility,
-    IList<Type?>? typeArguments, IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, TValue? newValue, out TValue? oldValue)
-  {
-    Argument.That.NotNull(type);
-    Argument.That.NotNullOrWhitespace(name);
-
-    var propertyInfo = MatchProperty(type, true, name, memberAccessibility, true, true, false, typeArguments?.AsReadOnly(), positionalParameterValues, namedParameterValues, typeof(TValue?), TypeVariance.Invariant);
-    if (propertyInfo is null)
-    {
-      oldValue = default;
-      return false;
-    }
-    var indices = GetParameterValues(propertyInfo.GetIndexParameters(), positionalParameterValues, namedParameterValues);
-    oldValue = (TValue?)propertyInfo.GetValue(null, indices);
-    propertyInfo.SetValue(null, newValue, indices);
-    return true;
-  }
-
-  public static bool TryReplaceProperty<TSource>(string name, MemberAccessibility memberAccessibility,
+  public static bool TryReplaceStaticPropertyValue<TSource>(string name, MemberAccessibility memberAccessibility,
     IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, object? newValue, out object? oldValue)
   {
     Argument.That.NotNullOrWhitespace(name);
 
-    var propertyInfo = MatchProperty(typeof(TSource), true, name, memberAccessibility, true, true, false, null, positionalParameterValues, namedParameterValues, TypedValue.GetType(newValue), TypeVariance.Contravariant);
-    if (propertyInfo is null)
-    {
-      oldValue = default;
-      return false;
-    }
-    var indices = GetParameterValues(propertyInfo.GetIndexParameters(), positionalParameterValues, namedParameterValues);
-    oldValue = propertyInfo.GetValue(null, indices);
-    propertyInfo.SetValue(null, TypedValue.GetValue(newValue), indices);
-    return true;
+    return TryReplacePropertyValueCore(typeof(TSource), null, name, memberAccessibility, null, positionalParameterValues, namedParameterValues, TypedValue.GetType(newValue), TypedValue.GetValue(newValue), out oldValue);
   }
 
-  public static bool TryReplaceProperty<TSource, TValue>(string name, MemberAccessibility memberAccessibility,
+  public static bool TryReplaceStaticPropertyValue<TSource, TValue>(string name, MemberAccessibility memberAccessibility,
     IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, TValue? newValue, out TValue? oldValue)
   {
     Argument.That.NotNullOrWhitespace(name);
 
-    var propertyInfo = MatchProperty(typeof(TSource), true, name, memberAccessibility, true, true, false, null, positionalParameterValues, namedParameterValues, typeof(TValue?), TypeVariance.Invariant);
-    if (propertyInfo is null)
+    if (TryReplacePropertyValueCore(typeof(TSource), null, name, memberAccessibility, null, positionalParameterValues, namedParameterValues, typeof(TValue), newValue, out var result))
+    {
+      oldValue = (TValue?)result;
+      return true;
+    }
+    else
     {
       oldValue = default;
       return false;
     }
-    var indices = GetParameterValues(propertyInfo.GetIndexParameters(), positionalParameterValues, namedParameterValues);
-    oldValue = (TValue?)propertyInfo.GetValue(null, indices);
-    propertyInfo.SetValue(null, newValue, indices);
-    return true;
   }
 
-  public static bool TryExchangeProperty(Type type, string name, MemberAccessibility memberAccessibility,
-    IList<Type?>? typeArguments, IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, ref object? value)
+  #endregion
+  #region Try exchange methods
+
+  public static bool TryExchangeStaticPropertyValue(Type sourceType, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments,
+    IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, ref object? value)
   {
-    Argument.That.NotNull(type);
+    Argument.That.NotNull(sourceType);
     Argument.That.NotNullOrWhitespace(name);
 
-    var propertyInfo = MatchProperty(type, true, name, memberAccessibility, true, true, false, typeArguments?.AsReadOnly(), positionalParameterValues, namedParameterValues, TypedValue.GetType(value), TypeVariance.Contravariant);
-    if (propertyInfo is null)
+    if (!TryReplacePropertyValueCore(sourceType, null, name, memberAccessibility, typeArguments, positionalParameterValues, namedParameterValues, TypedValue.GetType(value), TypedValue.GetValue(value), out var result))
       return false;
-    var indices = GetParameterValues(propertyInfo.GetIndexParameters(), positionalParameterValues, namedParameterValues);
-    var result = propertyInfo.GetValue(null, indices);
-    propertyInfo.SetValue(null, TypedValue.GetValue(value), indices);
     value = result;
     return true;
   }
 
-  public static bool TryExchangeProperty<TValue>(Type type, string name, MemberAccessibility memberAccessibility,
-    IList<Type?>? typeArguments, IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, ref TValue? value)
+  public static bool TryExchangeStaticPropertyValue<TValue>(Type sourceType, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments,
+    IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, ref TValue? value)
   {
-    Argument.That.NotNull(type);
+    Argument.That.NotNull(sourceType);
     Argument.That.NotNullOrWhitespace(name);
 
-    var propertyInfo = MatchProperty(type, true, name, memberAccessibility, true, true, false, typeArguments?.AsReadOnly(), positionalParameterValues, namedParameterValues, typeof(TValue?), TypeVariance.Invariant);
-    if (propertyInfo is null)
+    if (!TryReplacePropertyValueCore(sourceType, null, name, memberAccessibility, typeArguments, positionalParameterValues, namedParameterValues, typeof(TValue), value, out var result))
       return false;
-    var indices = GetParameterValues(propertyInfo.GetIndexParameters(), positionalParameterValues, namedParameterValues);
-    var result = (TValue?)propertyInfo.GetValue(null, indices);
-    propertyInfo.SetValue(null, value, indices);
-    value = result;
+    value = (TValue?)result;
     return true;
   }
 
-  public static bool TryExchangeProperty<TSource>(string name, MemberAccessibility memberAccessibility,
+  public static bool TryExchangeStaticPropertyValue<TSource>(string name, MemberAccessibility memberAccessibility,
     IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, ref object? value)
   {
     Argument.That.NotNullOrWhitespace(name);
 
-    var propertyInfo = MatchProperty(typeof(TSource), true, name, memberAccessibility, true, true, false, null, positionalParameterValues, namedParameterValues, TypedValue.GetType(value), TypeVariance.Contravariant);
-    if (propertyInfo is null)
+    if (!TryReplacePropertyValueCore(typeof(TSource), null, name, memberAccessibility, null, positionalParameterValues, namedParameterValues, TypedValue.GetType(value), TypedValue.GetValue(value), out var result))
       return false;
-    var indices = GetParameterValues(propertyInfo.GetIndexParameters(), positionalParameterValues, namedParameterValues);
-    var result = propertyInfo.GetValue(null, indices);
-    propertyInfo.SetValue(null, TypedValue.GetValue(value), indices);
     value = result;
     return true;
   }
 
-  public static bool TryExchangeProperty<TSource, TValue>(string name, MemberAccessibility memberAccessibility,
+  public static bool TryExchangeStaticPropertyValue<TSource, TValue>(string name, MemberAccessibility memberAccessibility,
     IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, ref TValue? value)
   {
     Argument.That.NotNullOrWhitespace(name);
 
-    var propertyInfo = MatchProperty(typeof(TSource), true, name, memberAccessibility, true, true, false, null, positionalParameterValues, namedParameterValues, typeof(TValue?), TypeVariance.Invariant);
-    if (propertyInfo is null)
+    if (!TryReplacePropertyValueCore(typeof(TSource), null, name, memberAccessibility, null, positionalParameterValues, namedParameterValues, typeof(TValue), value, out var result))
       return false;
-    var indices = GetParameterValues(propertyInfo.GetIndexParameters(), positionalParameterValues, namedParameterValues);
-    var result = (TValue?)propertyInfo.GetValue(null, indices);
-    propertyInfo.SetValue(null, value, indices);
-    value = result;
+    value = (TValue?)result;
     return true;
   }
 
   #endregion
-  #region Direct methods
+  #region Direct info methods
 
-  public static object? GetProperty(Type type, string name, MemberAccessibility memberAccessibility,
-    IList<Type?>? typeArguments, IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, Type? valueType)
+  public static PropertyInfo GetStaticProperty(Type sourceType, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments,
+    IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, Type? valueType)
   {
-    Argument.That.NotNull(type);
+    Argument.That.NotNull(sourceType);
     Argument.That.NotNullOrWhitespace(name);
 
-    var propertyInfo = MatchProperty(type, true, name, memberAccessibility, true, false, true, typeArguments?.AsReadOnly(), positionalParameterValues, namedParameterValues, valueType ?? typeof(object), TypeVariance.Covariant)!;
-    var indices = GetParameterValues(propertyInfo.GetIndexParameters(), positionalParameterValues, namedParameterValues);
-    return propertyInfo.GetValue(null, indices);
+    return GetPropertyCore(sourceType, null, name, memberAccessibility, typeArguments,
+      positionalParameterValues?.GetTypesOfValues(), namedParameterValues?.GetTypesOfValues(memberAccessibility.IsFlagsSet(MemberAccessibility.IgnoreCase)), valueType);
   }
 
-  public static TValue? GetProperty<TValue>(Type type, string name, MemberAccessibility memberAccessibility,
-    IList<Type?>? typeArguments, IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues)
+  public static PropertyInfo GetStaticProperty<TValue>(Type sourceType, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments,
+    IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues)
   {
-    Argument.That.NotNull(type);
+    Argument.That.NotNull(sourceType);
     Argument.That.NotNullOrWhitespace(name);
 
-    var propertyInfo = MatchProperty(type, true, name, memberAccessibility, true, false, true, typeArguments?.AsReadOnly(), positionalParameterValues, namedParameterValues, typeof(TValue?), TypeVariance.Covariant)!;
-    var indices = GetParameterValues(propertyInfo.GetIndexParameters(), positionalParameterValues, namedParameterValues);
-    return (TValue?)propertyInfo.GetValue(null, indices);
+    return GetPropertyCore(sourceType, null, name, memberAccessibility, typeArguments,
+      positionalParameterValues?.GetTypesOfValues(), namedParameterValues?.GetTypesOfValues(memberAccessibility.IsFlagsSet(MemberAccessibility.IgnoreCase)), typeof(TValue));
   }
 
-  public static object? GetProperty<TSource>(string name, MemberAccessibility memberAccessibility,
+  public static PropertyInfo GetStaticProperty<TSource>(string name, MemberAccessibility memberAccessibility,
     IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, Type? valueType)
   {
     Argument.That.NotNullOrWhitespace(name);
 
-    var propertyInfo = MatchProperty(typeof(TSource), true, name, memberAccessibility, true, false, true, null, positionalParameterValues, namedParameterValues, valueType ?? typeof(object), TypeVariance.Covariant)!;
-    var indices = GetParameterValues(propertyInfo.GetIndexParameters(), positionalParameterValues, namedParameterValues);
-    return propertyInfo.GetValue(null, indices);
+    return GetPropertyCore(typeof(TSource), null, name, memberAccessibility, null,
+      positionalParameterValues?.GetTypesOfValues(), namedParameterValues?.GetTypesOfValues(memberAccessibility.IsFlagsSet(MemberAccessibility.IgnoreCase)), valueType);
   }
 
-  public static TValue? GetProperty<TSource, TValue>(string name, MemberAccessibility memberAccessibility,
+  public static PropertyInfo GetStaticProperty<TSource, TValue>(string name, MemberAccessibility memberAccessibility,
     IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues)
   {
     Argument.That.NotNullOrWhitespace(name);
 
-    var propertyInfo = MatchProperty(typeof(TSource), true, name, memberAccessibility, true, false, true, null, positionalParameterValues, namedParameterValues, typeof(TValue?), TypeVariance.Covariant);
-    var indices = GetParameterValues(propertyInfo!.GetIndexParameters(), positionalParameterValues, namedParameterValues);
-    return (TValue?)propertyInfo.GetValue(null, indices);
+    return GetPropertyCore(typeof(TSource), null, name, memberAccessibility, null,
+      positionalParameterValues?.GetTypesOfValues(), namedParameterValues?.GetTypesOfValues(memberAccessibility.IsFlagsSet(MemberAccessibility.IgnoreCase)), typeof(TValue));
   }
 
-  public static void SetProperty(Type type, string name, MemberAccessibility memberAccessibility,
-    IList<Type?>? typeArguments, IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, object? value)
+  #endregion
+  #region Direct get methods
+
+  public static object? GetStaticPropertyValue(Type sourceType, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments,
+    IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, Type? valueType)
   {
-    Argument.That.NotNull(type);
+    Argument.That.NotNull(sourceType);
     Argument.That.NotNullOrWhitespace(name);
 
-    var propertyInfo = MatchProperty(type, true, name, memberAccessibility, false, true, true, typeArguments?.AsReadOnly(), positionalParameterValues, namedParameterValues, TypedValue.GetType(value), TypeVariance.Contravariant)!;
-    var indices = GetParameterValues(propertyInfo.GetIndexParameters(), positionalParameterValues, namedParameterValues);
-    propertyInfo.SetValue(null, TypedValue.GetValue(value), indices);
+    return GetPropertyValueCore(sourceType, null, name, memberAccessibility, typeArguments, positionalParameterValues, namedParameterValues, valueType);
   }
 
-  public static void SetProperty<TValue>(Type type, string name, MemberAccessibility memberAccessibility,
-    IList<Type?>? typeArguments, IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, TValue? value)
+  public static TValue? GetStaticPropertyValue<TValue>(Type sourceType, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments,
+    IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues)
   {
-    Argument.That.NotNull(type);
+    Argument.That.NotNull(sourceType);
     Argument.That.NotNullOrWhitespace(name);
 
-    var propertyInfo = MatchProperty(type, true, name, memberAccessibility, false, true, true, typeArguments?.AsReadOnly(), positionalParameterValues, namedParameterValues, typeof(TValue?), TypeVariance.Contravariant)!;
-    var indices = GetParameterValues(propertyInfo.GetIndexParameters(), positionalParameterValues, namedParameterValues);
-    propertyInfo.SetValue(null, value, indices);
+    return (TValue?)GetPropertyValueCore(sourceType, null, name, memberAccessibility, typeArguments, positionalParameterValues, namedParameterValues, typeof(TValue));
   }
 
-  public static void SetProperty<TSource>(string name, MemberAccessibility memberAccessibility,
+  public static object? GetStaticPropertyValue<TSource>(string name, MemberAccessibility memberAccessibility,
+    IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, Type? valueType)
+  {
+    Argument.That.NotNullOrWhitespace(name);
+
+    return GetPropertyValueCore(typeof(TSource), null, name, memberAccessibility, null, positionalParameterValues, namedParameterValues, valueType);
+  }
+
+  public static TValue? GetStaticPropertyValue<TSource, TValue>(string name, MemberAccessibility memberAccessibility,
+    IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues)
+  {
+    Argument.That.NotNullOrWhitespace(name);
+
+    return (TValue?)GetPropertyValueCore(typeof(TSource), null, name, memberAccessibility, null, positionalParameterValues, namedParameterValues, typeof(TValue));
+  }
+
+  #endregion
+  #region Direct set methods
+
+  public static void SetStaticPropertyValue(Type sourceType, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments,
+    IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, object? value)
+  {
+    Argument.That.NotNull(sourceType);
+    Argument.That.NotNullOrWhitespace(name);
+
+    SetPropertyValueCore(sourceType, null, name, memberAccessibility, typeArguments, positionalParameterValues, namedParameterValues, TypedValue.GetType(value), TypedValue.GetValue(value));
+  }
+
+  public static void SetStaticPropertyValue<TValue>(Type sourceType, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments,
+    IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, TValue? value)
+  {
+    Argument.That.NotNull(sourceType);
+    Argument.That.NotNullOrWhitespace(name);
+
+    SetPropertyValueCore(sourceType, null, name, memberAccessibility, typeArguments, positionalParameterValues, namedParameterValues, typeof(TValue), value);
+  }
+
+  public static void SetStaticPropertyValue<TSource>(string name, MemberAccessibility memberAccessibility,
     IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, object? value)
   {
     Argument.That.NotNullOrWhitespace(name);
 
-    var propertyInfo = MatchProperty(typeof(TSource), true, name, memberAccessibility, false, true, true, null, positionalParameterValues, namedParameterValues, TypedValue.GetType(value), TypeVariance.Contravariant)!;
-    var indices = GetParameterValues(propertyInfo.GetIndexParameters(), positionalParameterValues, namedParameterValues);
-    propertyInfo.SetValue(null, TypedValue.GetValue(value), indices);
+    SetPropertyValueCore(typeof(TSource), null, name, memberAccessibility, null, positionalParameterValues, namedParameterValues, TypedValue.GetType(value), TypedValue.GetValue(value));
   }
 
-  public static void SetProperty<TSource, TValue>(string name, MemberAccessibility memberAccessibility,
+  public static void SetStaticPropertyValue<TSource, TValue>(string name, MemberAccessibility memberAccessibility,
     IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, TValue? value)
   {
     Argument.That.NotNullOrWhitespace(name);
 
-    var propertyInfo = MatchProperty(typeof(TSource), true, name, memberAccessibility, false, true, true, null, positionalParameterValues, namedParameterValues, typeof(TValue?), TypeVariance.Contravariant)!;
-    var indices = GetParameterValues(propertyInfo.GetIndexParameters(), positionalParameterValues, namedParameterValues);
-    propertyInfo.SetValue(null, value, indices);
+    SetPropertyValueCore(typeof(TSource), null, name, memberAccessibility, null, positionalParameterValues, namedParameterValues, typeof(TValue), value);
   }
 
-  public static object? ReplaceProperty(Type type, string name, MemberAccessibility memberAccessibility,
-    IList<Type?>? typeArguments, IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, object? value)
+  #endregion
+  #region Direct replace methods
+
+  public static object? ReplaceStaticPropertyValue(Type sourceType, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments,
+    IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, object? value)
   {
-    Argument.That.NotNull(type);
+    Argument.That.NotNull(sourceType);
     Argument.That.NotNullOrWhitespace(name);
 
-    var propertyInfo = MatchProperty(type, true, name, memberAccessibility, true, true, true, typeArguments?.AsReadOnly(), positionalParameterValues, namedParameterValues, TypedValue.GetType(value), TypeVariance.Contravariant)!;
-    var indices = GetParameterValues(propertyInfo.GetIndexParameters(), positionalParameterValues, namedParameterValues);
-    var result = propertyInfo.GetValue(null, indices);
-    propertyInfo.SetValue(null, TypedValue.GetValue(value), indices);
-    return result;
+    return ReplacePropertyValueCore(sourceType, null, name, memberAccessibility, typeArguments, positionalParameterValues, namedParameterValues, TypedValue.GetType(value), TypedValue.GetValue(value));
   }
 
-  public static TValue? ReplaceProperty<TValue>(Type type, string name, MemberAccessibility memberAccessibility,
-    IList<Type?>? typeArguments, IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, TValue? value)
+  public static TValue? ReplaceStaticPropertyValue<TValue>(Type sourceType, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments,
+    IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, TValue? value)
   {
-    Argument.That.NotNull(type);
+    Argument.That.NotNull(sourceType);
     Argument.That.NotNullOrWhitespace(name);
 
-    var propertyInfo = MatchProperty(type, true, name, memberAccessibility, true, true, true, typeArguments?.AsReadOnly(), positionalParameterValues, namedParameterValues, typeof(TValue?), TypeVariance.Invariant)!;
-    var indices = GetParameterValues(propertyInfo.GetIndexParameters(), positionalParameterValues, namedParameterValues);
-    var result = (TValue?)propertyInfo.GetValue(null, indices);
-    propertyInfo.SetValue(null, value, indices);
-    return result;
+    return (TValue?)ReplacePropertyValueCore(sourceType, null, name, memberAccessibility, typeArguments, positionalParameterValues, namedParameterValues, typeof(TValue), value);
   }
 
-  public static object? ReplaceProperty<TSource>(string name, MemberAccessibility memberAccessibility,
+  public static object? ReplaceStaticPropertyValue<TSource>(string name, MemberAccessibility memberAccessibility,
     IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, object? value)
   {
     Argument.That.NotNullOrWhitespace(name);
 
-    var propertyInfo = MatchProperty(typeof(TSource), true, name, memberAccessibility, true, true, true, null, positionalParameterValues, namedParameterValues, TypedValue.GetType(value), TypeVariance.Contravariant)!;
-    var indices = GetParameterValues(propertyInfo.GetIndexParameters(), positionalParameterValues, namedParameterValues);
-    var result = propertyInfo.GetValue(null, indices);
-    propertyInfo.SetValue(null, TypedValue.GetValue(value), indices);
-    return result;
+    return ReplacePropertyValueCore(typeof(TSource), null, name, memberAccessibility, null, positionalParameterValues, namedParameterValues, TypedValue.GetType(value), TypedValue.GetValue(value));
   }
 
-  public static TValue? ReplaceProperty<TSource, TValue>(string name, MemberAccessibility memberAccessibility,
+  public static TValue? ReplaceStaticPropertyValue<TSource, TValue>(string name, MemberAccessibility memberAccessibility,
     IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, TValue? value)
   {
     Argument.That.NotNullOrWhitespace(name);
 
-    var propertyInfo = MatchProperty(typeof(TSource), true, name, memberAccessibility, true, true, true, null, positionalParameterValues, namedParameterValues, typeof(TValue?), TypeVariance.Invariant)!;
-    var indices = GetParameterValues(propertyInfo.GetIndexParameters(), positionalParameterValues, namedParameterValues);
-    var result = (TValue?)propertyInfo.GetValue(null, indices);
-    propertyInfo.SetValue(null, value, indices);
-    return result;
+    return (TValue?)ReplacePropertyValueCore(typeof(TSource), null, name, memberAccessibility, null, positionalParameterValues, namedParameterValues, typeof(TValue), value);
   }
 
-  public static void ExchangeProperty(Type type, string name, MemberAccessibility memberAccessibility,
-    IList<Type?>? typeArguments, IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, ref object? value)
+  #endregion
+  #region Direct exchange methods
+
+  public static void ExchangeStaticPropertyValue(Type sourceType, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments,
+    IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, ref object? value)
   {
-    Argument.That.NotNull(type);
+    Argument.That.NotNull(sourceType);
     Argument.That.NotNullOrWhitespace(name);
 
-    var propertyInfo = MatchProperty(type, true, name, memberAccessibility, true, true, true, typeArguments?.AsReadOnly(), positionalParameterValues, namedParameterValues, TypedValue.GetType(value), TypeVariance.Contravariant)!;
-    var indices = GetParameterValues(propertyInfo.GetIndexParameters(), positionalParameterValues, namedParameterValues);
-    var result = propertyInfo.GetValue(null, indices);
-    propertyInfo.SetValue(null, TypedValue.GetValue(value), indices);
-    value = result;
+    value = ReplacePropertyValueCore(sourceType, null, name, memberAccessibility, typeArguments, positionalParameterValues, namedParameterValues, TypedValue.GetType(value), TypedValue.GetValue(value));
   }
 
-  public static void ExchangeProperty<TValue>(Type type, string name, MemberAccessibility memberAccessibility,
+  public static void ExchangeStaticPropertyValue<TValue>(Type sourceType, string name, MemberAccessibility memberAccessibility,
     IList<Type?>? typeArguments, IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, ref TValue? value)
   {
-    Argument.That.NotNull(type);
+    Argument.That.NotNull(sourceType);
     Argument.That.NotNullOrWhitespace(name);
 
-    var propertyInfo = MatchProperty(type, true, name, memberAccessibility, true, true, true, typeArguments?.AsReadOnly(), positionalParameterValues, namedParameterValues, typeof(TValue?), TypeVariance.Invariant)!;
-    var indices = GetParameterValues(propertyInfo.GetIndexParameters(), positionalParameterValues, namedParameterValues);
-    var result = (TValue?)propertyInfo.GetValue(null, indices);
-    propertyInfo.SetValue(null, value, indices);
-    value = result;
+    value = (TValue?)ReplacePropertyValueCore(sourceType, null, name, memberAccessibility, typeArguments, positionalParameterValues, namedParameterValues, typeof(TValue), value);
   }
 
-  public static void ExchangeProperty<TSource>(string name, MemberAccessibility memberAccessibility,
+  public static void ExchangeStaticPropertyValue<TSource>(string name, MemberAccessibility memberAccessibility,
     IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, ref object? value)
   {
     Argument.That.NotNullOrWhitespace(name);
 
-    var propertyInfo = MatchProperty(typeof(TSource), true, name, memberAccessibility, true, true, true, null, positionalParameterValues, namedParameterValues, TypedValue.GetType(value), TypeVariance.Contravariant)!;
-    var indices = GetParameterValues(propertyInfo.GetIndexParameters(), positionalParameterValues, namedParameterValues);
-    var result = propertyInfo.GetValue(null, indices);
-    propertyInfo.SetValue(null, value, indices);
-    value = result;
+    value = ReplacePropertyValueCore(typeof(TSource), null, name, memberAccessibility, null, positionalParameterValues, namedParameterValues, TypedValue.GetType(value), TypedValue.GetValue(value));
   }
 
-  public static void ExchangeProperty<TSource, TValue>(string name, MemberAccessibility memberAccessibility,
+  public static void ExchangeStaticPropertyValue<TSource, TValue>(string name, MemberAccessibility memberAccessibility,
     IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, ref TValue? value)
   {
     Argument.That.NotNullOrWhitespace(name);
 
-    var propertyInfo = MatchProperty(typeof(TSource), true, name, memberAccessibility, true, true, true, null, positionalParameterValues, namedParameterValues, typeof(TValue?), TypeVariance.Invariant)!;
-    var indices = GetParameterValues(propertyInfo.GetIndexParameters(), positionalParameterValues, namedParameterValues);
-    var result = (TValue?)propertyInfo.GetValue(null, indices);
-    propertyInfo.SetValue(null, value, indices);
-    value = result;
+    value = (TValue?)ReplacePropertyValueCore(typeof(TSource), null, name, memberAccessibility, null, positionalParameterValues, namedParameterValues, typeof(TValue), value);
   }
 
   #endregion
@@ -3011,7 +3250,7 @@ public static class Reflector
   #endregion
   #region Method internal methods
 
-  private struct SignatureWeight
+  private record struct SignatureWeight
   {
     public int GenericArguments;
 
@@ -3069,7 +3308,7 @@ public static class Reflector
   private static IEnumerable<MethodInfo> GetMethods(Type sourceType, bool staticMember, string name, MemberAccessibility memberAccessibility)
   {
     var bindingFlags = GetBindingFlags(staticMember, memberAccessibility);
-    var nameComparison = memberAccessibility.IsFlagsSet(MemberAccessibility.IgnoreCase) ? StringComparison.InvariantCultureIgnoreCase : StringComparison.InvariantCulture;
+    var nameComparison = memberAccessibility.IsFlagsSet(MemberAccessibility.IgnoreCase) ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
     var predicate = (MethodInfo methodInfo) =>
       string.Equals(methodInfo.Name, name, nameComparison) && !methodInfo.IsAbstract &&
       (methodInfo.Attributes & MethodAttributes.MemberAccessMask) switch
@@ -3085,7 +3324,7 @@ public static class Reflector
     return sourceType.GetMethods(bindingFlags).Where(predicate);
   }
 
-  private static bool MatchMethod(MethodInfo methodInfo,
+  private static bool MatchMethod(Type sourceType, MethodInfo methodInfo,
     IReadOnlyList<Type?>? sourceTypeArguments, IList<Type?>? resultTypeArguments, IReadOnlyList<Type?>? sourceMethodArguments, IList<Type?>? resultMethodArguments,
     IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes, Type? returnType,
     out SignatureWeight methodWeight)
@@ -3221,7 +3460,7 @@ public static class Reflector
       return false;
     if (!MatchParameters(methodParameters, sourceTypeArguments, resultTypeArguments, sourceMethodArguments, resultMethodArguments, positionalParameterTypes, namedParameterTypes, ref currentWeight))
       return false;
-    if (!methodBase.IsConstructor)
+    if (!methodBase.IsConstructor && methodBase.IsGenericMethod)
     {
       var genericArguments = methodBase.GetGenericArguments();
       MatchConstraints(genericArguments, ref currentWeight);
@@ -3230,53 +3469,175 @@ public static class Reflector
     return true;
   }
 
-  private static MethodInfo? MatchMethod(Type type, bool staticMember, string name, MemberAccessibility memberAccessibility, bool required,
-    IReadOnlyList<Type?>? sourceTypeArguments, IReadOnlyList<Type?>? sourceMethodArguments, IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, Type? returnType)
+  private static MethodInfo? MatchMethod(Type sourceType, bool staticMember, string name, MemberAccessibility memberAccessibility,
+    IReadOnlyList<Type?>? sourceTypeArguments, IReadOnlyList<Type?>? sourceMethodArguments, IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes, Type? returnType)
   {
-    var positionalParameterTypes = positionalParameterValues?.Select(parameterValue => TypedValue.GetType(parameterValue)).ToList();
-    var namedParameterTypes = namedParameterValues?.ToDictionary(parameterItem => parameterItem.Key, parameterItem => TypedValue.GetType(parameterItem.Value),
-      memberAccessibility.IsFlagsSet(MemberAccessibility.IgnoreCase) ? StringComparer.InvariantCultureIgnoreCase : StringComparer.InvariantCulture);
-    var methodResults = GetMethods(type, staticMember, name, memberAccessibility)
+    var topHierarchy = memberAccessibility.IsFlagsSet(MemberAccessibility.TopHierarchy);
+    var resultMethods = GetMethods(sourceType, staticMember, name, memberAccessibility)
       .Select(methodInfo =>
       {
         var inheritanceLevel = methodInfo.ReflectedType!.GetInheritanceLevel(methodInfo.DeclaringType!);
-        var resultTypeArguments = new Type[type.GetGenericArguments().Length];
+        var resultTypeArguments = new Type[sourceType.GetGenericArguments().Length];
         var resultMethodArguments = new Type[methodInfo.GetGenericArguments().Length];
-        var matched = MatchMethod(methodInfo, sourceTypeArguments, resultTypeArguments, sourceMethodArguments, resultMethodArguments, positionalParameterTypes, namedParameterTypes, returnType, out var methodWeight);
+        var matched = MatchMethod(sourceType, methodInfo, sourceTypeArguments, resultTypeArguments, sourceMethodArguments, resultMethodArguments, positionalParameterTypes, namedParameterTypes, returnType, out var methodWeight);
         return (methodInfo: matched ? methodInfo : null, inheritanceLevel, methodWeight, typeArguments: resultTypeArguments, methodArguments: resultMethodArguments);
       })
       .Where(tuple => tuple.methodInfo is not null)
       .OrderByDescending(tuple => tuple.methodWeight, SignatureWeightComparer.Value)
       .ThenBy(tuple => tuple.inheritanceLevel)
-      .ToArray();
-    var methodResult = methodResults
-      .TakeWhile((signatureWeight: default(SignatureWeight?), inheritanceLevel: -1), (state, item) => (item.methodWeight, item.inheritanceLevel),
-        (state, item) => state.signatureWeight is null || CompareSignatureWeight(item.methodWeight, state.signatureWeight.Value) == 0 && state.inheritanceLevel == item.inheritanceLevel)
-      .SingleOrDefault();
-    var methodInfo = methodResult.methodInfo;
+      .TakeWhile((signatureWeight: default(SignatureWeight?), inheritanceLevel: -1),
+        (state, item) => (item.methodWeight, item.inheritanceLevel),
+        (state, item) => state.signatureWeight is null || CompareSignatureWeight(item.methodWeight, state.signatureWeight.Value) == 0 && (!topHierarchy || state.inheritanceLevel == item.inheritanceLevel))
+      .Take(2);
+    var methodInfo = default(MethodInfo);
+    var typeArguments = default(Type?[]);
+    var methodArguments = default(Type?[]);
+    var inheritanceLevel = default(int);
+    foreach (var resultMethod in resultMethods)
+    {
+      if (methodInfo is null)
+      {
+        methodInfo = resultMethod.methodInfo;
+        typeArguments = resultMethod.typeArguments;
+        methodArguments = resultMethod.methodArguments;
+        inheritanceLevel = resultMethod.inheritanceLevel;
+        continue;
+      }
+      if (!topHierarchy || inheritanceLevel == resultMethod.inheritanceLevel)
+        Operation.That.Failed(FormatMessage(ReflectionMessage.MethodAmbiguousMatch));
+      break;
+    }
     if (methodInfo is not null)
     {
-      if (type.IsGenericType && !type.IsConstructedGenericType)
+      if (sourceType.IsGenericType && !sourceType.IsConstructedGenericType)
       {
-        type = type.MakeGenericType(methodResult.typeArguments);
-        methodInfo = MatchMethod(type, staticMember, name, memberAccessibility, required, methodResult.typeArguments, methodResult.methodArguments, positionalParameterValues, namedParameterValues, returnType);
+        sourceType = sourceType.MakeGenericType(typeArguments);
+        methodInfo = MatchMethod(sourceType, staticMember, name, memberAccessibility, typeArguments, methodArguments, positionalParameterTypes, namedParameterTypes, returnType);
       }
       if (methodInfo is not null && methodInfo.IsGenericMethod && methodInfo.IsGenericMethodDefinition)
       {
-        methodInfo = methodInfo.MakeGenericMethod(methodResult.methodArguments);
+        methodInfo = methodInfo.MakeGenericMethod(methodArguments);
       }
     }
-    if (required && methodInfo is null)
-      throw new InvalidOperationException(FormatMessage(ReflectionMessage.MethodNotFound, name));
     return methodInfo;
+  }
+
+  private static bool TryGetMethodCore(Type sourceType, object? source, string name, MemberAccessibility memberAccessibility,
+    IList<Type?>? typeArguments, IList<Type?>? methodArguments,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes, Type? returnType,
+    [NotNullWhen(true)] out MethodInfo? result)
+  {
+    var methodInfo = MatchMethod(sourceType, source is null, name, memberAccessibility, typeArguments?.AsReadOnly(), methodArguments?.AsReadOnly(), positionalParameterTypes, namedParameterTypes, returnType);
+    if (methodInfo is not null)
+    {
+      methodInfo.GetGenericArguments().SetArgumentTypes(methodArguments);
+      methodInfo.ReflectedType?.GetGenericArguments().SetArgumentTypes(typeArguments);
+      result = methodInfo;
+      return true;
+    }
+    result = null;
+    return false;
+  }
+
+  private static MethodInfo GetMethodCore(Type sourceType, object? source, string name, MemberAccessibility memberAccessibility,
+    IList<Type?>? typeArguments, IList<Type?>? methodArguments,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes, Type? returnType)
+  {
+    var methodInfo = MatchMethod(sourceType, source is null, name, memberAccessibility, typeArguments?.AsReadOnly(), methodArguments?.AsReadOnly(), positionalParameterTypes, namedParameterTypes, returnType);
+    Operation.That.IsValid(methodInfo is not null, FormatMessage(ReflectionMessage.MethodNotFound));
+    methodInfo.GetGenericArguments().SetArgumentTypes(methodArguments);
+    methodInfo.ReflectedType?.GetGenericArguments().SetArgumentTypes(typeArguments);
+    return methodInfo;
+  }
+
+  private static bool TryCallMethodCore(Type sourceType, object? source, string name, MemberAccessibility memberAccessibility,
+    IList<Type?>? typeArguments, IList<Type?>? methodArguments,
+    IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues, Type? returnType, out object? returnValue)
+  {
+    var methodInfo = MatchMethod(sourceType, source is null, name, memberAccessibility, typeArguments?.AsReadOnly(), methodArguments?.AsReadOnly(),
+      positionalParameterValues?.GetTypesOfValues(), namedParameterValues?.GetTypesOfValues(memberAccessibility.IsFlagsSet(MemberAccessibility.IgnoreCase)), returnType);
+    if (methodInfo is not null)
+    {
+      var parameters = methodInfo.GetParameters();
+      var values = parameters.GetParameterValues(positionalParameterValues, namedParameterValues);
+      var result = methodInfo.Invoke(source, values);
+      parameters.SetParameterValues(values, positionalParameterValues, namedParameterValues);
+      methodInfo.GetGenericArguments().SetArgumentTypes(methodArguments);
+      methodInfo.ReflectedType?.GetGenericArguments().SetArgumentTypes(typeArguments);
+      returnValue = result;
+      return true;
+    }
+    returnValue = null;
+    return false;
+  }
+
+  private static object? CallMethodCore(Type sourceType, object? source, string name, MemberAccessibility memberAccessibility,
+    IList<Type?>? typeArguments, IList<Type?>? methodArguments,
+    IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues, Type? returnType)
+  {
+    var methodInfo = MatchMethod(sourceType, source is null, name, memberAccessibility, typeArguments?.AsReadOnly(), methodArguments?.AsReadOnly(),
+      positionalParameterValues?.GetTypesOfValues(), namedParameterValues?.GetTypesOfValues(memberAccessibility.IsFlagsSet(MemberAccessibility.IgnoreCase)), returnType);
+    Operation.That.IsValid(methodInfo is not null, FormatMessage(ReflectionMessage.MethodNotFound));
+    var parameters = methodInfo.GetParameters();
+    var values = parameters.GetParameterValues(positionalParameterValues, namedParameterValues);
+    var result = methodInfo.Invoke(source, values);
+    parameters.SetParameterValues(values, positionalParameterValues, namedParameterValues);
+    methodInfo.GetGenericArguments().SetArgumentTypes(methodArguments);
+    methodInfo.ReflectedType?.GetGenericArguments().SetArgumentTypes(typeArguments);
+    return result;
+  }
+
+  private static async Task<TryOut<object>> TryCallMethodAsyncCore(Type sourceType, object? source, string name, MemberAccessibility memberAccessibility,
+    IList<Type?>? typeArguments, IList<Type?>? methodArguments,
+    IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues, Type? returnType)
+  {
+    var methodInfo = MatchMethod(sourceType, source is null, name, memberAccessibility, typeArguments?.AsReadOnly(), methodArguments?.AsReadOnly(),
+      positionalParameterValues?.GetTypesOfValues(), namedParameterValues?.GetTypesOfValues(memberAccessibility.IsFlagsSet(MemberAccessibility.IgnoreCase)), returnType);
+    if (methodInfo is not null)
+    {
+      var parameters = methodInfo.GetParameters();
+      var values = parameters.GetParameterValues(positionalParameterValues, namedParameterValues);
+      var result = methodInfo.Invoke(source, values);
+      Operation.That.IsValid(result is not null);
+      dynamic awaitable = result;
+      await awaitable;
+      var awaitableResult = GetAwaitableResult(awaitable.GetAwaiter());
+      parameters.SetParameterValues(values, positionalParameterValues, namedParameterValues);
+      methodInfo.GetGenericArguments().SetArgumentTypes(methodArguments);
+      methodInfo.ReflectedType?.GetGenericArguments().SetArgumentTypes(typeArguments);
+      return TryOut.Success(awaitableResult);
+    }
+    return TryOut.Failure<object>();
+  }
+
+  private static async Task<object?> CallMethodAsyncCore(Type sourceType, object? source, string name, MemberAccessibility memberAccessibility,
+    IList<Type?>? typeArguments, IList<Type?>? methodArguments,
+    IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues, Type? returnType)
+  {
+    var methodInfo = MatchMethod(sourceType, source is null, name, memberAccessibility, typeArguments?.AsReadOnly(), methodArguments?.AsReadOnly(),
+      positionalParameterValues?.GetTypesOfValues(), namedParameterValues?.GetTypesOfValues(memberAccessibility.IsFlagsSet(MemberAccessibility.IgnoreCase)), returnType);
+    Operation.That.IsValid(methodInfo is not null, FormatMessage(ReflectionMessage.MethodNotFound));
+    var parameters = methodInfo.GetParameters();
+    var values = parameters.GetParameterValues(positionalParameterValues, namedParameterValues);
+    var result = methodInfo.Invoke(source, values);
+    Operation.That.IsValid(result is not null);
+    dynamic awaitable = result;
+    await awaitable;
+    var awaitableResult = GetAwaitableResult(awaitable.GetAwaiter());
+    parameters.SetParameterValues(values, positionalParameterValues, namedParameterValues);
+    methodInfo.GetGenericArguments().SetArgumentTypes(methodArguments);
+    methodInfo.ReflectedType?.GetGenericArguments().SetArgumentTypes(typeArguments);
+    return awaitableResult;
   }
 
   #endregion
   #region Instance method public methods
-  #region Try methods
+  #region Try info methods
 
-  public static bool TryCallMethod(object source, string name, MemberAccessibility memberAccessibility,
-    IList<Type?>? methodArguments, IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues)
+  public static bool TryGetInstanceMethod(object source, string name, MemberAccessibility memberAccessibility,
+    IList<Type?>? methodArguments,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes,
+    [NotNullWhen(true)] out MethodInfo? methodInfo)
   {
     Argument.That.NotNull(source);
     Argument.That.NotNullOrWhitespace(name);
@@ -3284,34 +3645,13 @@ public static class Reflector
     Argument.That.NotNull(sourceObject);
     var sourceType = TypedValue.GetType(source)!;
 
-    var methodInfo = MatchMethod(sourceType, false, name, memberAccessibility, false, null, methodArguments?.AsReadOnly(), positionalParameterValues?.AsReadOnly(), namedParameterValues?.AsReadOnly(), typeof(void));
-    if (methodInfo is null)
-      return false;
-    var values = GetParameterValues(methodInfo.GetParameters(), positionalParameterValues, namedParameterValues);
-    methodInfo.Invoke(sourceObject, values);
-    SetParameterValues(methodInfo.GetParameters(), values, positionalParameterValues, namedParameterValues);
-    SetArgumentTypes(methodInfo.GetGenericArguments(), methodArguments);
-    return true;
+    return TryGetMethodCore(sourceType, sourceObject, name, memberAccessibility, null, methodArguments, positionalParameterTypes, namedParameterTypes, typeof(void), out methodInfo);
   }
 
-  public static bool TryCallMethod<TSource>(TSource source, string name, MemberAccessibility memberAccessibility,
-    IList<Type?>? methodArguments, IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues)
-  {
-    Argument.That.NotNull(source);
-    Argument.That.NotNullOrWhitespace(name);
-
-    var methodInfo = MatchMethod(source.GetType(), false, name, memberAccessibility, false, null, methodArguments?.AsReadOnly(), positionalParameterValues?.AsReadOnly(), namedParameterValues?.AsReadOnly(), typeof(void));
-    if (methodInfo is null)
-      return false;
-    var values = GetParameterValues(methodInfo.GetParameters(), positionalParameterValues, namedParameterValues);
-    methodInfo.Invoke(source, values);
-    SetParameterValues(methodInfo.GetParameters(), values, positionalParameterValues, namedParameterValues);
-    SetArgumentTypes(methodInfo.GetGenericArguments(), methodArguments);
-    return true;
-  }
-
-  public static bool TryCallMethod(object source, string name, MemberAccessibility memberAccessibility,
-    IList<Type?>? methodArguments, IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues, Type? returnType, out object? result)
+  public static bool TryGetInstanceMethod(object source, string name, MemberAccessibility memberAccessibility,
+    IList<Type?>? methodArguments,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes, Type? returnType,
+    [NotNullWhen(true)] out MethodInfo? methodInfo)
   {
     Argument.That.NotNull(source);
     Argument.That.NotNullOrWhitespace(name);
@@ -3319,123 +3659,37 @@ public static class Reflector
     Argument.That.NotNull(sourceObject);
     var sourceType = TypedValue.GetType(source)!;
 
-    var methodInfo = MatchMethod(sourceType, false, name, memberAccessibility, false, null, methodArguments?.AsReadOnly(), positionalParameterValues?.AsReadOnly(), namedParameterValues?.AsReadOnly(), returnType);
-    if (methodInfo is null)
-    {
-      result = null;
-      return false;
-    }
-    var values = GetParameterValues(methodInfo.GetParameters(), positionalParameterValues, namedParameterValues);
-    result = methodInfo.Invoke(sourceObject, values);
-    SetParameterValues(methodInfo.GetParameters(), values, positionalParameterValues, namedParameterValues);
-    SetArgumentTypes(methodInfo.GetGenericArguments(), methodArguments);
-    return true;
+    return TryGetMethodCore(sourceType, sourceObject, name, memberAccessibility, null, methodArguments, positionalParameterTypes, namedParameterTypes, returnType, out methodInfo);
   }
 
-  public static bool TryCallMethod<TSource>(TSource source, string name, MemberAccessibility memberAccessibility,
-    IList<Type?>? methodArguments, IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues, Type? returnType, out object? result)
+  public static bool TryGetInstanceMethod<TSource>(TSource source, string name, MemberAccessibility memberAccessibility,
+    IList<Type?>? methodArguments,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes,
+    [NotNullWhen(true)] out MethodInfo? methodInfo)
   {
     Argument.That.NotNull(source);
     Argument.That.NotNullOrWhitespace(name);
 
-    var methodInfo = MatchMethod(typeof(TSource), false, name, memberAccessibility, false, null, methodArguments?.AsReadOnly(), positionalParameterValues?.AsReadOnly(), namedParameterValues?.AsReadOnly(), returnType);
-    if (methodInfo is null)
-    {
-      result = null;
-      return false;
-    }
-    var values = GetParameterValues(methodInfo.GetParameters(), positionalParameterValues, namedParameterValues);
-    result = methodInfo.Invoke(source, values);
-    SetParameterValues(methodInfo.GetParameters(), values, positionalParameterValues, namedParameterValues);
-    SetArgumentTypes(methodInfo.GetGenericArguments(), methodArguments);
-    return true;
+    return TryGetMethodCore(typeof(TSource), source, name, memberAccessibility, null, methodArguments, positionalParameterTypes, namedParameterTypes, typeof(void), out methodInfo);
   }
 
-  public static async Task<bool> TryCallMethodAsync(object source, string name, MemberAccessibility memberAccessibility,
-    IList<Type?>? methodArguments, IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues)
-  {
-    Argument.That.NotNull(source);
-    Argument.That.NotNullOrWhitespace(name);
-    var sourceObject = TypedValue.GetValue(source);
-    Argument.That.NotNull(sourceObject);
-    var sourceType = TypedValue.GetType(source)!;
-
-    var methodInfo = MatchMethod(sourceType, false, name, memberAccessibility, false, null, methodArguments?.AsReadOnly(), positionalParameterValues?.AsReadOnly(), namedParameterValues?.AsReadOnly(), null);
-    if (methodInfo is null)
-      return false;
-    var values = GetParameterValues(methodInfo.GetParameters(), positionalParameterValues, namedParameterValues);
-    var result = methodInfo.Invoke(sourceObject, values);
-    dynamic awaitable = Argument.That.NotNull(result);
-    await awaitable;
-    SetParameterValues(methodInfo.GetParameters(), values, positionalParameterValues, namedParameterValues);
-    SetArgumentTypes(methodInfo.GetGenericArguments(), methodArguments);
-    return true;
-  }
-
-  public static async Task<bool> TryCallMethodAsync<TSource>(TSource source, string name, MemberAccessibility memberAccessibility,
-    IList<Type?>? methodArguments, IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues)
+  public static bool TryGetInstanceMethod<TSource>(TSource source, string name, MemberAccessibility memberAccessibility,
+    IList<Type?>? methodArguments,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes, Type? returnType,
+    [NotNullWhen(true)] out MethodInfo? methodInfo)
   {
     Argument.That.NotNull(source);
     Argument.That.NotNullOrWhitespace(name);
 
-    var methodInfo = MatchMethod(typeof(TSource), false, name, memberAccessibility, false, null, methodArguments?.AsReadOnly(), positionalParameterValues?.AsReadOnly(), namedParameterValues?.AsReadOnly(), null);
-    if (methodInfo is null)
-      return false;
-    var values = GetParameterValues(methodInfo.GetParameters(), positionalParameterValues, namedParameterValues);
-    var result = methodInfo.Invoke(source, values);
-    dynamic awaitable = Argument.That.NotNull(result);
-    await awaitable;
-    SetParameterValues(methodInfo.GetParameters(), values, positionalParameterValues, namedParameterValues);
-    SetArgumentTypes(methodInfo.GetGenericArguments(), methodArguments);
-    return true;
-  }
-
-  public static async Task<TryOut<object>> TryCallMethodAsync(object source, string name, MemberAccessibility memberAccessibility,
-    IList<Type?>? methodArguments, IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues, Type? returnType)
-  {
-    Argument.That.NotNull(source);
-    Argument.That.NotNullOrWhitespace(name);
-    var sourceObject = TypedValue.GetValue(source);
-    Argument.That.NotNull(sourceObject);
-    var sourceType = TypedValue.GetType(source)!;
-
-    var methodInfo = MatchMethod(sourceType, false, name, memberAccessibility, false, null, methodArguments?.AsReadOnly(), positionalParameterValues?.AsReadOnly(), namedParameterValues?.AsReadOnly(), returnType);
-    if (methodInfo is null)
-      return TryOut.Failure<object>();
-    var values = GetParameterValues(methodInfo.GetParameters(), positionalParameterValues, namedParameterValues);
-    var result = methodInfo.Invoke(sourceObject, values);
-    dynamic awaitable = Argument.That.NotNull(result);
-    await awaitable;
-    var awaitableResult = GetAwaitableResult(awaitable.GetAwaiter());
-    SetParameterValues(methodInfo.GetParameters(), values, positionalParameterValues, namedParameterValues);
-    SetArgumentTypes(methodInfo.GetGenericArguments(), methodArguments);
-    return TryOut.Success(awaitableResult);
-  }
-
-  public static async Task<TryOut<object>> TryCallMethodAsync<TSource>(TSource source, string name, MemberAccessibility memberAccessibility,
-    IList<Type?>? methodArguments, IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues, Type? returnType)
-  {
-    Argument.That.NotNull(source);
-    Argument.That.NotNullOrWhitespace(name);
-
-    var methodInfo = MatchMethod(typeof(TSource), false, name, memberAccessibility, false, null, methodArguments?.AsReadOnly(), positionalParameterValues?.AsReadOnly(), namedParameterValues?.AsReadOnly(), returnType);
-    if (methodInfo is null)
-      return TryOut.Failure<object>();
-    var values = GetParameterValues(methodInfo.GetParameters(), positionalParameterValues, namedParameterValues);
-    var result = methodInfo.Invoke(source, values);
-    dynamic awaitable = Argument.That.NotNull(result);
-    await awaitable;
-    var awaitableResult = GetAwaitableResult(awaitable.GetAwaiter());
-    SetParameterValues(methodInfo.GetParameters(), values, positionalParameterValues, namedParameterValues);
-    SetArgumentTypes(methodInfo.GetGenericArguments(), methodArguments);
-    return TryOut.Success(awaitableResult);
+    return TryGetMethodCore(typeof(TSource), source, name, memberAccessibility, null, methodArguments, positionalParameterTypes, namedParameterTypes, returnType, out methodInfo);
   }
 
   #endregion
-  #region Direct methods
+  #region Direct info methods
 
-  public static void CallMethod(object source, string name, MemberAccessibility memberAccessibility,
-    IList<Type?>? methodArguments, IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues)
+  public static MethodInfo GetInstanceMethod(object source, string name, MemberAccessibility memberAccessibility,
+    IList<Type?>? methodArguments,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes)
   {
     Argument.That.NotNull(source);
     Argument.That.NotNullOrWhitespace(name);
@@ -3443,28 +3697,12 @@ public static class Reflector
     Argument.That.NotNull(sourceObject);
     var sourceType = TypedValue.GetType(source)!;
 
-    var methodInfo = MatchMethod(sourceType, false, name, memberAccessibility, true, null, methodArguments?.AsReadOnly(), positionalParameterValues?.AsReadOnly(), namedParameterValues?.AsReadOnly(), typeof(void));
-    var values = GetParameterValues(methodInfo!.GetParameters(), positionalParameterValues, namedParameterValues);
-    methodInfo.Invoke(sourceObject, values);
-    SetParameterValues(methodInfo.GetParameters(), values, positionalParameterValues, namedParameterValues);
-    SetArgumentTypes(methodInfo.GetGenericArguments(), methodArguments);
+    return GetMethodCore(sourceType, sourceObject, name, memberAccessibility, null, methodArguments, positionalParameterTypes, namedParameterTypes, typeof(void));
   }
 
-  public static void CallMethod<TSource>(TSource source, string name, MemberAccessibility memberAccessibility,
-    IList<Type?>? methodArguments, IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues)
-  {
-    Argument.That.NotNull(source);
-    Argument.That.NotNullOrWhitespace(name);
-
-    var methodInfo = MatchMethod(typeof(TSource), false, name, memberAccessibility, true, null, methodArguments?.AsReadOnly(), positionalParameterValues?.AsReadOnly(), namedParameterValues?.AsReadOnly(), typeof(void));
-    var values = GetParameterValues(methodInfo!.GetParameters(), positionalParameterValues, namedParameterValues);
-    methodInfo.Invoke(source, values);
-    SetParameterValues(methodInfo.GetParameters(), values, positionalParameterValues, namedParameterValues);
-    SetArgumentTypes(methodInfo.GetGenericArguments(), methodArguments);
-  }
-
-  public static object? CallMethod(object source, string name, MemberAccessibility memberAccessibility,
-    IList<Type?>? methodArguments, IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues, Type? returnType)
+  public static MethodInfo GetInstanceMethod(object source, string name, MemberAccessibility memberAccessibility,
+    IList<Type?>? methodArguments,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes, Type? returnType)
   {
     Argument.That.NotNull(source);
     Argument.That.NotNullOrWhitespace(name);
@@ -3472,63 +3710,35 @@ public static class Reflector
     Argument.That.NotNull(sourceObject);
     var sourceType = TypedValue.GetType(source)!;
 
-    var methodInfo = MatchMethod(sourceType, false, name, memberAccessibility, true, null, methodArguments?.AsReadOnly(), positionalParameterValues?.AsReadOnly(), namedParameterValues?.AsReadOnly(), returnType);
-    var values = GetParameterValues(methodInfo!.GetParameters(), positionalParameterValues, namedParameterValues);
-    var result = methodInfo.Invoke(sourceObject, values);
-    SetParameterValues(methodInfo.GetParameters(), values, positionalParameterValues, namedParameterValues);
-    SetArgumentTypes(methodInfo.GetGenericArguments(), methodArguments);
-    return result;
+    return GetMethodCore(sourceType, sourceObject, name, memberAccessibility, null, methodArguments, positionalParameterTypes, namedParameterTypes, returnType);
   }
 
-  public static object? CallMethod<TSource>(TSource source, string name, MemberAccessibility memberAccessibility,
-    IList<Type?>? methodArguments, IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues, Type? returnType)
+  public static MethodInfo GetInstanceMethod<TSource>(TSource source, string name, MemberAccessibility memberAccessibility,
+    IList<Type?>? methodArguments,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes)
   {
     Argument.That.NotNull(source);
     Argument.That.NotNullOrWhitespace(name);
 
-    var methodInfo = MatchMethod(typeof(TSource), false, name, memberAccessibility, true, null, methodArguments?.AsReadOnly(), positionalParameterValues?.AsReadOnly(), namedParameterValues?.AsReadOnly(), returnType);
-    var values = GetParameterValues(methodInfo!.GetParameters(), positionalParameterValues, namedParameterValues);
-    var result = methodInfo.Invoke(source, values);
-    SetParameterValues(methodInfo.GetParameters(), values, positionalParameterValues, namedParameterValues);
-    SetArgumentTypes(methodInfo.GetGenericArguments(), methodArguments);
-    return result;
+    return GetMethodCore(typeof(TSource), source, name, memberAccessibility, null, methodArguments, positionalParameterTypes, namedParameterTypes, typeof(void));
   }
 
-  public static async Task CallMethodAsync(object source, string name, MemberAccessibility memberAccessibility,
-    IList<Type?>? methodArguments, IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues)
-  {
-    Argument.That.NotNull(source);
-    Argument.That.NotNullOrWhitespace(name);
-    var sourceObject = TypedValue.GetValue(source);
-    Argument.That.NotNull(sourceObject);
-    var sourceType = TypedValue.GetType(source)!;
-
-    var methodInfo = MatchMethod(sourceType, false, name, memberAccessibility, true, null, methodArguments?.AsReadOnly(), positionalParameterValues?.AsReadOnly(), namedParameterValues?.AsReadOnly(), null);
-    var values = GetParameterValues(methodInfo!.GetParameters(), positionalParameterValues, namedParameterValues);
-    var result = methodInfo.Invoke(sourceObject, values);
-    dynamic awaitable = Argument.That.NotNull(result);
-    await awaitable;
-    SetParameterValues(methodInfo.GetParameters(), values, positionalParameterValues, namedParameterValues);
-    SetArgumentTypes(methodInfo.GetGenericArguments(), methodArguments);
-  }
-
-  public static async Task CallMethodAsync<TSource>(TSource source, string name, MemberAccessibility memberAccessibility,
-    IList<Type?>? methodArguments, IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues)
+  public static MethodInfo GetInstanceMethod<TSource>(TSource source, string name, MemberAccessibility memberAccessibility,
+    IList<Type?>? methodArguments,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes, Type? returnType)
   {
     Argument.That.NotNull(source);
     Argument.That.NotNullOrWhitespace(name);
 
-    var methodInfo = MatchMethod(typeof(TSource), false, name, memberAccessibility, true, null, methodArguments?.AsReadOnly(), positionalParameterValues?.AsReadOnly(), namedParameterValues?.AsReadOnly(), null);
-    var values = GetParameterValues(methodInfo!.GetParameters(), positionalParameterValues, namedParameterValues);
-    var result = methodInfo.Invoke(source, values);
-    dynamic awaitable = Argument.That.NotNull(result);
-    await awaitable;
-    SetParameterValues(methodInfo.GetParameters(), values, positionalParameterValues, namedParameterValues);
-    SetArgumentTypes(methodInfo.GetGenericArguments(), methodArguments);
+    return GetMethodCore(typeof(TSource), source, name, memberAccessibility, null, methodArguments, positionalParameterTypes, namedParameterTypes, returnType);
   }
 
-  public static async Task<object?> CallMethodAsync(object source, string name, MemberAccessibility memberAccessibility,
-    IList<Type?>? methodArguments, IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues, Type? returnType)
+  #endregion
+  #region Try call methods
+
+  public static bool TryCallInstanceMethod(object source, string name, MemberAccessibility memberAccessibility,
+    IList<Type?>? methodArguments,
+    IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues)
   {
     Argument.That.NotNull(source);
     Argument.That.NotNullOrWhitespace(name);
@@ -3536,328 +3746,439 @@ public static class Reflector
     Argument.That.NotNull(sourceObject);
     var sourceType = TypedValue.GetType(source)!;
 
-    var methodInfo = MatchMethod(sourceType, false, name, memberAccessibility, true, null, methodArguments?.AsReadOnly(), positionalParameterValues?.AsReadOnly(), namedParameterValues?.AsReadOnly(), returnType);
-    var values = GetParameterValues(methodInfo!.GetParameters(), positionalParameterValues, namedParameterValues);
-    var result = methodInfo.Invoke(sourceObject, values);
-
-    dynamic awaitable = Argument.That.NotNull(result);
-    await awaitable;
-    var awaitableResult = GetAwaitableResult(awaitable.GetAwaiter());
-
-    SetParameterValues(methodInfo.GetParameters(), values, positionalParameterValues, namedParameterValues);
-    SetArgumentTypes(methodInfo.GetGenericArguments(), methodArguments);
-    return awaitableResult;
+    return TryCallMethodCore(sourceType, sourceObject, name, memberAccessibility, null, methodArguments, positionalParameterValues, namedParameterValues, typeof(void), out var returnValue);
   }
 
-  public static async Task<object?> CallMethodAsync<TSource>(TSource source, string name, MemberAccessibility memberAccessibility,
-    IList<Type?>? methodArguments, IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues, Type? returnType)
+  public static bool TryCallInstanceMethod(object source, string name, MemberAccessibility memberAccessibility,
+    IList<Type?>? methodArguments,
+    IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues, Type? returnType, out object? returnValue)
+  {
+    Argument.That.NotNull(source);
+    Argument.That.NotNullOrWhitespace(name);
+    var sourceObject = TypedValue.GetValue(source);
+    Argument.That.NotNull(sourceObject);
+    var sourceType = TypedValue.GetType(source)!;
+
+    return TryCallMethodCore(sourceType, sourceObject, name, memberAccessibility, null, methodArguments, positionalParameterValues, namedParameterValues, returnType, out returnValue);
+  }
+
+  public static bool TryCallInstanceMethod<TSource>(TSource source, string name, MemberAccessibility memberAccessibility,
+    IList<Type?>? methodArguments,
+    IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues)
   {
     Argument.That.NotNull(source);
     Argument.That.NotNullOrWhitespace(name);
 
-    var methodInfo = MatchMethod(typeof(TSource), false, name, memberAccessibility, true, null, methodArguments?.AsReadOnly(), positionalParameterValues?.AsReadOnly(), namedParameterValues?.AsReadOnly(), returnType);
-    var values = GetParameterValues(methodInfo!.GetParameters(), positionalParameterValues, namedParameterValues);
-    var result = methodInfo.Invoke(source, values);
-    dynamic awaitable = Argument.That.NotNull(result);
-    await awaitable;
-    var awaitableResult = GetAwaitableResult(awaitable.GetAwaiter());
-    SetParameterValues(methodInfo.GetParameters(), values, positionalParameterValues, namedParameterValues);
-    SetArgumentTypes(methodInfo.GetGenericArguments(), methodArguments);
-    return awaitableResult;
+    return TryCallMethodCore(typeof(TSource), source, name, memberAccessibility, null, methodArguments, positionalParameterValues, namedParameterValues, typeof(void), out var returnValue);
+  }
+
+  public static bool TryCallInstanceMethod<TSource>(TSource source, string name, MemberAccessibility memberAccessibility,
+    IList<Type?>? methodArguments,
+    IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues, Type? returnType, out object? returnValue)
+  {
+    Argument.That.NotNull(source);
+    Argument.That.NotNullOrWhitespace(name);
+
+    return TryCallMethodCore(typeof(TSource), source, name, memberAccessibility, null, methodArguments, positionalParameterValues, namedParameterValues, returnType, out returnValue);
+  }
+
+  #endregion
+  #region Direct call methods
+
+  public static void CallInstanceMethod(object source, string name, MemberAccessibility memberAccessibility,
+    IList<Type?>? methodArguments,
+    IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues)
+  {
+    Argument.That.NotNull(source);
+    Argument.That.NotNullOrWhitespace(name);
+    var sourceObject = TypedValue.GetValue(source);
+    Argument.That.NotNull(sourceObject);
+    var sourceType = TypedValue.GetType(source)!;
+
+    CallMethodCore(sourceType, sourceObject, name, memberAccessibility, null, methodArguments, positionalParameterValues, namedParameterValues, typeof(void));
+  }
+
+  public static object? CallInstanceMethod(object source, string name, MemberAccessibility memberAccessibility,
+    IList<Type?>? methodArguments,
+    IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues, Type? returnType)
+  {
+    Argument.That.NotNull(source);
+    Argument.That.NotNullOrWhitespace(name);
+    var sourceObject = TypedValue.GetValue(source);
+    Argument.That.NotNull(sourceObject);
+    var sourceType = TypedValue.GetType(source)!;
+
+    return CallMethodCore(sourceType, sourceObject, name, memberAccessibility, null, methodArguments, positionalParameterValues, namedParameterValues, returnType);
+  }
+
+  public static void CallInstanceMethod<TSource>(TSource source, string name, MemberAccessibility memberAccessibility,
+    IList<Type?>? methodArguments,
+    IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues)
+  {
+    Argument.That.NotNull(source);
+    Argument.That.NotNullOrWhitespace(name);
+
+    CallMethodCore(typeof(TSource), source, name, memberAccessibility, null, methodArguments, positionalParameterValues, namedParameterValues, typeof(void));
+  }
+
+  public static object? CallInstanceMethod<TSource>(TSource source, string name, MemberAccessibility memberAccessibility,
+    IList<Type?>? methodArguments,
+    IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues, Type? returnType)
+  {
+    Argument.That.NotNull(source);
+    Argument.That.NotNullOrWhitespace(name);
+
+    return CallMethodCore(typeof(TSource), source, name, memberAccessibility, null, methodArguments, positionalParameterValues, namedParameterValues, returnType);
+  }
+
+  #endregion
+  #region Try call async methods
+
+  public static async Task<bool> TryCallInstanceMethodAsync(object source, string name, MemberAccessibility memberAccessibility,
+    IList<Type?>? methodArguments,
+    IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues)
+  {
+    Argument.That.NotNull(source);
+    Argument.That.NotNullOrWhitespace(name);
+    var sourceObject = TypedValue.GetValue(source);
+    Argument.That.NotNull(sourceObject);
+    var sourceType = TypedValue.GetType(source)!;
+
+    return (await TryCallMethodAsyncCore(sourceType, sourceObject, name, memberAccessibility, null, methodArguments, positionalParameterValues, namedParameterValues, null)).Success;
+  }
+
+  public static Task<TryOut<object>> TryCallInstanceMethodAsync(object source, string name, MemberAccessibility memberAccessibility,
+    IList<Type?>? methodArguments,
+    IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues, Type? returnType)
+  {
+    Argument.That.NotNull(source);
+    Argument.That.NotNullOrWhitespace(name);
+    var sourceObject = TypedValue.GetValue(source);
+    Argument.That.NotNull(sourceObject);
+    var sourceType = TypedValue.GetType(source)!;
+
+    return TryCallMethodAsyncCore(sourceType, sourceObject, name, memberAccessibility, null, methodArguments, positionalParameterValues, namedParameterValues, returnType);
+  }
+
+  public static async Task<bool> TryCallInstanceMethodAsync<TSource>(TSource source, string name, MemberAccessibility memberAccessibility,
+    IList<Type?>? methodArguments,
+    IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues)
+  {
+    Argument.That.NotNull(source);
+    Argument.That.NotNullOrWhitespace(name);
+
+    return (await TryCallMethodAsyncCore(typeof(TSource), source, name, memberAccessibility, null, methodArguments, positionalParameterValues, namedParameterValues, null)).Success;
+  }
+
+  public static Task<TryOut<object>> TryCallInstanceMethodAsync<TSource>(TSource source, string name, MemberAccessibility memberAccessibility,
+    IList<Type?>? methodArguments,
+    IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues, Type? returnType)
+  {
+    Argument.That.NotNull(source);
+    Argument.That.NotNullOrWhitespace(name);
+
+    return TryCallMethodAsyncCore(typeof(TSource), source, name, memberAccessibility, null, methodArguments, positionalParameterValues, namedParameterValues, returnType);
+  }
+
+  #endregion
+  #region Direct call async methods
+
+  public static Task CallInstanceMethodAsync(object source, string name, MemberAccessibility memberAccessibility,
+    IList<Type?>? methodArguments,
+    IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues)
+  {
+    Argument.That.NotNull(source);
+    Argument.That.NotNullOrWhitespace(name);
+    var sourceObject = TypedValue.GetValue(source);
+    Argument.That.NotNull(sourceObject);
+    var sourceType = TypedValue.GetType(source)!;
+
+    return CallMethodAsyncCore(sourceType, sourceObject, name, memberAccessibility, null, methodArguments, positionalParameterValues, namedParameterValues, null);
+  }
+
+  public static Task<object?> CallInstanceMethodAsync(object source, string name, MemberAccessibility memberAccessibility,
+    IList<Type?>? methodArguments,
+    IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues, Type? returnType)
+  {
+    Argument.That.NotNull(source);
+    Argument.That.NotNullOrWhitespace(name);
+    var sourceObject = TypedValue.GetValue(source);
+    Argument.That.NotNull(sourceObject);
+    var sourceType = TypedValue.GetType(source)!;
+
+    return CallMethodAsyncCore(sourceType, sourceObject, name, memberAccessibility, null, methodArguments, positionalParameterValues, namedParameterValues, returnType);
+  }
+
+  public static Task CallInstanceMethodAsync<TSource>(TSource source, string name, MemberAccessibility memberAccessibility,
+    IList<Type?>? methodArguments,
+    IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues)
+  {
+    Argument.That.NotNull(source);
+    Argument.That.NotNullOrWhitespace(name);
+
+    return CallMethodAsyncCore(typeof(TSource), source, name, memberAccessibility, null, methodArguments, positionalParameterValues, namedParameterValues, null);
+  }
+
+  public static Task<object?> CallInstanceMethodAsync<TSource>(TSource source, string name, MemberAccessibility memberAccessibility,
+    IList<Type?>? methodArguments,
+    IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues, Type? returnType)
+  {
+    Argument.That.NotNull(source);
+    Argument.That.NotNullOrWhitespace(name);
+
+    return CallMethodAsyncCore(typeof(TSource), source, name, memberAccessibility, null, methodArguments, positionalParameterValues, namedParameterValues, returnType);
   }
 
   #endregion
   #endregion
   #region Static method public methods
-  #region Try methods
+  #region Try info methods
 
-  public static bool TryCallMethod(Type type, string name, MemberAccessibility memberAccessibility,
-    IList<Type?>? typeArguments, IList<Type?>? methodArguments, IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues)
+  public static bool TryGetStaticMethod(Type sourceType, string name, MemberAccessibility memberAccessibility,
+    IList<Type?>? typeArguments, IList<Type?>? methodArguments,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes,
+    [NotNullWhen(true)] out MethodInfo? methodInfo)
   {
-    Argument.That.NotNull(type);
+    Argument.That.NotNull(sourceType);
     Argument.That.NotNullOrWhitespace(name);
 
-    var methodInfo = MatchMethod(type, true, name, memberAccessibility, false, typeArguments?.AsReadOnly(), methodArguments?.AsReadOnly(), positionalParameterValues?.AsReadOnly(), namedParameterValues?.AsReadOnly(), typeof(void));
-    if (methodInfo is null)
-      return false;
-    var values = GetParameterValues(methodInfo.GetParameters(), positionalParameterValues, namedParameterValues);
-    methodInfo.Invoke(null, values);
-    SetParameterValues(methodInfo.GetParameters(), values, positionalParameterValues, namedParameterValues);
-    SetArgumentTypes(methodInfo.GetGenericArguments(), methodArguments);
-    if (methodInfo.ReflectedType is not null)
-      SetArgumentTypes(methodInfo.ReflectedType.GetGenericArguments(), typeArguments);
-    return true;
+    return TryGetMethodCore(sourceType, null, name, memberAccessibility, typeArguments, methodArguments, positionalParameterTypes, namedParameterTypes, typeof(void), out methodInfo);
   }
 
-  public static bool TryCallMethod<TSource>(string name, MemberAccessibility memberAccessibility,
-    IList<Type?>? typeArguments, IList<Type?>? methodArguments, IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues)
+  public static bool TryGetStaticMethod(Type sourceType, string name, MemberAccessibility memberAccessibility,
+    IList<Type?>? typeArguments, IList<Type?>? methodArguments,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes, Type? returnType,
+    [NotNullWhen(true)] out MethodInfo? methodInfo)
   {
+    Argument.That.NotNull(sourceType);
     Argument.That.NotNullOrWhitespace(name);
 
-    var methodInfo = MatchMethod(typeof(TSource), true, name, memberAccessibility, false, typeArguments?.AsReadOnly(), methodArguments?.AsReadOnly(), positionalParameterValues?.AsReadOnly(), namedParameterValues?.AsReadOnly(), typeof(void));
-    if (methodInfo is null)
-      return false;
-    var values = GetParameterValues(methodInfo.GetParameters(), positionalParameterValues, namedParameterValues);
-    methodInfo.Invoke(null, values);
-    SetParameterValues(methodInfo.GetParameters(), values, positionalParameterValues, namedParameterValues);
-    SetArgumentTypes(methodInfo.GetGenericArguments(), methodArguments);
-    if (methodInfo.ReflectedType is not null)
-      SetArgumentTypes(methodInfo.ReflectedType.GetGenericArguments(), typeArguments);
-    return true;
+    return TryGetMethodCore(sourceType, null, name, memberAccessibility, typeArguments, methodArguments, positionalParameterTypes, namedParameterTypes, returnType, out methodInfo);
   }
 
-  public static bool TryCallMethod(Type type, string name, MemberAccessibility memberAccessibility,
-    IList<Type?>? typeArguments, IList<Type?>? methodArguments, IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues, Type? returnType, out object? result)
+  public static bool TryGetStaticMethod<TSource>(string name, MemberAccessibility memberAccessibility,
+    IList<Type?>? methodArguments,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes,
+    [NotNullWhen(true)] out MethodInfo? methodInfo)
   {
-    Argument.That.NotNull(type);
     Argument.That.NotNullOrWhitespace(name);
 
-    var methodInfo = MatchMethod(type, true, name, memberAccessibility, false, typeArguments?.AsReadOnly(), methodArguments?.AsReadOnly(), positionalParameterValues?.AsReadOnly(), namedParameterValues?.AsReadOnly(), returnType);
-    if (methodInfo is null)
-    {
-      result = null;
-      return false;
-    }
-    var values = GetParameterValues(methodInfo.GetParameters(), positionalParameterValues, namedParameterValues);
-    result = methodInfo.Invoke(null, values);
-    SetParameterValues(methodInfo.GetParameters(), values, positionalParameterValues, namedParameterValues);
-    SetArgumentTypes(methodInfo.GetGenericArguments(), methodArguments);
-    if (methodInfo.ReflectedType is not null)
-      SetArgumentTypes(methodInfo.ReflectedType.GetGenericArguments(), typeArguments);
-    return true;
+    return TryGetMethodCore(typeof(TSource), null, name, memberAccessibility, null, methodArguments, positionalParameterTypes, namedParameterTypes, typeof(void), out methodInfo);
   }
 
-  public static bool TryCallMethod<TSource>(string name, MemberAccessibility memberAccessibility,
-    IList<Type?>? typeArguments, IList<Type?>? methodArguments, IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues, Type? returnType, out object? result)
+  public static bool TryGetStaticMethod<TSource>(string name, MemberAccessibility memberAccessibility,
+    IList<Type?>? methodArguments,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes, Type? returnType,
+    [NotNullWhen(true)] out MethodInfo? methodInfo)
   {
     Argument.That.NotNullOrWhitespace(name);
 
-    var methodInfo = MatchMethod(typeof(TSource), true, name, memberAccessibility, false, typeArguments?.AsReadOnly(), methodArguments?.AsReadOnly(), positionalParameterValues?.AsReadOnly(), namedParameterValues?.AsReadOnly(), returnType);
-    if (methodInfo is null)
-    {
-      result = null;
-      return false;
-    }
-    var values = GetParameterValues(methodInfo.GetParameters(), positionalParameterValues, namedParameterValues);
-    result = methodInfo.Invoke(null, values);
-    SetParameterValues(methodInfo.GetParameters(), values, positionalParameterValues, namedParameterValues);
-    SetArgumentTypes(methodInfo.GetGenericArguments(), methodArguments);
-    if (methodInfo.ReflectedType is not null)
-      SetArgumentTypes(methodInfo.ReflectedType.GetGenericArguments(), typeArguments);
-    return true;
-  }
-
-  public static async Task<bool> TryCallMethodAsync(Type type, string name, MemberAccessibility memberAccessibility,
-    IList<Type?>? typeArguments, IList<Type?>? methodArguments, IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues)
-  {
-    Argument.That.NotNull(type);
-    Argument.That.NotNullOrWhitespace(name);
-
-    var methodInfo = MatchMethod(type, true, name, memberAccessibility, false, typeArguments?.AsReadOnly(), methodArguments?.AsReadOnly(), positionalParameterValues?.AsReadOnly(), namedParameterValues?.AsReadOnly(), null);
-    if (methodInfo is null)
-      return false;
-    var values = GetParameterValues(methodInfo.GetParameters(), positionalParameterValues, namedParameterValues);
-    var result = methodInfo.Invoke(null, values);
-    dynamic awaitable = Argument.That.NotNull(result);
-    await awaitable;
-    SetParameterValues(methodInfo.GetParameters(), values, positionalParameterValues, namedParameterValues);
-    SetArgumentTypes(methodInfo.GetGenericArguments(), methodArguments);
-    if (methodInfo.ReflectedType is not null)
-      SetArgumentTypes(methodInfo.ReflectedType.GetGenericArguments(), typeArguments);
-    return true;
-  }
-
-  public static async Task<bool> TryCallMethodAsync<TSource>(string name, MemberAccessibility memberAccessibility,
-    IList<Type?>? typeArguments, IList<Type?>? methodArguments, IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues)
-  {
-    Argument.That.NotNullOrWhitespace(name);
-
-    var methodInfo = MatchMethod(typeof(TSource), true, name, memberAccessibility, false, typeArguments?.AsReadOnly(), methodArguments?.AsReadOnly(), positionalParameterValues?.AsReadOnly(), namedParameterValues?.AsReadOnly(), null);
-    if (methodInfo is null)
-      return false;
-    var values = GetParameterValues(methodInfo.GetParameters(), positionalParameterValues, namedParameterValues);
-    var result = methodInfo.Invoke(null, values);
-    dynamic awaitable = Argument.That.NotNull(result);
-    await awaitable;
-    SetParameterValues(methodInfo.GetParameters(), values, positionalParameterValues, namedParameterValues);
-    SetArgumentTypes(methodInfo.GetGenericArguments(), methodArguments);
-    if (methodInfo.ReflectedType is not null)
-      SetArgumentTypes(methodInfo.ReflectedType.GetGenericArguments(), typeArguments);
-    return true;
-  }
-
-  public static async Task<TryOut<object>> TryCallMethodAsync(Type type, string name, MemberAccessibility memberAccessibility,
-    IList<Type?>? typeArguments, IList<Type?>? methodArguments, IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues, Type? returnType)
-  {
-    Argument.That.NotNull(type);
-    Argument.That.NotNullOrWhitespace(name);
-
-    var methodInfo = MatchMethod(type, true, name, memberAccessibility, false, typeArguments?.AsReadOnly(), methodArguments?.AsReadOnly(), positionalParameterValues?.AsReadOnly(), namedParameterValues?.AsReadOnly(), returnType);
-    if (methodInfo is null)
-      return TryOut.Failure<object>();
-    var values = GetParameterValues(methodInfo.GetParameters(), positionalParameterValues, namedParameterValues);
-    var result = methodInfo.Invoke(null, values);
-    dynamic awaitable = Argument.That.NotNull(result);
-    await awaitable;
-    var awaitableResult = GetAwaitableResult(awaitable.GetAwaiter());
-    SetParameterValues(methodInfo.GetParameters(), values, positionalParameterValues, namedParameterValues);
-    SetArgumentTypes(methodInfo.GetGenericArguments(), methodArguments);
-    if (methodInfo.ReflectedType is not null)
-      SetArgumentTypes(methodInfo.ReflectedType.GetGenericArguments(), typeArguments);
-    return TryOut.Success(awaitableResult);
-  }
-
-  public static async Task<TryOut<object>> TryCallMethodAsync<TSource>(string name, MemberAccessibility memberAccessibility,
-    IList<Type?>? typeArguments, IList<Type?>? methodArguments, IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues, Type? returnType)
-  {
-    Argument.That.NotNullOrWhitespace(name);
-
-    var methodInfo = MatchMethod(typeof(TSource), true, name, memberAccessibility, false, typeArguments?.AsReadOnly(), methodArguments?.AsReadOnly(), positionalParameterValues?.AsReadOnly(), namedParameterValues?.AsReadOnly(), returnType);
-    if (methodInfo is null)
-      return TryOut.Failure<object>();
-    var values = GetParameterValues(methodInfo.GetParameters(), positionalParameterValues, namedParameterValues);
-    var result = methodInfo.Invoke(null, values);
-    dynamic awaitable = Argument.That.NotNull(result);
-    await awaitable;
-    var awaitableResult = GetAwaitableResult(awaitable.GetAwaiter());
-    SetParameterValues(methodInfo.GetParameters(), values, positionalParameterValues, namedParameterValues);
-    SetArgumentTypes(methodInfo.GetGenericArguments(), methodArguments);
-    if (methodInfo.ReflectedType is not null)
-      SetArgumentTypes(methodInfo.ReflectedType.GetGenericArguments(), typeArguments);
-    return TryOut.Success(awaitableResult);
+    return TryGetMethodCore(typeof(TSource), null, name, memberAccessibility, null, methodArguments, positionalParameterTypes, namedParameterTypes, returnType, out methodInfo);
   }
 
   #endregion
-  #region Direct methods
+  #region Direct info methods
 
-  public static void CallMethod(Type type, string name, MemberAccessibility memberAccessibility,
-    IList<Type?>? typeArguments, IList<Type?>? methodArguments, IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues)
+  public static MethodInfo GetStaticMethod(Type sourceType, string name, MemberAccessibility memberAccessibility,
+    IList<Type?>? typeArguments, IList<Type?>? methodArguments,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes)
   {
-    Argument.That.NotNull(type);
+    Argument.That.NotNull(sourceType);
     Argument.That.NotNullOrWhitespace(name);
 
-    var methodInfo = MatchMethod(type, true, name, memberAccessibility, true, typeArguments?.AsReadOnly(), methodArguments?.AsReadOnly(), positionalParameterValues?.AsReadOnly(), namedParameterValues?.AsReadOnly(), typeof(void));
-    var values = GetParameterValues(methodInfo!.GetParameters(), positionalParameterValues, namedParameterValues);
-    methodInfo.Invoke(null, values);
-    SetParameterValues(methodInfo.GetParameters(), values, positionalParameterValues, namedParameterValues);
-    SetArgumentTypes(methodInfo.GetGenericArguments(), methodArguments);
-    if (methodInfo.ReflectedType is not null)
-      SetArgumentTypes(methodInfo.ReflectedType.GetGenericArguments(), typeArguments);
+    return GetMethodCore(sourceType, null, name, memberAccessibility, typeArguments, methodArguments, positionalParameterTypes, namedParameterTypes, typeof(void));
   }
 
-  public static void CallMethod<TSource>(string name, MemberAccessibility memberAccessibility,
-    IList<Type?>? typeArguments, IList<Type?>? methodArguments, IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues)
+  public static MethodInfo GetStaticMethod(Type sourceType, string name, MemberAccessibility memberAccessibility,
+    IList<Type?>? typeArguments, IList<Type?>? methodArguments,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes, Type? returnType)
   {
+    Argument.That.NotNull(sourceType);
     Argument.That.NotNullOrWhitespace(name);
 
-    var methodInfo = MatchMethod(typeof(TSource), true, name, memberAccessibility, true, typeArguments?.AsReadOnly(), methodArguments?.AsReadOnly(), positionalParameterValues?.AsReadOnly(), namedParameterValues?.AsReadOnly(), typeof(void));
-    var values = GetParameterValues(methodInfo!.GetParameters(), positionalParameterValues, namedParameterValues);
-    methodInfo.Invoke(null, values);
-    SetParameterValues(methodInfo.GetParameters(), values, positionalParameterValues, namedParameterValues);
-    SetArgumentTypes(methodInfo.GetGenericArguments(), methodArguments);
-    if (methodInfo.ReflectedType is not null)
-      SetArgumentTypes(methodInfo.ReflectedType.GetGenericArguments(), typeArguments);
+    return GetMethodCore(sourceType, null, name, memberAccessibility, typeArguments, methodArguments, positionalParameterTypes, namedParameterTypes, returnType);
   }
 
-  public static object? CallMethod(Type type, string name, MemberAccessibility memberAccessibility,
-    IList<Type?>? typeArguments, IList<Type?>? methodArguments, IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues, Type? returnType)
+  public static MethodInfo GetStaticMethod<TSource>(string name, MemberAccessibility memberAccessibility,
+    IList<Type?>? methodArguments,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes)
   {
-    Argument.That.NotNull(type);
     Argument.That.NotNullOrWhitespace(name);
 
-    var methodInfo = MatchMethod(type, true, name, memberAccessibility, true, typeArguments?.AsReadOnly(), methodArguments?.AsReadOnly(), positionalParameterValues?.AsReadOnly(), namedParameterValues?.AsReadOnly(), returnType);
-    var values = GetParameterValues(methodInfo!.GetParameters(), positionalParameterValues, namedParameterValues);
-    var result = methodInfo.Invoke(null, values);
-    SetParameterValues(methodInfo.GetParameters(), values, positionalParameterValues, namedParameterValues);
-    SetArgumentTypes(methodInfo.GetGenericArguments(), methodArguments);
-    if (methodInfo.ReflectedType is not null)
-      SetArgumentTypes(methodInfo.ReflectedType.GetGenericArguments(), typeArguments);
-    return result;
+    return GetMethodCore(typeof(TSource), null, name, memberAccessibility, null, methodArguments, positionalParameterTypes, namedParameterTypes, typeof(void));
   }
 
-  public static object? CallMethod<TSource>(string name, MemberAccessibility memberAccessibility,
-    IList<Type?>? typeArguments, IList<Type?>? methodArguments, IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues, Type? returnType)
+  public static MethodInfo GetStaticMethod<TSource>(string name, MemberAccessibility memberAccessibility,
+    IList<Type?>? methodArguments,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes, Type? returnType)
   {
     Argument.That.NotNullOrWhitespace(name);
 
-    var methodInfo = MatchMethod(typeof(TSource), true, name, memberAccessibility, true, typeArguments?.AsReadOnly(), methodArguments?.AsReadOnly(), positionalParameterValues?.AsReadOnly(), namedParameterValues?.AsReadOnly(), returnType);
-    var values = GetParameterValues(methodInfo!.GetParameters(), positionalParameterValues, namedParameterValues);
-    var result = methodInfo.Invoke(null, values);
-    SetParameterValues(methodInfo.GetParameters(), values, positionalParameterValues, namedParameterValues);
-    SetArgumentTypes(methodInfo.GetGenericArguments(), methodArguments);
-    if (methodInfo.ReflectedType is not null)
-      SetArgumentTypes(methodInfo.ReflectedType.GetGenericArguments(), typeArguments);
-    return result;
+    return GetMethodCore(typeof(TSource), null, name, memberAccessibility, null, methodArguments, positionalParameterTypes, namedParameterTypes, returnType);
   }
 
-  public static async Task CallMethodAsync(Type type, string name, MemberAccessibility memberAccessibility,
-    IList<Type?>? typeArguments, IList<Type?>? methodArguments, IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues)
+  #endregion
+  #region Try call methods
+
+  public static bool TryCallStaticMethod(Type sourceType, string name, MemberAccessibility memberAccessibility,
+    IList<Type?>? typeArguments, IList<Type?>? methodArguments,
+    IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues)
   {
-    Argument.That.NotNull(type);
+    Argument.That.NotNull(sourceType);
     Argument.That.NotNullOrWhitespace(name);
 
-    var methodInfo = MatchMethod(type, true, name, memberAccessibility, true, typeArguments?.AsReadOnly(), methodArguments?.AsReadOnly(), positionalParameterValues?.AsReadOnly(), namedParameterValues?.AsReadOnly(), null);
-    var values = GetParameterValues(methodInfo!.GetParameters(), positionalParameterValues, namedParameterValues);
-    var result = methodInfo.Invoke(null, values);
-    dynamic awaitable = Argument.That.NotNull(result);
-    await awaitable;
-    SetParameterValues(methodInfo.GetParameters(), values, positionalParameterValues, namedParameterValues);
-    SetArgumentTypes(methodInfo.GetGenericArguments(), methodArguments);
-    if (methodInfo.ReflectedType is not null)
-      SetArgumentTypes(methodInfo.ReflectedType.GetGenericArguments(), typeArguments);
+    return TryCallMethodCore(sourceType, null, name, memberAccessibility, typeArguments, methodArguments, positionalParameterValues, namedParameterValues, typeof(void), out var returnValue);
   }
 
-  public static async Task CallMethodAsync<TSource>(string name, MemberAccessibility memberAccessibility,
-    IList<Type?>? typeArguments, IList<Type?>? methodArguments, IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues)
+  public static bool TryCallStaticMethod(Type sourceType, string name, MemberAccessibility memberAccessibility,
+    IList<Type?>? typeArguments, IList<Type?>? methodArguments,
+    IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues, Type? returnType, out object? returnValue)
   {
+    Argument.That.NotNull(sourceType);
     Argument.That.NotNullOrWhitespace(name);
 
-    var methodInfo = MatchMethod(typeof(TSource), true, name, memberAccessibility, true, typeArguments?.AsReadOnly(), methodArguments?.AsReadOnly(), positionalParameterValues?.AsReadOnly(), namedParameterValues?.AsReadOnly(), null);
-    var values = GetParameterValues(methodInfo!.GetParameters(), positionalParameterValues, namedParameterValues);
-    var result = methodInfo.Invoke(null, values);
-    dynamic awaitable = Argument.That.NotNull(result);
-    await awaitable;
-    SetParameterValues(methodInfo.GetParameters(), values, positionalParameterValues, namedParameterValues);
-    SetArgumentTypes(methodInfo.GetGenericArguments(), methodArguments);
-    if (methodInfo.ReflectedType is not null)
-      SetArgumentTypes(methodInfo.ReflectedType.GetGenericArguments(), typeArguments);
+    return TryCallMethodCore(sourceType, null, name, memberAccessibility, typeArguments, methodArguments, positionalParameterValues, namedParameterValues, returnType, out returnValue);
   }
 
-  public static async Task<object?> CallMethodAsync(Type type, string name, MemberAccessibility memberAccessibility,
-    IList<Type?>? typeArguments, IList<Type?>? methodArguments, IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues, Type? returnType)
+  public static bool TryCallStaticMethod<TSource>(string name, MemberAccessibility memberAccessibility,
+    IList<Type?>? methodArguments,
+    IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues)
   {
-    Argument.That.NotNull(type);
     Argument.That.NotNullOrWhitespace(name);
 
-    var methodInfo = MatchMethod(type, true, name, memberAccessibility, true, typeArguments?.AsReadOnly(), methodArguments?.AsReadOnly(), positionalParameterValues?.AsReadOnly(), namedParameterValues?.AsReadOnly(), returnType);
-    var values = GetParameterValues(methodInfo!.GetParameters(), positionalParameterValues, namedParameterValues);
-    var result = methodInfo.Invoke(null, values);
-    dynamic awaitable = Argument.That.NotNull(result);
-    await awaitable;
-    var awaitableResult = GetAwaitableResult(awaitable.GetAwaiter());
-    SetParameterValues(methodInfo.GetParameters(), values, positionalParameterValues, namedParameterValues);
-    SetArgumentTypes(methodInfo.GetGenericArguments(), methodArguments);
-    if (methodInfo.ReflectedType is not null)
-      SetArgumentTypes(methodInfo.ReflectedType.GetGenericArguments(), typeArguments);
-    return awaitableResult;
+    return TryCallMethodCore(typeof(TSource), null, name, memberAccessibility, null, methodArguments, positionalParameterValues, namedParameterValues, typeof(void), out var returnValue);
   }
 
-  public static async Task<object?> CallMethodAsync<TSource>(string name, MemberAccessibility memberAccessibility,
-    IList<Type?>? typeArguments, IList<Type?>? methodArguments, IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues, Type? returnType)
+  public static bool TryCallStaticMethod<TSource>(string name, MemberAccessibility memberAccessibility,
+    IList<Type?>? methodArguments,
+    IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues, Type? returnType, out object? returnValue)
   {
     Argument.That.NotNullOrWhitespace(name);
 
-    var methodInfo = MatchMethod(typeof(TSource), true, name, memberAccessibility, true, typeArguments?.AsReadOnly(), methodArguments?.AsReadOnly(), positionalParameterValues?.AsReadOnly(), namedParameterValues?.AsReadOnly(), returnType);
-    var values = GetParameterValues(methodInfo!.GetParameters(), positionalParameterValues, namedParameterValues);
-    var result = methodInfo.Invoke(null, values);
-    dynamic awaitable = Argument.That.NotNull(result);
-    await awaitable;
-    var awaitableResult = GetAwaitableResult(awaitable.GetAwaiter());
-    SetParameterValues(methodInfo.GetParameters(), values, positionalParameterValues, namedParameterValues);
-    SetArgumentTypes(methodInfo.GetGenericArguments(), methodArguments);
-    if (methodInfo.ReflectedType is not null)
-      SetArgumentTypes(methodInfo.ReflectedType.GetGenericArguments(), typeArguments);
-    return awaitableResult;
+    return TryCallMethodCore(typeof(TSource), null, name, memberAccessibility, null, methodArguments, positionalParameterValues, namedParameterValues, returnType, out returnValue);
+  }
+
+  #endregion
+  #region Direct call methods
+
+  public static void CallStaticMethod(Type sourceType, string name, MemberAccessibility memberAccessibility,
+    IList<Type?>? typeArguments, IList<Type?>? methodArguments,
+    IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues)
+  {
+    Argument.That.NotNull(sourceType);
+    Argument.That.NotNullOrWhitespace(name);
+
+    CallMethodCore(sourceType, null, name, memberAccessibility, typeArguments, methodArguments, positionalParameterValues, namedParameterValues, typeof(void));
+  }
+
+  public static object? CallStaticMethod(Type sourceType, string name, MemberAccessibility memberAccessibility,
+    IList<Type?>? typeArguments, IList<Type?>? methodArguments,
+    IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues, Type? returnType)
+  {
+    Argument.That.NotNull(sourceType);
+    Argument.That.NotNullOrWhitespace(name);
+
+    return CallMethodCore(sourceType, null, name, memberAccessibility, typeArguments, methodArguments, positionalParameterValues, namedParameterValues, returnType);
+  }
+
+  public static void CallStaticMethod<TSource>(string name, MemberAccessibility memberAccessibility,
+    IList<Type?>? methodArguments,
+    IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues)
+  {
+    Argument.That.NotNullOrWhitespace(name);
+
+    CallMethodCore(typeof(TSource), null, name, memberAccessibility, null, methodArguments, positionalParameterValues, namedParameterValues, typeof(void));
+  }
+
+  public static object? CallStaticMethod<TSource>(string name, MemberAccessibility memberAccessibility,
+    IList<Type?>? methodArguments,
+    IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues, Type? returnType)
+  {
+    Argument.That.NotNullOrWhitespace(name);
+
+    return CallMethodCore(typeof(TSource), null, name, memberAccessibility, null, methodArguments, positionalParameterValues, namedParameterValues, returnType);
+  }
+
+  #endregion
+  #region Try call async methods
+
+  public static async Task<bool> TryCallStaticMethodAsync(Type sourceType, string name, MemberAccessibility memberAccessibility,
+    IList<Type?>? typeArguments, IList<Type?>? methodArguments,
+    IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues)
+  {
+    Argument.That.NotNull(sourceType);
+    Argument.That.NotNullOrWhitespace(name);
+
+    return (await TryCallMethodAsyncCore(sourceType, null, name, memberAccessibility, typeArguments, methodArguments, positionalParameterValues, namedParameterValues, null)).Success;
+  }
+
+  public static Task<TryOut<object>> TryCallStaticMethodAsync(Type sourceType, string name, MemberAccessibility memberAccessibility,
+    IList<Type?>? typeArguments, IList<Type?>? methodArguments,
+    IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues, Type? returnType)
+  {
+    Argument.That.NotNull(sourceType);
+    Argument.That.NotNullOrWhitespace(name);
+
+    return TryCallMethodAsyncCore(sourceType, null, name, memberAccessibility, typeArguments, methodArguments, positionalParameterValues, namedParameterValues, returnType);
+  }
+
+  public static async Task<bool> TryCallStaticMethodAsync<TSource>(string name, MemberAccessibility memberAccessibility,
+    IList<Type?>? methodArguments,
+    IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues)
+  {
+    Argument.That.NotNullOrWhitespace(name);
+
+    return (await TryCallMethodAsyncCore(typeof(TSource), null, name, memberAccessibility, null, methodArguments, positionalParameterValues, namedParameterValues, null)).Success;
+  }
+
+  public static Task<TryOut<object>> TryCallStaticMethodAsync<TSource>(string name, MemberAccessibility memberAccessibility,
+    IList<Type?>? methodArguments,
+    IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues, Type? returnType)
+  {
+    Argument.That.NotNullOrWhitespace(name);
+
+    return TryCallMethodAsyncCore(typeof(TSource), null, name, memberAccessibility, null, methodArguments, positionalParameterValues, namedParameterValues, returnType);
+  }
+
+  #endregion
+  #region Direct call async method
+
+  public static Task CallStaticMethodAsync(Type sourceType, string name, MemberAccessibility memberAccessibility,
+    IList<Type?>? typeArguments, IList<Type?>? methodArguments,
+    IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues)
+  {
+    Argument.That.NotNull(sourceType);
+    Argument.That.NotNullOrWhitespace(name);
+
+    return CallMethodAsyncCore(sourceType, null, name, memberAccessibility, typeArguments, methodArguments, positionalParameterValues, namedParameterValues, null);
+  }
+
+  public static Task<object?> CallStaticMethodAsync(Type sourceType, string name, MemberAccessibility memberAccessibility,
+    IList<Type?>? typeArguments, IList<Type?>? methodArguments,
+    IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues, Type? returnType)
+  {
+    Argument.That.NotNull(sourceType);
+    Argument.That.NotNullOrWhitespace(name);
+
+    return CallMethodAsyncCore(sourceType, null, name, memberAccessibility, typeArguments, methodArguments, positionalParameterValues, namedParameterValues, returnType);
+  }
+
+  public static Task CallStaticMethodAsync<TSource>(string name, MemberAccessibility memberAccessibility,
+    IList<Type?>? methodArguments,
+    IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues)
+  {
+    Argument.That.NotNullOrWhitespace(name);
+
+    return CallMethodAsyncCore(typeof(TSource), null, name, memberAccessibility, null, methodArguments, positionalParameterValues, namedParameterValues, null);
+  }
+
+  public static Task<object?> CallStaticMethodAsync<TSource>(string name, MemberAccessibility memberAccessibility,
+    IList<Type?>? methodArguments,
+    IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues, Type? returnType)
+  {
+    Argument.That.NotNullOrWhitespace(name);
+
+    return CallMethodAsyncCore(typeof(TSource), null, name, memberAccessibility, null, methodArguments, positionalParameterValues, namedParameterValues, returnType);
   }
 
   #endregion
@@ -3869,7 +4190,7 @@ public static class Reflector
     var bindingFlags = (staticMember ? BindingFlags.Static : BindingFlags.Instance) | BindingFlags.DeclaredOnly
       | (memberAccessibility.IsFlagsSet(MemberAccessibility.Public) ? BindingFlags.Public : BindingFlags.Default)
       | (memberAccessibility.IsFlagsOverlapped(MemberAccessibility.NonPublic) ? BindingFlags.NonPublic : BindingFlags.Default);
-    var nameComparison = memberAccessibility.IsFlagsSet(MemberAccessibility.IgnoreCase) ? StringComparison.InvariantCultureIgnoreCase : StringComparison.InvariantCulture;
+    var nameComparison = memberAccessibility.IsFlagsSet(MemberAccessibility.IgnoreCase) ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
     foreach (var constructorInfo in sourceType.GetConstructors(bindingFlags).Where(constructorInfo =>
       (constructorInfo.Attributes & MethodAttributes.MemberAccessMask) switch
       {
@@ -3884,13 +4205,10 @@ public static class Reflector
       yield return constructorInfo;
   }
 
-  private static ConstructorInfo? MatchConstructor(Type sourceType, bool staticMember, MemberAccessibility memberAccessibility, bool required,
-    IReadOnlyList<Type?>? sourceTypeArguments, IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues)
+  private static ConstructorInfo? MatchConstructor(Type sourceType, bool staticMember, MemberAccessibility memberAccessibility,
+    IReadOnlyList<Type?>? sourceTypeArguments, IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes)
   {
-    var positionalParameterTypes = positionalParameterValues?.Select(parameterValue => parameterValue?.GetType()).ToList();
-    var namedParameterTypes = namedParameterValues?.ToDictionary(parameterItem => parameterItem.Key, parameterItem => parameterItem.Value?.GetType(),
-      memberAccessibility.IsFlagsSet(MemberAccessibility.IgnoreCase) ? StringComparer.InvariantCultureIgnoreCase : StringComparer.InvariantCulture);
-    var constructorResult = GetConstructors(sourceType, staticMember, memberAccessibility)
+    var resultConstructors = GetConstructors(sourceType, staticMember, memberAccessibility)
       .Select(constructorInfo =>
       {
         var resultTypeArguments = new Type[sourceTypeArguments?.Count ?? constructorInfo.DeclaringType?.GetGenericArguments().Length ?? 0];
@@ -3899,87 +4217,2243 @@ public static class Reflector
       })
       .Where(tuple => tuple.constructorInfo is not null)
       .OrderByDescending(tuple => tuple.constructorWeight, SignatureWeightComparer.Value)
-      .TakeWhile(default(SignatureWeight?), (state, item) => item.constructorWeight, (state, item) => state is null || CompareSignatureWeight(item.constructorWeight, state.Value) == 0)
-      .SingleOrDefault();
-    var constructorInfo = constructorResult.constructorInfo;
+      .TakeWhile(default(SignatureWeight?),
+        (state, item) => item.constructorWeight,
+        (state, item) => state is null || CompareSignatureWeight(item.constructorWeight, state.Value) == 0)
+      .Take(2);
+    var constructorInfo = default(ConstructorInfo);
+    var typeArguments = default(Type?[]);
+    foreach (var resultConstructor in resultConstructors)
+    {
+      if (constructorInfo is null)
+      {
+        constructorInfo = resultConstructor.constructorInfo;
+        typeArguments = resultConstructor.typeArguments;
+        continue;
+      }
+      Operation.That.Failed(FormatMessage(ReflectionMessage.PropertyAmbiguousMatch));
+    }
     if (constructorInfo is not null)
     {
       if (sourceType.IsGenericType && !sourceType.IsConstructedGenericType)
       {
-        sourceType = sourceType.MakeGenericType(constructorResult.typeArguments);
-        constructorInfo = MatchConstructor(sourceType, staticMember, memberAccessibility, required, constructorResult.typeArguments, positionalParameterValues, namedParameterValues);
+        sourceType = sourceType.MakeGenericType(typeArguments);
+        constructorInfo = MatchConstructor(sourceType, staticMember, memberAccessibility, typeArguments, positionalParameterTypes, namedParameterTypes);
       }
     }
-    if (required && constructorInfo is null)
-      throw new InvalidOperationException(FormatMessage(ReflectionMessage.ConstructorNotFound));
     return constructorInfo;
+  }
+
+  private static bool TryGetConstructorCore(Type sourceType, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments,
+    IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues,
+    [NotNullWhen(true)] out ConstructorInfo? result)
+  {
+    var constructorInfo = MatchConstructor(sourceType, false, memberAccessibility, typeArguments?.AsReadOnly(),
+      positionalParameterValues?.GetTypesOfValues(), namedParameterValues?.GetTypesOfValues(memberAccessibility.IsFlagsSet(MemberAccessibility.IgnoreCase)));
+    if (constructorInfo is not null)
+    {
+      constructorInfo.DeclaringType?.GetGenericArguments().SetArgumentTypes(typeArguments);
+      result = constructorInfo;
+      return true;
+    }
+    result = null;
+    return false;
+  }
+
+  private static ConstructorInfo GetConstructorCore(Type sourceType, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments,
+    IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues)
+  {
+    var constructorInfo = MatchConstructor(sourceType, false, memberAccessibility, typeArguments?.AsReadOnly(),
+      positionalParameterValues?.GetTypesOfValues(), namedParameterValues?.GetTypesOfValues(memberAccessibility.IsFlagsSet(MemberAccessibility.IgnoreCase)));
+    Operation.That.IsValid(constructorInfo is not null, FormatMessage(ReflectionMessage.ConstructorNotFound));
+    constructorInfo.DeclaringType?.GetGenericArguments().SetArgumentTypes(typeArguments);
+    return constructorInfo;
+  }
+
+  private static bool TryConstructCore(Type sourceType, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments,
+    IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues,
+    out object? constructedValue)
+  {
+    var constructorInfo = MatchConstructor(sourceType, false, memberAccessibility, typeArguments?.AsReadOnly(),
+      positionalParameterValues?.GetTypesOfValues(), namedParameterValues?.GetTypesOfValues(memberAccessibility.IsFlagsSet(MemberAccessibility.IgnoreCase)));
+    if (constructorInfo is not null)
+    {
+      var parameters = constructorInfo.GetParameters();
+      var values = parameters.GetParameterValues(positionalParameterValues, namedParameterValues);
+      var result = constructorInfo.Invoke(values);
+      constructorInfo.DeclaringType?.GetGenericArguments().SetArgumentTypes(typeArguments);
+      constructedValue = result;
+      return true;
+    }
+    constructedValue = null;
+    return false;
+  }
+
+  private static object ConstructCore(Type sourceType, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments,
+    IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues)
+  {
+    var constructorInfo = MatchConstructor(sourceType, false, memberAccessibility, typeArguments?.AsReadOnly(),
+      positionalParameterValues?.GetTypesOfValues(), namedParameterValues?.GetTypesOfValues(memberAccessibility.IsFlagsSet(MemberAccessibility.IgnoreCase)));
+    Operation.That.IsValid(constructorInfo is not null, FormatMessage(ReflectionMessage.ConstructorNotFound));
+    var parameters = constructorInfo.GetParameters();
+    var values = parameters.GetParameterValues(positionalParameterValues, namedParameterValues);
+    var result = constructorInfo.Invoke(values);
+    constructorInfo.DeclaringType?.GetGenericArguments().SetArgumentTypes(typeArguments);
+    return result;
   }
 
   #endregion
   #region Constructor public methods
-  #region Try methods
+  #region Try info methods
 
-  public static bool TryConstruct(Type type, MemberAccessibility memberAccessibility,
-    IList<Type?>? typeArguments, IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues,
-    out object? result)
+  public static bool TryGetInstanceConstructor(Type sourceType, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments,
+    IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues,
+    [NotNullWhen(true)] out ConstructorInfo? constructorInfo)
   {
-    Argument.That.NotNull(type);
+    Argument.That.NotNull(sourceType);
 
-    var constructorInfo = MatchConstructor(type, false, memberAccessibility, false, typeArguments?.AsReadOnly(), positionalParameterValues, namedParameterValues);
-    if (constructorInfo is null)
-    {
-      result = null;
-      return false;
-    }
-    var values = GetParameterValues(constructorInfo.GetParameters(), positionalParameterValues, namedParameterValues);
-    result = constructorInfo.Invoke(values);
-    if (constructorInfo.DeclaringType is not null)
-      SetArgumentTypes(constructorInfo.DeclaringType.GetGenericArguments(), typeArguments);
-    return true;
+    return TryGetConstructorCore(sourceType, memberAccessibility, typeArguments, positionalParameterValues, namedParameterValues, out constructorInfo);
   }
 
-  public static bool TryConstruct<TSource>(MemberAccessibility memberAccessibility,
-    IList<Type?>? typeArguments, IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues,
-    out object? result)
+  public static bool TryGetInstanceConstructor<TSource>(MemberAccessibility memberAccessibility,
+    IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues,
+    [NotNullWhen(true)] out ConstructorInfo? constructorInfo)
   {
-    var constructorInfo = MatchConstructor(typeof(TSource), false, memberAccessibility, false, typeArguments?.AsReadOnly(), positionalParameterValues, namedParameterValues);
-    if (constructorInfo is null)
-    {
-      result = null;
-      return false;
-    }
-    var values = GetParameterValues(constructorInfo.GetParameters(), positionalParameterValues, namedParameterValues);
-    result = constructorInfo.Invoke(values);
-    if (constructorInfo.DeclaringType is not null)
-      SetArgumentTypes(constructorInfo.DeclaringType.GetGenericArguments(), typeArguments);
-    return true;
+    return TryGetConstructorCore(typeof(TSource), memberAccessibility, null, positionalParameterValues, namedParameterValues, out constructorInfo);
   }
 
   #endregion
-  #region Direct methods
+  #region Direct info methods
 
-  public static object Construct(Type type, MemberAccessibility memberAccessibility,
-    IList<Type?>? typeArguments, IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues)
+  public static ConstructorInfo GetInstanceConstructor(Type sourceType, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments,
+    IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues)
   {
-    Argument.That.NotNull(type);
+    Argument.That.NotNull(sourceType);
 
-    var constructorInfo = MatchConstructor(type, false, memberAccessibility, true, typeArguments?.AsReadOnly(), positionalParameterValues, namedParameterValues);
-    var values = GetParameterValues(constructorInfo!.GetParameters(), positionalParameterValues, namedParameterValues);
-    var result = constructorInfo.Invoke(values);
-    if (constructorInfo.DeclaringType is not null)
-      SetArgumentTypes(constructorInfo.DeclaringType.GetGenericArguments(), typeArguments);
-    return result;
+    return GetConstructorCore(sourceType, memberAccessibility, typeArguments, positionalParameterValues, namedParameterValues);
   }
 
-  public static object Construct<TSource>(MemberAccessibility memberAccessibility,
-    IList<Type?>? typeArguments, IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues)
+  public static ConstructorInfo GetInstanceConstructor<TSource>(MemberAccessibility memberAccessibility,
+    IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues)
   {
-    var constructorInfo = MatchConstructor(typeof(TSource), false, memberAccessibility, true, typeArguments?.AsReadOnly(), positionalParameterValues, namedParameterValues);
-    var values = GetParameterValues(constructorInfo!.GetParameters(), positionalParameterValues, namedParameterValues);
-    var result = constructorInfo.Invoke(values);
-    if (constructorInfo.DeclaringType is not null)
-      SetArgumentTypes(constructorInfo.DeclaringType.GetGenericArguments(), typeArguments);
-    return result;
+    return GetConstructorCore(typeof(TSource), memberAccessibility, null, positionalParameterValues, namedParameterValues);
+  }
+
+  #endregion
+  #region Try construct methods
+
+  public static bool TryConstructInstance(Type sourceType, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments,
+    IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues,
+    out object? constructedValue)
+  {
+    Argument.That.NotNull(sourceType);
+
+    return TryConstructCore(sourceType, memberAccessibility, typeArguments, positionalParameterValues, namedParameterValues, out constructedValue);
+  }
+
+  public static bool TryConstructInstance<TSource>(MemberAccessibility memberAccessibility,
+    IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues,
+    out object? constructedValue)
+  {
+    return TryConstructCore(typeof(TSource), memberAccessibility, null, positionalParameterValues, namedParameterValues, out constructedValue);
+  }
+
+  #endregion
+  #region Direct construct methods
+
+  public static object ConstructInstance(Type sourceType, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments,
+    IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues)
+  {
+    Argument.That.NotNull(sourceType);
+
+    return ConstructCore(sourceType, memberAccessibility, typeArguments, positionalParameterValues, namedParameterValues);
+  }
+
+  public static object ConstructInstance<TSource>(MemberAccessibility memberAccessibility,
+    IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues)
+  {
+    return ConstructCore(typeof(TSource), memberAccessibility, null, positionalParameterValues, namedParameterValues);
+  }
+
+  #endregion
+  #endregion
+  #region Event internal methods
+
+  private static IEnumerable<EventInfo> GetEvents(Type sourceType, bool staticMember, string name, MemberAccessibility memberAccessibility)
+  {
+    var bindingFlags = GetBindingFlags(staticMember, memberAccessibility);
+    var nameComparison = memberAccessibility.IsFlagsSet(MemberAccessibility.IgnoreCase) ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+    var predicate = (EventInfo eventInfo) =>
+      string.Equals(eventInfo.Name, name, nameComparison) &&
+      ((eventInfo.AddMethod?.Attributes ?? eventInfo.RemoveMethod?.Attributes ?? MethodAttributes.PrivateScope) & MethodAttributes.MemberAccessMask) switch
+      {
+        MethodAttributes.Private => memberAccessibility.IsFlagsSet(MemberAccessibility.Private),
+        MethodAttributes.Public => memberAccessibility.IsFlagsSet(MemberAccessibility.Public),
+        MethodAttributes.Assembly => memberAccessibility.IsFlagsSet(MemberAccessibility.Assembly),
+        MethodAttributes.Family => memberAccessibility.IsFlagsSet(MemberAccessibility.Family),
+        MethodAttributes.FamORAssem => memberAccessibility.IsFlagsSet(MemberAccessibility.FamilyOrAssembly),
+        MethodAttributes.FamANDAssem => memberAccessibility.IsFlagsSet(MemberAccessibility.FamilyAndAssembly),
+        _ => false
+      };
+    return sourceType.GetEvents(bindingFlags).Where(predicate);
+  }
+
+  private static EventInfo? MatchEvent(Type sourceType, bool staticMember, string name, MemberAccessibility memberAccessibility, IReadOnlyList<Type?>? sourceTypeArguments,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes, Type? returnType)
+  {
+    var topHierarchy = memberAccessibility.IsFlagsSet(MemberAccessibility.TopHierarchy);
+    var resultEvents = GetEvents(sourceType, staticMember, name, memberAccessibility)
+      .Where(eventInfo => eventInfo.EventHandlerType is not null)
+      .Select(eventInfo =>
+      {
+        var inheritanceLevel = eventInfo.ReflectedType!.GetInheritanceLevel(eventInfo.DeclaringType!);
+        var resultTypeArguments = new Type[sourceType.GetGenericArguments().Length];
+        var methodInfo = eventInfo.EventHandlerType!.GetMethod(InvokeMethod)!;
+        var resultMethodArguments = new Type[methodInfo.GetGenericArguments().Length];
+        var matched = MatchMethod(sourceType, methodInfo, sourceTypeArguments, resultTypeArguments, null, resultMethodArguments, positionalParameterTypes, namedParameterTypes, returnType, out var methodWeight);
+        return (eventInfo: matched ? eventInfo : null, inheritanceLevel, methodWeight, typeArguments: resultTypeArguments);
+      })
+      .Where(tuple => tuple.eventInfo is not null)
+      .OrderByDescending(tuple => tuple.methodWeight, SignatureWeightComparer.Value)
+      .ThenBy(tuple => tuple.inheritanceLevel)
+      .TakeWhile((signatureWeight: default(SignatureWeight?), inheritanceLevel: -1),
+        (state, item) => (item.methodWeight, item.inheritanceLevel),
+        (state, item) => state.signatureWeight is null || CompareSignatureWeight(item.methodWeight, state.signatureWeight.Value) == 0 && (!topHierarchy || state.inheritanceLevel == item.inheritanceLevel))
+      .Take(2);
+    var eventInfo = default(EventInfo);
+    var typeArguments = default(Type?[]);
+    var inheritanceLevel = default(int);
+    foreach (var resultEvent in resultEvents)
+    {
+      if (eventInfo is null)
+      {
+        eventInfo = resultEvent.eventInfo;
+        typeArguments = resultEvent.typeArguments;
+        inheritanceLevel = resultEvent.inheritanceLevel;
+        continue;
+      }
+      if (!topHierarchy || inheritanceLevel == resultEvent.inheritanceLevel)
+        Operation.That.Failed(FormatMessage(ReflectionMessage.PropertyAmbiguousMatch));
+      break;
+    }
+    if (eventInfo is not null)
+    {
+      if (sourceType.IsGenericType && !sourceType.IsConstructedGenericType)
+      {
+        sourceType = sourceType.MakeGenericType(typeArguments);
+        eventInfo = MatchEvent(sourceType, staticMember, name, memberAccessibility, typeArguments, positionalParameterTypes, namedParameterTypes, returnType);
+      }
+    }
+    return eventInfo;
+  }
+
+  private static bool TryGetEventCore(Type sourceType, object? source, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes, Type? returnType,
+    [NotNullWhen(true)] out EventInfo? result)
+  {
+    var eventInfo = MatchEvent(sourceType, source is null, name, memberAccessibility, typeArguments?.AsReadOnly(), positionalParameterTypes, namedParameterTypes, returnType);
+    if (eventInfo is not null)
+    {
+      eventInfo.ReflectedType?.GetGenericArguments().SetArgumentTypes(typeArguments);
+      result = eventInfo;
+      return true;
+    }
+    result = null;
+    return false;
+  }
+
+  private static EventInfo GetEventCore(Type sourceType, object? source, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes, Type? returnType)
+  {
+    var eventInfo = MatchEvent(sourceType, source is null, name, memberAccessibility, typeArguments?.AsReadOnly(), positionalParameterTypes, namedParameterTypes, returnType);
+    Operation.That.IsValid(eventInfo is not null, FormatMessage(ReflectionMessage.EventNotFound));
+    eventInfo.ReflectedType?.GetGenericArguments().SetArgumentTypes(typeArguments);
+    return eventInfo;
+  }
+
+  private static bool TryAddEventHandlerCore(
+    Type eventType, object? eventSource, string eventName, MemberAccessibility eventAccessibility, IList<Type?>? eventTypeArguments,
+    Type methodType, object? methodSource, string methodName, MemberAccessibility methodAccessibility, IList<Type?>? methodTypeArguments, IList<Type?>? methodMethodArguments,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes, Type? returnType)
+  {
+    if (!TryGetEventCore(eventType, eventSource, eventName, eventAccessibility, eventTypeArguments, positionalParameterTypes, namedParameterTypes, returnType, out var eventInfo))
+      return false;
+    if (eventInfo.AddMethod is null || eventInfo.EventHandlerType is null)
+      return false;
+    if (!TryGetMethodCore(methodType, methodSource, methodName, methodAccessibility, methodTypeArguments, methodMethodArguments, positionalParameterTypes, namedParameterTypes, returnType, out var methodInfo))
+      return false;
+    var eventDelegate = Delegate.CreateDelegate(eventInfo.EventHandlerType, methodSource, methodInfo);
+    eventInfo.AddMethod.Invoke(eventSource, new[] { eventDelegate });
+    return true;
+  }
+
+  private static void AddEventHandlerCore(
+    Type eventType, object? eventSource, string eventName, MemberAccessibility eventAccessibility, IList<Type?>? eventTypeArguments,
+    Type methodType, object? methodSource, string methodName, MemberAccessibility methodAccessibility, IList<Type?>? methodTypeArguments, IList<Type?>? methodMethodArguments,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes, Type? returnType)
+  {
+    var eventInfo = GetEventCore(eventType, eventSource, eventName, eventAccessibility, eventTypeArguments, positionalParameterTypes, namedParameterTypes, returnType);
+    Operation.That.IsValid(eventInfo.AddMethod is not null && eventInfo.EventHandlerType is not null);
+    var methodInfo = GetMethodCore(methodType, methodSource, methodName, methodAccessibility, methodTypeArguments, methodMethodArguments, positionalParameterTypes, namedParameterTypes, returnType);
+    var eventDelegate = Delegate.CreateDelegate(eventInfo.EventHandlerType, methodSource, methodInfo);
+    eventInfo.AddMethod.Invoke(eventSource, new[] { eventDelegate });
+  }
+
+  private static bool TryRemoveEventHandlerCore(
+    Type eventType, object? eventSource, string eventName, MemberAccessibility eventAccessibility, IList<Type?>? eventTypeArguments,
+    Type methodType, object? methodSource, string methodName, MemberAccessibility methodAccessibility, IList<Type?>? methodTypeArguments, IList<Type?>? methodMethodArguments,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes, Type? returnType)
+  {
+    if (!TryGetEventCore(eventType, eventSource, eventName, eventAccessibility, eventTypeArguments, positionalParameterTypes, namedParameterTypes, returnType, out var eventInfo))
+      return false;
+    if (eventInfo.RemoveMethod is null || eventInfo.EventHandlerType is null)
+      return false;
+    if (!TryGetMethodCore(methodType, methodSource, methodName, methodAccessibility, methodTypeArguments, methodMethodArguments, positionalParameterTypes, namedParameterTypes, returnType, out var methodInfo))
+      return false;
+    var eventDelegate = Delegate.CreateDelegate(eventInfo.EventHandlerType, methodSource, methodInfo);
+    eventInfo.RemoveMethod.Invoke(eventSource, new[] { eventDelegate });
+    return true;
+  }
+
+  private static void RemoveEventHandlerCore(
+    Type eventType, object? eventSource, string eventName, MemberAccessibility eventAccessibility, IList<Type?>? eventTypeArguments,
+    Type methodType, object? methodSource, string methodName, MemberAccessibility methodAccessibility, IList<Type?>? methodTypeArguments, IList<Type?>? methodMethodArguments,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes, Type? returnType)
+  {
+    var eventInfo = GetEventCore(eventType, eventSource, eventName, eventAccessibility, eventTypeArguments, positionalParameterTypes, namedParameterTypes, returnType);
+    Operation.That.IsValid(eventInfo.RemoveMethod is not null && eventInfo.EventHandlerType is not null);
+    var methodInfo = GetMethodCore(methodType, methodSource, methodName, methodAccessibility, methodTypeArguments, methodMethodArguments, positionalParameterTypes, namedParameterTypes, returnType);
+    var eventDelegate = Delegate.CreateDelegate(eventInfo.EventHandlerType, methodSource, methodInfo);
+    eventInfo.RemoveMethod.Invoke(eventSource, new[] { eventDelegate });
+  }
+
+  private static bool TryClearEventHandlersCore(Type sourceType, object? source, string name, MemberAccessibility memberAccessibility,
+    Func<EventInfo, object?, Delegate?>? eventHandlerResolver, IList<Type?>? typeArguments,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes, Type? returnType)
+  {
+    var eventInfo = MatchEvent(sourceType, source is null, name, memberAccessibility, typeArguments?.AsReadOnly(), positionalParameterTypes, namedParameterTypes, returnType);
+    if (eventInfo is null || eventInfo.EventHandlerType is null || eventInfo.RemoveMethod is null)
+      return false;
+    var methodInfo = eventInfo.EventHandlerType.GetMethod(InvokeMethod);
+    if (methodInfo is null)
+      return false;
+    var eventHandler = default(Delegate);
+    if (eventHandlerResolver is not null)
+    {
+      eventHandler = eventHandlerResolver(eventInfo, source);
+    }
+    else
+    {
+      var fieldInfo = MatchField(eventInfo.DeclaringType!, source is null, eventInfo.Name, MemberAccessibility.DeclaredOnly | MemberAccessibility.Private, false, null, eventInfo.EventHandlerType, TypeVariance.Invariant);
+      if (fieldInfo is null)
+        return false;
+      eventHandler = (Delegate?)fieldInfo.GetValue(source);
+    }
+    if (eventHandler is not null)
+    {
+      var invocationList = eventHandler.GetInvocationList();
+      if (invocationList is not null)
+      {
+        var removeParameters = new object?[1];
+        foreach (var handlerDelegate in invocationList.AsEnumerable().Reverse())
+        {
+          removeParameters[0] = handlerDelegate;
+          eventInfo.RemoveMethod.Invoke(source, removeParameters);
+        }
+      }
+    }
+    return true;
+  }
+
+  private static void ClearEventHandlersCore(Type sourceType, object? source, string name, MemberAccessibility memberAccessibility,
+    Func<EventInfo, object?, Delegate?>? eventHandlerResolver, IList<Type?>? typeArguments,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes, Type? returnType)
+  {
+    var eventInfo = MatchEvent(sourceType, source is null, name, memberAccessibility, typeArguments?.AsReadOnly(), positionalParameterTypes, namedParameterTypes, returnType);
+    Operation.That.IsValid(eventInfo is not null, FormatMessage(ReflectionMessage.EventNotFound));
+    Operation.That.IsValid(eventInfo.EventHandlerType is not null && eventInfo.RemoveMethod is not null);
+    var methodInfo = eventInfo.EventHandlerType.GetMethod(InvokeMethod);
+    Operation.That.IsValid(methodInfo is not null, FormatMessage(ReflectionMessage.MethodNotFound));
+    var eventHandler = default(Delegate?);
+    if (eventHandlerResolver is not null)
+    {
+      eventHandler = eventHandlerResolver(eventInfo, source);
+    }
+    else
+    {
+      var fieldInfo = MatchField(eventInfo.DeclaringType!, source is null, eventInfo.Name, MemberAccessibility.DeclaredOnly | MemberAccessibility.Private, false, null, eventInfo.EventHandlerType, TypeVariance.Invariant);
+      Operation.That.IsValid(fieldInfo is not null, FormatMessage(ReflectionMessage.FieldNotFound));
+      eventHandler = (Delegate?)fieldInfo.GetValue(source);
+    }
+    if (eventHandler is not null)
+    {
+      var invocationList = eventHandler.GetInvocationList();
+      if (invocationList is null)
+        return;
+      var removeParameters = new object?[1];
+      foreach (var handlerDelegate in invocationList.AsEnumerable().Reverse())
+      {
+        removeParameters[0] = handlerDelegate;
+        eventInfo.RemoveMethod.Invoke(source, removeParameters);
+      }
+    }
+  }
+
+  private static bool TryRaiseEventCore(Type sourceType, object? source, string name, MemberAccessibility memberAccessibility,
+    Func<EventInfo, object?, Delegate?>? eventHandlerResolver, IList<Type?>? typeArguments,
+    IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues, Type? returnType,
+    out object? returnValue)
+  {
+    var eventInfo = MatchEvent(sourceType, source is null, name, memberAccessibility, typeArguments?.AsReadOnly(),
+      positionalParameterValues?.GetTypesOfValues(), namedParameterValues?.GetTypesOfValues(memberAccessibility.IsFlagsSet(MemberAccessibility.IgnoreCase)), returnType);
+    if (eventInfo is not null)
+    {
+      var methodInfo = eventInfo.EventHandlerType?.GetMethod(InvokeMethod);
+      if (methodInfo is not null)
+      {
+        var eventHandler = default(Delegate);
+        if (eventHandlerResolver is not null)
+        {
+          eventHandler = eventHandlerResolver(eventInfo, source);
+        }
+        else
+        {
+          var fieldInfo = MatchField(eventInfo.DeclaringType!, source is null, eventInfo.Name, MemberAccessibility.DeclaredOnly | MemberAccessibility.Private, false, null, eventInfo.EventHandlerType, TypeVariance.Invariant);
+          if (fieldInfo is null)
+          {
+            returnValue = null;
+            return false;
+          }
+          eventHandler = (Delegate?)fieldInfo.GetValue(source);
+        }
+        if (eventHandler is not null)
+        {
+          var parameters = methodInfo.GetParameters();
+          var values = parameters.GetParameterValues(positionalParameterValues, namedParameterValues);
+          var result = methodInfo.Invoke(eventHandler, values);
+          parameters.SetParameterValues(values, positionalParameterValues, namedParameterValues);
+          eventInfo.ReflectedType?.GetGenericArguments().SetArgumentTypes(typeArguments);
+          returnValue = result;
+        }
+        else
+        {
+          returnValue = null;
+        }
+        return true;
+      }
+    }
+    returnValue = null;
+    return false;
+  }
+
+  private static object? RaiseEventCore(Type sourceType, object? source, string name, MemberAccessibility memberAccessibility,
+    Func<EventInfo, object?, Delegate?>? eventHandlerResolver, IList<Type?>? typeArguments,
+    IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues, Type? returnType)
+  {
+    var eventInfo = MatchEvent(sourceType, source is null, name, memberAccessibility, typeArguments?.AsReadOnly(),
+      positionalParameterValues?.GetTypesOfValues(), namedParameterValues?.GetTypesOfValues(memberAccessibility.IsFlagsSet(MemberAccessibility.IgnoreCase)), returnType);
+    Operation.That.IsValid(eventInfo is not null, FormatMessage(ReflectionMessage.EventNotFound));
+    Operation.That.IsValid(eventInfo.EventHandlerType is not null && eventInfo.RemoveMethod is not null);
+    var methodInfo = eventInfo.EventHandlerType.GetMethod(InvokeMethod);
+    Operation.That.IsValid(methodInfo is not null, FormatMessage(ReflectionMessage.MethodNotFound));
+    var eventHandler = default(Delegate?);
+    if (eventHandlerResolver is not null)
+    {
+      eventHandler = eventHandlerResolver(eventInfo, source);
+    }
+    else
+    {
+      var fieldInfo = MatchField(eventInfo.DeclaringType!, source is null, eventInfo.Name, MemberAccessibility.DeclaredOnly | MemberAccessibility.Private, false, null, eventInfo.EventHandlerType, TypeVariance.Invariant);
+      Operation.That.IsValid(fieldInfo is not null, FormatMessage(ReflectionMessage.FieldNotFound));
+      eventHandler = (Delegate?)fieldInfo.GetValue(source);
+    }
+    if (eventHandler is not null)
+    {
+      var parameters = methodInfo.GetParameters();
+      var values = parameters.GetParameterValues(positionalParameterValues, namedParameterValues);
+      var result = methodInfo.Invoke(eventHandler, values);
+      parameters.SetParameterValues(values, positionalParameterValues, namedParameterValues);
+      return result;
+    }
+    else
+    {
+      return null;
+    }
+  }
+
+  #endregion
+  #region Instance event public methods
+  #region Try info methods
+
+  public static bool TryGetInstanceEvent(object source, string name, MemberAccessibility memberAccessibility,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes,
+    [NotNullWhen(true)] out EventInfo? eventInfo)
+  {
+    Argument.That.NotNull(source);
+    Argument.That.NotNullOrWhitespace(name);
+    var sourceObject = TypedValue.GetValue(source);
+    Argument.That.NotNull(sourceObject);
+    var sourceType = TypedValue.GetType(source)!;
+
+    return TryGetEventCore(sourceType, sourceObject, name, memberAccessibility, null, positionalParameterTypes, namedParameterTypes, typeof(void), out eventInfo);
+  }
+
+  public static bool TryGetInstanceEvent(object source, string name, MemberAccessibility memberAccessibility,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes, Type? returnType,
+    [NotNullWhen(true)] out EventInfo? eventInfo)
+  {
+    Argument.That.NotNull(source);
+    Argument.That.NotNullOrWhitespace(name);
+    var sourceObject = TypedValue.GetValue(source);
+    Argument.That.NotNull(sourceObject);
+    var sourceType = TypedValue.GetType(source)!;
+
+    return TryGetEventCore(sourceType, sourceObject, name, memberAccessibility, null, positionalParameterTypes, namedParameterTypes, returnType, out eventInfo);
+  }
+
+  public static bool TryGetInstanceEvent<TSource>(TSource source, string name, MemberAccessibility memberAccessibility,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes,
+    [NotNullWhen(true)] out EventInfo? eventInfo)
+  {
+    Argument.That.NotNull(source);
+    Argument.That.NotNullOrWhitespace(name);
+
+    return TryGetEventCore(typeof(TSource), source, name, memberAccessibility, null, positionalParameterTypes, namedParameterTypes, typeof(void), out eventInfo);
+  }
+
+  public static bool TryGetInstanceEvent<TSource>(TSource source, string name, MemberAccessibility memberAccessibility,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes, Type? returnType,
+    [NotNullWhen(true)] out EventInfo? eventInfo)
+  {
+    Argument.That.NotNull(source);
+    Argument.That.NotNullOrWhitespace(name);
+
+    return TryGetEventCore(typeof(TSource), source, name, memberAccessibility, null, positionalParameterTypes, namedParameterTypes, returnType, out eventInfo);
+  }
+
+  #endregion
+  #region Direct info methods
+
+  public static EventInfo GetInstanceEvent(object source, string name, MemberAccessibility memberAccessibility,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes)
+  {
+    Argument.That.NotNull(source);
+    Argument.That.NotNullOrWhitespace(name);
+    var sourceObject = TypedValue.GetValue(source);
+    Argument.That.NotNull(sourceObject);
+    var sourceType = TypedValue.GetType(source)!;
+
+    return GetEventCore(sourceType, sourceObject, name, memberAccessibility, null, positionalParameterTypes, namedParameterTypes, typeof(void));
+  }
+
+  public static EventInfo GetInstanceEvent(object source, string name, MemberAccessibility memberAccessibility,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes, Type? returnType)
+  {
+    Argument.That.NotNull(source);
+    Argument.That.NotNullOrWhitespace(name);
+    var sourceObject = TypedValue.GetValue(source);
+    Argument.That.NotNull(sourceObject);
+    var sourceType = TypedValue.GetType(source)!;
+
+    return GetEventCore(sourceType, sourceObject, name, memberAccessibility, null, positionalParameterTypes, namedParameterTypes, returnType);
+  }
+
+  public static EventInfo GetInstanceEvent<TSource>(TSource source, string name, MemberAccessibility memberAccessibility,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes)
+  {
+    Argument.That.NotNull(source);
+    Argument.That.NotNullOrWhitespace(name);
+
+    return GetEventCore(typeof(TSource), source, name, memberAccessibility, null, positionalParameterTypes, namedParameterTypes, typeof(void));
+  }
+
+  public static EventInfo GetInstanceEvent<TSource>(TSource source, string name, MemberAccessibility memberAccessibility,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes, Type? returnType)
+  {
+    Argument.That.NotNull(source);
+    Argument.That.NotNullOrWhitespace(name);
+
+    return GetEventCore(typeof(TSource), source, name, memberAccessibility, null, positionalParameterTypes, namedParameterTypes, returnType);
+  }
+
+  #endregion
+  #region Try add handler methods
+
+  public static bool TryAddInstanceEventInstanceHandler(
+    object eventSource, string eventName, MemberAccessibility eventAccessibility,
+    object methodSource, string methodName, MemberAccessibility methodAccessibility, IList<Type?>? methodMethodArguments,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes)
+  {
+    Argument.That.NotNull(eventSource);
+    Argument.That.NotNullOrWhitespace(eventName);
+    var eventObject = TypedValue.GetValue(eventSource);
+    Argument.That.NotNull(eventObject);
+    var eventType = TypedValue.GetType(eventSource)!;
+
+    Argument.That.NotNull(methodSource);
+    Argument.That.NotNullOrWhitespace(methodName);
+    var methodObject = TypedValue.GetValue(methodSource);
+    Argument.That.NotNull(methodObject);
+    var methodType = TypedValue.GetType(methodSource)!;
+
+    return TryAddEventHandlerCore(
+      eventType, eventObject, eventName, eventAccessibility, null,
+      methodType, methodObject, methodName, methodAccessibility, null, methodMethodArguments,
+      positionalParameterTypes, namedParameterTypes, typeof(void));
+  }
+
+  public static bool TryAddInstanceEventInstanceHandler(
+    object eventSource, string eventName, MemberAccessibility eventAccessibility,
+    object methodSource, string methodName, MemberAccessibility methodAccessibility, IList<Type?>? methodMethodArguments,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes, Type? returnType)
+  {
+    Argument.That.NotNull(eventSource);
+    Argument.That.NotNullOrWhitespace(eventName);
+    var eventObject = TypedValue.GetValue(eventSource);
+    Argument.That.NotNull(eventObject);
+    var eventType = TypedValue.GetType(eventSource)!;
+
+    Argument.That.NotNull(methodSource);
+    Argument.That.NotNullOrWhitespace(methodName);
+    var methodObject = TypedValue.GetValue(methodSource);
+    Argument.That.NotNull(methodObject);
+    var methodType = TypedValue.GetType(methodSource)!;
+
+    return TryAddEventHandlerCore(
+      eventType, eventObject, eventName, eventAccessibility, null,
+      methodType, methodObject, methodName, methodAccessibility, null, methodMethodArguments,
+      positionalParameterTypes, namedParameterTypes, returnType);
+  }
+
+  public static bool TryAddInstanceEventStaticHandler(
+    object eventSource, string eventName, MemberAccessibility eventAccessibility,
+    Type methodType, string methodName, MemberAccessibility methodAccessibility, IList<Type?>? methodTypeArguments, IList<Type?>? methodMethodArguments,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes)
+  {
+    Argument.That.NotNull(eventSource);
+    Argument.That.NotNullOrWhitespace(eventName);
+    var eventObject = TypedValue.GetValue(eventSource);
+    Argument.That.NotNull(eventObject);
+    var eventType = TypedValue.GetType(eventSource)!;
+
+    Argument.That.NotNull(methodType);
+    Argument.That.NotNullOrWhitespace(methodName);
+
+    return TryAddEventHandlerCore(
+      eventType, eventObject, eventName, eventAccessibility, null,
+      methodType, null, methodName, methodAccessibility, methodTypeArguments, methodMethodArguments,
+      positionalParameterTypes, namedParameterTypes, typeof(void));
+  }
+
+  public static bool TryAddInstanceEventStaticHandler(
+    object eventSource, string eventName, MemberAccessibility eventAccessibility,
+    Type methodType, string methodName, MemberAccessibility methodAccessibility, IList<Type?>? methodTypeArguments, IList<Type?>? methodMethodArguments,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes, Type? returnType)
+  {
+    Argument.That.NotNull(eventSource);
+    Argument.That.NotNullOrWhitespace(eventName);
+    var eventObject = TypedValue.GetValue(eventSource);
+    Argument.That.NotNull(eventObject);
+    var eventType = TypedValue.GetType(eventSource)!;
+
+    Argument.That.NotNull(methodType);
+    Argument.That.NotNullOrWhitespace(methodName);
+
+    return TryAddEventHandlerCore(
+      eventType, eventObject, eventName, eventAccessibility, null,
+      methodType, null, methodName, methodAccessibility, methodTypeArguments, methodMethodArguments,
+      positionalParameterTypes, namedParameterTypes, returnType);
+  }
+
+  public static bool TryAddInstanceEventInstanceHandler<TEventSource, TMethodSource>(
+    TEventSource eventSource, string eventName, MemberAccessibility eventAccessibility,
+    TMethodSource methodSource, string methodName, MemberAccessibility methodAccessibility, IList<Type?>? methodMethodArguments,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes)
+  {
+    Argument.That.NotNull(eventSource);
+    Argument.That.NotNullOrWhitespace(eventName);
+
+    Argument.That.NotNull(methodSource);
+    Argument.That.NotNullOrWhitespace(methodName);
+
+    return TryAddEventHandlerCore(
+      typeof(TEventSource), eventSource, eventName, eventAccessibility, null,
+      typeof(TMethodSource), methodSource, methodName, methodAccessibility, null, methodMethodArguments,
+      positionalParameterTypes, namedParameterTypes, typeof(void));
+  }
+
+  public static bool TryAddInstanceEventInstanceHandler<TEventSource, TMethodSource>(
+    TEventSource eventSource, string eventName, MemberAccessibility eventAccessibility,
+    TMethodSource methodSource, string methodName, MemberAccessibility methodAccessibility, IList<Type?>? methodMethodArguments,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes, Type? returnType)
+  {
+    Argument.That.NotNull(eventSource);
+    Argument.That.NotNullOrWhitespace(eventName);
+
+    Argument.That.NotNull(methodSource);
+    Argument.That.NotNullOrWhitespace(methodName);
+
+    return TryAddEventHandlerCore(
+      typeof(TEventSource), eventSource, eventName, eventAccessibility, null,
+      typeof(TMethodSource), methodSource, methodName, methodAccessibility, null, methodMethodArguments,
+      positionalParameterTypes, namedParameterTypes, returnType);
+  }
+
+  public static bool TryAddInstanceEventStaticHandler<TEventSource, TMethodSource>(
+    TEventSource eventSource, string eventName, MemberAccessibility eventAccessibility,
+    string methodName, MemberAccessibility methodAccessibility, IList<Type?>? methodMethodArguments,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes)
+  {
+    Argument.That.NotNull(eventSource);
+    Argument.That.NotNullOrWhitespace(eventName);
+
+    Argument.That.NotNullOrWhitespace(methodName);
+
+    return TryAddEventHandlerCore(
+      typeof(TEventSource), eventSource, eventName, eventAccessibility, null,
+      typeof(TMethodSource), null, methodName, methodAccessibility, null, methodMethodArguments,
+      positionalParameterTypes, namedParameterTypes, typeof(void));
+  }
+
+  public static bool TryAddInstanceEventStaticHandler<TEventSource, TMethodSource>(
+    TEventSource eventSource, string eventName, MemberAccessibility eventAccessibility,
+    string methodName, MemberAccessibility methodAccessibility, IList<Type?>? methodMethodArguments,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes, Type? returnType)
+  {
+    Argument.That.NotNull(eventSource);
+    Argument.That.NotNullOrWhitespace(eventName);
+
+    Argument.That.NotNullOrWhitespace(methodName);
+
+    return TryAddEventHandlerCore(
+      typeof(TEventSource), eventSource, eventName, eventAccessibility, null,
+      typeof(TMethodSource), null, methodName, methodAccessibility, null, methodMethodArguments,
+      positionalParameterTypes, namedParameterTypes, returnType);
+  }
+
+  #endregion
+  #region Direct add handler methods
+
+  public static void AddInstanceEventInstanceHandler(
+    object eventSource, string eventName, MemberAccessibility eventAccessibility,
+    object methodSource, string methodName, MemberAccessibility methodAccessibility, IList<Type?>? methodMethodArguments,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes)
+  {
+    Argument.That.NotNull(eventSource);
+    Argument.That.NotNullOrWhitespace(eventName);
+    var eventObject = TypedValue.GetValue(eventSource);
+    Argument.That.NotNull(eventObject);
+    var eventType = TypedValue.GetType(eventSource)!;
+
+    Argument.That.NotNull(methodSource);
+    Argument.That.NotNullOrWhitespace(methodName);
+    var methodObject = TypedValue.GetValue(methodSource);
+    Argument.That.NotNull(methodObject);
+    var methodType = TypedValue.GetType(methodSource)!;
+
+    AddEventHandlerCore(
+      eventType, eventObject, eventName, eventAccessibility, null,
+      methodType, methodObject, methodName, methodAccessibility, null, methodMethodArguments,
+      positionalParameterTypes, namedParameterTypes, typeof(void));
+  }
+
+  public static void AddInstanceEventInstanceHandler(
+    object eventSource, string eventName, MemberAccessibility eventAccessibility,
+    object methodSource, string methodName, MemberAccessibility methodAccessibility, IList<Type?>? methodMethodArguments,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes, Type? returnType)
+  {
+    Argument.That.NotNull(eventSource);
+    Argument.That.NotNullOrWhitespace(eventName);
+    var eventObject = TypedValue.GetValue(eventSource);
+    Argument.That.NotNull(eventObject);
+    var eventType = TypedValue.GetType(eventSource)!;
+
+    Argument.That.NotNull(methodSource);
+    Argument.That.NotNullOrWhitespace(methodName);
+    var methodObject = TypedValue.GetValue(methodSource);
+    Argument.That.NotNull(methodObject);
+    var methodType = TypedValue.GetType(methodSource)!;
+
+    AddEventHandlerCore(
+      eventType, eventObject, eventName, eventAccessibility, null,
+      methodType, methodObject, methodName, methodAccessibility, null, methodMethodArguments,
+      positionalParameterTypes, namedParameterTypes, returnType);
+  }
+
+  public static void AddInstanceEventStaticHandler(
+    object eventSource, string eventName, MemberAccessibility eventAccessibility,
+    Type methodType, string methodName, MemberAccessibility methodAccessibility, IList<Type?>? methodTypeArguments, IList<Type?>? methodMethodArguments,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes)
+  {
+    Argument.That.NotNull(eventSource);
+    Argument.That.NotNullOrWhitespace(eventName);
+    var eventObject = TypedValue.GetValue(eventSource);
+    Argument.That.NotNull(eventObject);
+    var eventType = TypedValue.GetType(eventSource)!;
+
+    Argument.That.NotNull(methodType);
+    Argument.That.NotNullOrWhitespace(methodName);
+
+    AddEventHandlerCore(
+      eventType, eventObject, eventName, eventAccessibility, null,
+      methodType, null, methodName, methodAccessibility, methodTypeArguments, methodMethodArguments,
+      positionalParameterTypes, namedParameterTypes, typeof(void));
+  }
+
+  public static void AddInstanceEventStaticHandler(
+    object eventSource, string eventName, MemberAccessibility eventAccessibility,
+    Type methodType, string methodName, MemberAccessibility methodAccessibility, IList<Type?>? methodTypeArguments, IList<Type?>? methodMethodArguments,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes, Type? returnType)
+  {
+    Argument.That.NotNull(eventSource);
+    Argument.That.NotNullOrWhitespace(eventName);
+    var eventObject = TypedValue.GetValue(eventSource);
+    Argument.That.NotNull(eventObject);
+    var eventType = TypedValue.GetType(eventSource)!;
+
+    Argument.That.NotNull(methodType);
+    Argument.That.NotNullOrWhitespace(methodName);
+
+    AddEventHandlerCore(
+      eventType, eventObject, eventName, eventAccessibility, null,
+      methodType, null, methodName, methodAccessibility, methodTypeArguments, methodMethodArguments,
+      positionalParameterTypes, namedParameterTypes, returnType);
+  }
+
+  public static void AddInstanceEventInstanceHandler<TEventSource, TMethodSource>(
+    TEventSource eventSource, string eventName, MemberAccessibility eventAccessibility,
+    TMethodSource methodSource, string methodName, MemberAccessibility methodAccessibility, IList<Type?>? methodMethodArguments,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes)
+  {
+    Argument.That.NotNull(eventSource);
+    Argument.That.NotNullOrWhitespace(eventName);
+
+    Argument.That.NotNull(methodSource);
+    Argument.That.NotNullOrWhitespace(methodName);
+
+    AddEventHandlerCore(
+      typeof(TEventSource), eventSource, eventName, eventAccessibility, null,
+      typeof(TMethodSource), methodSource, methodName, methodAccessibility, null, methodMethodArguments,
+      positionalParameterTypes, namedParameterTypes, typeof(void));
+  }
+
+  public static void AddInstanceEventInstanceHandler<TEventSource, TMethodSource>(
+    TEventSource eventSource, string eventName, MemberAccessibility eventAccessibility,
+    TMethodSource methodSource, string methodName, MemberAccessibility methodAccessibility, IList<Type?>? methodMethodArguments,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes, Type? returnType)
+  {
+    Argument.That.NotNull(eventSource);
+    Argument.That.NotNullOrWhitespace(eventName);
+
+    Argument.That.NotNull(methodSource);
+    Argument.That.NotNullOrWhitespace(methodName);
+
+    AddEventHandlerCore(
+      typeof(TEventSource), eventSource, eventName, eventAccessibility, null,
+      typeof(TMethodSource), methodSource, methodName, methodAccessibility, null, methodMethodArguments,
+      positionalParameterTypes, namedParameterTypes, returnType);
+  }
+
+  public static void AddInstanceEventStaticHandler<TEventSource, TMethodSource>(
+    TEventSource eventSource, string eventName, MemberAccessibility eventAccessibility,
+    string methodName, MemberAccessibility methodAccessibility, IList<Type?>? methodMethodArguments,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes)
+  {
+    Argument.That.NotNull(eventSource);
+    Argument.That.NotNullOrWhitespace(eventName);
+
+    Argument.That.NotNullOrWhitespace(methodName);
+
+    AddEventHandlerCore(
+      typeof(TEventSource), eventSource, eventName, eventAccessibility, null,
+      typeof(TMethodSource), null, methodName, methodAccessibility, null, methodMethodArguments,
+      positionalParameterTypes, namedParameterTypes, typeof(void));
+  }
+
+  public static void AddInstanceEventStaticHandler<TEventSource, TMethodSource>(
+    TEventSource eventSource, string eventName, MemberAccessibility eventAccessibility,
+    string methodName, MemberAccessibility methodAccessibility, IList<Type?>? methodMethodArguments,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes, Type? returnType)
+  {
+    Argument.That.NotNull(eventSource);
+    Argument.That.NotNullOrWhitespace(eventName);
+
+    Argument.That.NotNullOrWhitespace(methodName);
+
+    AddEventHandlerCore(
+      typeof(TEventSource), eventSource, eventName, eventAccessibility, null,
+      typeof(TMethodSource), null, methodName, methodAccessibility, null, methodMethodArguments,
+      positionalParameterTypes, namedParameterTypes, returnType);
+  }
+
+  #endregion
+  #region Try remove handler methods
+
+  public static bool TryRemoveInstanceEventInstanceHandler(
+    object eventSource, string eventName, MemberAccessibility eventAccessibility,
+    object methodSource, string methodName, MemberAccessibility methodAccessibility, IList<Type?>? methodMethodArguments,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes)
+  {
+    Argument.That.NotNull(eventSource);
+    Argument.That.NotNullOrWhitespace(eventName);
+    var eventObject = TypedValue.GetValue(eventSource);
+    Argument.That.NotNull(eventObject);
+    var eventType = TypedValue.GetType(eventSource)!;
+
+    Argument.That.NotNull(methodSource);
+    Argument.That.NotNullOrWhitespace(methodName);
+    var methodObject = TypedValue.GetValue(methodSource);
+    Argument.That.NotNull(methodObject);
+    var methodType = TypedValue.GetType(methodSource)!;
+
+    return TryRemoveEventHandlerCore(
+      eventType, eventObject, eventName, eventAccessibility, null,
+      methodType, methodObject, methodName, methodAccessibility, null, methodMethodArguments,
+      positionalParameterTypes, namedParameterTypes, typeof(void));
+  }
+
+  public static bool TryRemoveInstanceEventInstanceHandler(
+    object eventSource, string eventName, MemberAccessibility eventAccessibility,
+    object methodSource, string methodName, MemberAccessibility methodAccessibility, IList<Type?>? methodMethodArguments,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes, Type? returnType)
+  {
+    Argument.That.NotNull(eventSource);
+    Argument.That.NotNullOrWhitespace(eventName);
+    var eventObject = TypedValue.GetValue(eventSource);
+    Argument.That.NotNull(eventObject);
+    var eventType = TypedValue.GetType(eventSource)!;
+
+    Argument.That.NotNull(methodSource);
+    Argument.That.NotNullOrWhitespace(methodName);
+    var methodObject = TypedValue.GetValue(methodSource);
+    Argument.That.NotNull(methodObject);
+    var methodType = TypedValue.GetType(methodSource)!;
+
+    return TryRemoveEventHandlerCore(
+      eventType, eventObject, eventName, eventAccessibility, null,
+      methodType, methodObject, methodName, methodAccessibility, null, methodMethodArguments,
+      positionalParameterTypes, namedParameterTypes, returnType);
+  }
+
+  public static bool TryRemoveInstanceEventStaticHandler(
+    object eventSource, string eventName, MemberAccessibility eventAccessibility,
+    Type methodType, string methodName, MemberAccessibility methodAccessibility, IList<Type?>? methodTypeArguments, IList<Type?>? methodMethodArguments,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes)
+  {
+    Argument.That.NotNull(eventSource);
+    Argument.That.NotNullOrWhitespace(eventName);
+    var eventObject = TypedValue.GetValue(eventSource);
+    Argument.That.NotNull(eventObject);
+    var eventType = TypedValue.GetType(eventSource)!;
+
+    Argument.That.NotNull(methodType);
+    Argument.That.NotNullOrWhitespace(methodName);
+
+    return TryRemoveEventHandlerCore(
+      eventType, eventObject, eventName, eventAccessibility, null,
+      methodType, null, methodName, methodAccessibility, methodTypeArguments, methodMethodArguments,
+      positionalParameterTypes, namedParameterTypes, typeof(void));
+  }
+
+  public static bool TryRemoveInstanceEventStaticHandler(
+    object eventSource, string eventName, MemberAccessibility eventAccessibility,
+    Type methodType, string methodName, MemberAccessibility methodAccessibility, IList<Type?>? methodTypeArguments, IList<Type?>? methodMethodArguments,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes, Type? returnType)
+  {
+    Argument.That.NotNull(eventSource);
+    Argument.That.NotNullOrWhitespace(eventName);
+    var eventObject = TypedValue.GetValue(eventSource);
+    Argument.That.NotNull(eventObject);
+    var eventType = TypedValue.GetType(eventSource)!;
+
+    Argument.That.NotNull(methodType);
+    Argument.That.NotNullOrWhitespace(methodName);
+
+    return TryRemoveEventHandlerCore(
+      eventType, eventObject, eventName, eventAccessibility, null,
+      methodType, null, methodName, methodAccessibility, methodTypeArguments, methodMethodArguments,
+      positionalParameterTypes, namedParameterTypes, returnType);
+  }
+
+  public static bool TryRemoveInstanceEventInstanceHandler<TEventSource, TMethodSource>(
+    TEventSource eventSource, string eventName, MemberAccessibility eventAccessibility,
+    TMethodSource methodSource, string methodName, MemberAccessibility methodAccessibility, IList<Type?>? methodMethodArguments,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes)
+  {
+    Argument.That.NotNull(eventSource);
+    Argument.That.NotNullOrWhitespace(eventName);
+
+    Argument.That.NotNull(methodSource);
+    Argument.That.NotNullOrWhitespace(methodName);
+
+    return TryRemoveEventHandlerCore(
+      typeof(TEventSource), eventSource, eventName, eventAccessibility, null,
+      typeof(TMethodSource), methodSource, methodName, methodAccessibility, null, methodMethodArguments,
+      positionalParameterTypes, namedParameterTypes, typeof(void));
+  }
+
+  public static bool TryRemoveInstanceEventInstanceHandler<TEventSource, TMethodSource>(
+    TEventSource eventSource, string eventName, MemberAccessibility eventAccessibility,
+    TMethodSource methodSource, string methodName, MemberAccessibility methodAccessibility, IList<Type?>? methodMethodArguments,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes, Type? returnType)
+  {
+    Argument.That.NotNull(eventSource);
+    Argument.That.NotNullOrWhitespace(eventName);
+
+    Argument.That.NotNull(methodSource);
+    Argument.That.NotNullOrWhitespace(methodName);
+
+    return TryRemoveEventHandlerCore(
+      typeof(TEventSource), eventSource, eventName, eventAccessibility, null,
+      typeof(TMethodSource), methodSource, methodName, methodAccessibility, null, methodMethodArguments,
+      positionalParameterTypes, namedParameterTypes, returnType);
+  }
+
+  public static bool TryRemoveInstanceEventStaticHandler<TEventSource, TMethodSource>(
+    TEventSource eventSource, string eventName, MemberAccessibility eventAccessibility,
+    string methodName, MemberAccessibility methodAccessibility, IList<Type?>? methodMethodArguments,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes)
+  {
+    Argument.That.NotNull(eventSource);
+    Argument.That.NotNullOrWhitespace(eventName);
+
+    Argument.That.NotNullOrWhitespace(methodName);
+
+    return TryRemoveEventHandlerCore(
+      typeof(TEventSource), eventSource, eventName, eventAccessibility, null,
+      typeof(TMethodSource), null, methodName, methodAccessibility, null, methodMethodArguments,
+      positionalParameterTypes, namedParameterTypes, typeof(void));
+  }
+
+  public static bool TryRemoveInstanceEventStaticHandler<TEventSource, TMethodSource>(
+    TEventSource eventSource, string eventName, MemberAccessibility eventAccessibility,
+    string methodName, MemberAccessibility methodAccessibility, IList<Type?>? methodMethodArguments,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes, Type? returnType)
+  {
+    Argument.That.NotNull(eventSource);
+    Argument.That.NotNullOrWhitespace(eventName);
+
+    Argument.That.NotNullOrWhitespace(methodName);
+
+    return TryRemoveEventHandlerCore(
+      typeof(TEventSource), eventSource, eventName, eventAccessibility, null,
+      typeof(TMethodSource), null, methodName, methodAccessibility, null, methodMethodArguments,
+      positionalParameterTypes, namedParameterTypes, returnType);
+  }
+
+  #endregion
+  #region Direct remove handler methods
+
+  public static void RemoveInstanceEventInstanceHandler(
+    object eventSource, string eventName, MemberAccessibility eventAccessibility,
+    object methodSource, string methodName, MemberAccessibility methodAccessibility, IList<Type?>? methodMethodArguments,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes)
+  {
+    Argument.That.NotNull(eventSource);
+    Argument.That.NotNullOrWhitespace(eventName);
+    var eventObject = TypedValue.GetValue(eventSource);
+    Argument.That.NotNull(eventObject);
+    var eventType = TypedValue.GetType(eventSource)!;
+
+    Argument.That.NotNull(methodSource);
+    Argument.That.NotNullOrWhitespace(methodName);
+    var methodObject = TypedValue.GetValue(methodSource);
+    Argument.That.NotNull(methodObject);
+    var methodType = TypedValue.GetType(methodSource)!;
+
+    RemoveEventHandlerCore(
+      eventType, eventObject, eventName, eventAccessibility, null,
+      methodType, methodObject, methodName, methodAccessibility, null, methodMethodArguments,
+      positionalParameterTypes, namedParameterTypes, typeof(void));
+  }
+
+  public static void RemoveInstanceEventInstanceHandler(
+    object eventSource, string eventName, MemberAccessibility eventAccessibility,
+    object methodSource, string methodName, MemberAccessibility methodAccessibility, IList<Type?>? methodMethodArguments,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes, Type? returnType)
+  {
+    Argument.That.NotNull(eventSource);
+    Argument.That.NotNullOrWhitespace(eventName);
+    var eventObject = TypedValue.GetValue(eventSource);
+    Argument.That.NotNull(eventObject);
+    var eventType = TypedValue.GetType(eventSource)!;
+
+    Argument.That.NotNull(methodSource);
+    Argument.That.NotNullOrWhitespace(methodName);
+    var methodObject = TypedValue.GetValue(methodSource);
+    Argument.That.NotNull(methodObject);
+    var methodType = TypedValue.GetType(methodSource)!;
+
+    RemoveEventHandlerCore(
+      eventType, eventObject, eventName, eventAccessibility, null,
+      methodType, methodObject, methodName, methodAccessibility, null, methodMethodArguments,
+      positionalParameterTypes, namedParameterTypes, returnType);
+  }
+
+  public static void RemoveInstanceEventStaticHandler(
+    object eventSource, string eventName, MemberAccessibility eventAccessibility,
+    Type methodType, string methodName, MemberAccessibility methodAccessibility, IList<Type?>? methodTypeArguments, IList<Type?>? methodMethodArguments,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes)
+  {
+    Argument.That.NotNull(eventSource);
+    Argument.That.NotNullOrWhitespace(eventName);
+    var eventObject = TypedValue.GetValue(eventSource);
+    Argument.That.NotNull(eventObject);
+    var eventType = TypedValue.GetType(eventSource)!;
+
+    Argument.That.NotNull(methodType);
+    Argument.That.NotNullOrWhitespace(methodName);
+
+    RemoveEventHandlerCore(
+      eventType, eventObject, eventName, eventAccessibility, null,
+      methodType, null, methodName, methodAccessibility, methodTypeArguments, methodMethodArguments,
+      positionalParameterTypes, namedParameterTypes, typeof(void));
+  }
+
+  public static void RemoveInstanceEventStaticHandler(
+    object eventSource, string eventName, MemberAccessibility eventAccessibility,
+    Type methodType, string methodName, MemberAccessibility methodAccessibility, IList<Type?>? methodTypeArguments, IList<Type?>? methodMethodArguments,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes, Type? returnType)
+  {
+    Argument.That.NotNull(eventSource);
+    Argument.That.NotNullOrWhitespace(eventName);
+    var eventObject = TypedValue.GetValue(eventSource);
+    Argument.That.NotNull(eventObject);
+    var eventType = TypedValue.GetType(eventSource)!;
+
+    Argument.That.NotNull(methodType);
+    Argument.That.NotNullOrWhitespace(methodName);
+
+    RemoveEventHandlerCore(
+      eventType, eventObject, eventName, eventAccessibility, null,
+      methodType, null, methodName, methodAccessibility, methodTypeArguments, methodMethodArguments,
+      positionalParameterTypes, namedParameterTypes, returnType);
+  }
+
+  public static void RemoveInstanceEventInstanceHandler<TEventSource, TMethodSource>(
+    TEventSource eventSource, string eventName, MemberAccessibility eventAccessibility,
+    TMethodSource methodSource, string methodName, MemberAccessibility methodAccessibility, IList<Type?>? methodMethodArguments,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes)
+  {
+    Argument.That.NotNull(eventSource);
+    Argument.That.NotNullOrWhitespace(eventName);
+
+    Argument.That.NotNull(methodSource);
+    Argument.That.NotNullOrWhitespace(methodName);
+
+    RemoveEventHandlerCore(
+      typeof(TEventSource), eventSource, eventName, eventAccessibility, null,
+      typeof(TMethodSource), methodSource, methodName, methodAccessibility, null, methodMethodArguments,
+      positionalParameterTypes, namedParameterTypes, typeof(void));
+  }
+
+  public static void RemoveInstanceEventInstanceHandler<TEventSource, TMethodSource>(
+    TEventSource eventSource, string eventName, MemberAccessibility eventAccessibility,
+    TMethodSource methodSource, string methodName, MemberAccessibility methodAccessibility, IList<Type?>? methodMethodArguments,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes, Type? returnType)
+  {
+    Argument.That.NotNull(eventSource);
+    Argument.That.NotNullOrWhitespace(eventName);
+
+    Argument.That.NotNull(methodSource);
+    Argument.That.NotNullOrWhitespace(methodName);
+
+    RemoveEventHandlerCore(
+      typeof(TEventSource), eventSource, eventName, eventAccessibility, null,
+      typeof(TMethodSource), methodSource, methodName, methodAccessibility, null, methodMethodArguments,
+      positionalParameterTypes, namedParameterTypes, returnType);
+  }
+
+  public static void RemoveInstanceEventStaticHandler<TEventSource, TMethodSource>(
+    TEventSource eventSource, string eventName, MemberAccessibility eventAccessibility,
+    string methodName, MemberAccessibility methodAccessibility, IList<Type?>? methodMethodArguments,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes)
+  {
+    Argument.That.NotNull(eventSource);
+    Argument.That.NotNullOrWhitespace(eventName);
+
+    Argument.That.NotNullOrWhitespace(methodName);
+
+    RemoveEventHandlerCore(
+      typeof(TEventSource), eventSource, eventName, eventAccessibility, null,
+      typeof(TMethodSource), null, methodName, methodAccessibility, null, methodMethodArguments,
+      positionalParameterTypes, namedParameterTypes, typeof(void));
+  }
+
+  public static void RemoveInstanceEventStaticHandler<TEventSource, TMethodSource>(
+    TEventSource eventSource, string eventName, MemberAccessibility eventAccessibility,
+    string methodName, MemberAccessibility methodAccessibility, IList<Type?>? methodMethodArguments,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes, Type? returnType)
+  {
+    Argument.That.NotNull(eventSource);
+    Argument.That.NotNullOrWhitespace(eventName);
+
+    Argument.That.NotNullOrWhitespace(methodName);
+
+    RemoveEventHandlerCore(
+      typeof(TEventSource), eventSource, eventName, eventAccessibility, null,
+      typeof(TMethodSource), null, methodName, methodAccessibility, null, methodMethodArguments,
+      positionalParameterTypes, namedParameterTypes, returnType);
+  }
+
+  #endregion
+  #region Try clear event handlers methods
+
+  public static bool TryClearInstantEventHandlers(object source, string name, MemberAccessibility memberAccessibility,
+    Func<EventInfo, object, Delegate?>? eventHandlerResolver,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes)
+  {
+    Argument.That.NotNull(source);
+    Argument.That.NotNullOrWhitespace(name);
+    var sourceObject = TypedValue.GetValue(source);
+    Argument.That.NotNull(sourceObject);
+    var sourceType = TypedValue.GetType(source)!;
+
+    return TryClearEventHandlersCore(sourceType, sourceObject, name, memberAccessibility,
+      eventHandlerResolver is null ? null : (eventInfo, source) => eventHandlerResolver(eventInfo, source!),
+      null, positionalParameterTypes, namedParameterTypes, typeof(void));
+  }
+
+  public static bool TryClearInstantEventHandlers(object source, string name, MemberAccessibility memberAccessibility,
+    Func<EventInfo, object, Delegate?>? eventHandlerResolver,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes, Type? returnType)
+  {
+    Argument.That.NotNull(source);
+    Argument.That.NotNullOrWhitespace(name);
+    var sourceObject = TypedValue.GetValue(source);
+    Argument.That.NotNull(sourceObject);
+    var sourceType = TypedValue.GetType(source)!;
+
+    return TryClearEventHandlersCore(sourceType, sourceObject, name, memberAccessibility,
+      eventHandlerResolver is null ? null : (eventInfo, source) => eventHandlerResolver(eventInfo, source!),
+      null, positionalParameterTypes, namedParameterTypes, returnType);
+  }
+
+  public static bool TryClearInstantEventHandlers<TSource>(TSource source, string name, MemberAccessibility memberAccessibility,
+    Func<EventInfo, TSource, Delegate?>? eventHandlerResolver,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes)
+  {
+    Argument.That.NotNull(source);
+    Argument.That.NotNullOrWhitespace(name);
+
+    return TryClearEventHandlersCore(typeof(TSource), source, name, memberAccessibility,
+      eventHandlerResolver is null ? null : (eventInfo, source) => eventHandlerResolver(eventInfo, (TSource)source!),
+      null, positionalParameterTypes, namedParameterTypes, typeof(void));
+  }
+
+  public static bool TryClearInstantEventHandlers<TSource>(TSource source, string name, MemberAccessibility memberAccessibility,
+    Func<EventInfo, TSource, Delegate?>? eventHandlerResolver,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes, Type? returnType)
+  {
+    Argument.That.NotNull(source);
+    Argument.That.NotNullOrWhitespace(name);
+
+    return TryClearEventHandlersCore(typeof(TSource), source, name, memberAccessibility,
+      eventHandlerResolver is null ? null : (eventInfo, source) => eventHandlerResolver(eventInfo, (TSource)source!),
+      null, positionalParameterTypes, namedParameterTypes, returnType);
+  }
+
+  #endregion
+  #region Direct clear event handlers methods
+
+  public static void ClearInstanceEventHandlers(object source, string name, MemberAccessibility memberAccessibility,
+    Func<EventInfo, object, Delegate?>? eventHandlerResolver,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes)
+  {
+    Argument.That.NotNull(source);
+    Argument.That.NotNullOrWhitespace(name);
+    var sourceObject = TypedValue.GetValue(source);
+    Argument.That.NotNull(sourceObject);
+    var sourceType = TypedValue.GetType(source)!;
+
+    ClearEventHandlersCore(sourceType, sourceObject, name, memberAccessibility,
+      eventHandlerResolver is null ? null : (eventInfo, source) => eventHandlerResolver(eventInfo, source!),
+      null, positionalParameterTypes, namedParameterTypes, typeof(void));
+  }
+
+  public static void ClearInstanceEventHandlers(object source, string name, MemberAccessibility memberAccessibility,
+    Func<EventInfo, object, Delegate?>? eventHandlerResolver,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes, Type? returnType)
+  {
+    Argument.That.NotNull(source);
+    Argument.That.NotNullOrWhitespace(name);
+    var sourceObject = TypedValue.GetValue(source);
+    Argument.That.NotNull(sourceObject);
+    var sourceType = TypedValue.GetType(source)!;
+
+    ClearEventHandlersCore(sourceType, sourceObject, name, memberAccessibility,
+      eventHandlerResolver is null ? null : (eventInfo, source) => eventHandlerResolver(eventInfo, source!),
+      null, positionalParameterTypes, namedParameterTypes, returnType);
+  }
+
+  public static void ClearInstanceEventHandlers<TSource>(TSource source, string name, MemberAccessibility memberAccessibility,
+    Func<EventInfo, TSource, Delegate?>? eventHandlerResolver,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes)
+  {
+    Argument.That.NotNull(source);
+    Argument.That.NotNullOrWhitespace(name);
+
+    ClearEventHandlersCore(typeof(TSource), source, name, memberAccessibility,
+      eventHandlerResolver is null ? null : (eventInfo, source) => eventHandlerResolver(eventInfo, (TSource)source!),
+      null, positionalParameterTypes, namedParameterTypes, typeof(void));
+  }
+
+  public static void ClearInstanceEventHandlers<TSource>(TSource source, string name, MemberAccessibility memberAccessibility,
+    Func<EventInfo, TSource, Delegate?>? eventHandlerResolver,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes, Type? returnType)
+  {
+    Argument.That.NotNull(source);
+    Argument.That.NotNullOrWhitespace(name);
+
+    ClearEventHandlersCore(typeof(TSource), null, name, memberAccessibility,
+      eventHandlerResolver is null ? null : (eventInfo, source) => eventHandlerResolver(eventInfo, (TSource)source!),
+      null, positionalParameterTypes, namedParameterTypes, returnType);
+  }
+
+  #endregion
+  #region Try raise event handler methods
+
+  public static bool TryRaiseInstanceEvent(object source, string name, MemberAccessibility memberAccessibility,
+    Func<EventInfo, object, Delegate?>? eventHandlerResolver,
+    IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues)
+  {
+    Argument.That.NotNull(source);
+    Argument.That.NotNullOrWhitespace(name);
+    var sourceObject = TypedValue.GetValue(source);
+    Argument.That.NotNull(sourceObject);
+    var sourceType = TypedValue.GetType(source)!;
+
+    return TryRaiseEventCore(sourceType, sourceObject, name, memberAccessibility,
+      eventHandlerResolver is null ? null : (eventInfo, source) => eventHandlerResolver(eventInfo, source!),
+      null, positionalParameterValues, namedParameterValues, typeof(void), out var returnValue);
+  }
+
+  public static bool TryRaiseInstanceEvent(object source, string name, MemberAccessibility memberAccessibility,
+    Func<EventInfo, object, Delegate?>? eventHandlerResolver,
+    IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues, Type? returnType, out object? returnValue)
+  {
+    Argument.That.NotNull(source);
+    Argument.That.NotNullOrWhitespace(name);
+    var sourceObject = TypedValue.GetValue(source);
+    Argument.That.NotNull(sourceObject);
+    var sourceType = TypedValue.GetType(source)!;
+
+    return TryRaiseEventCore(sourceType, sourceObject, name, memberAccessibility,
+      eventHandlerResolver is null ? null : (eventInfo, source) => eventHandlerResolver(eventInfo, source!),
+      null, positionalParameterValues, namedParameterValues, returnType, out returnValue);
+  }
+
+  public static bool TryRaiseInstanceEvent<TSource>(TSource source, string name, MemberAccessibility memberAccessibility,
+    Func<EventInfo, TSource, Delegate?>? eventHandlerResolver,
+    IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues)
+  {
+    Argument.That.NotNull(source);
+    Argument.That.NotNullOrWhitespace(name);
+
+    return TryRaiseEventCore(typeof(TSource), source, name, memberAccessibility,
+      eventHandlerResolver is null ? null : (eventInfo, source) => eventHandlerResolver(eventInfo, (TSource)source!),
+      null, positionalParameterValues, namedParameterValues, typeof(void), out var returnValue);
+  }
+
+  public static bool TryRaiseInstanceEvent<TSource>(TSource source, string name, MemberAccessibility memberAccessibility,
+    Func<EventInfo, TSource, Delegate?>? eventHandlerResolver,
+    IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues, Type? returnType, out object? returnValue)
+  {
+    Argument.That.NotNull(source);
+    Argument.That.NotNullOrWhitespace(name);
+
+    return TryRaiseEventCore(typeof(TSource), source, name, memberAccessibility,
+      eventHandlerResolver is null ? null : (eventInfo, source) => eventHandlerResolver(eventInfo, (TSource)source!),
+      null, positionalParameterValues, namedParameterValues, returnType, out returnValue);
+  }
+
+  #endregion
+  #region Direct raise handler methods
+
+  public static void RaiseInstanceEvent(object source, string name, MemberAccessibility memberAccessibility,
+    Func<EventInfo, object, Delegate?>? eventHandlerResolver,
+    IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues)
+  {
+    Argument.That.NotNull(source);
+    Argument.That.NotNullOrWhitespace(name);
+    var sourceObject = TypedValue.GetValue(source);
+    Argument.That.NotNull(sourceObject);
+    var sourceType = TypedValue.GetType(source)!;
+
+    RaiseEventCore(sourceType, sourceObject, name, memberAccessibility,
+      eventHandlerResolver is null ? null : (eventInfo, source) => eventHandlerResolver(eventInfo, source!),
+      null, positionalParameterValues, namedParameterValues, typeof(void));
+  }
+
+  public static object? RaiseInstanceEvent(object source, string name, MemberAccessibility memberAccessibility,
+    Func<EventInfo, object, Delegate?>? eventHandlerResolver,
+    IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues, Type? returnType)
+  {
+    Argument.That.NotNull(source);
+    Argument.That.NotNullOrWhitespace(name);
+    var sourceObject = TypedValue.GetValue(source);
+    Argument.That.NotNull(sourceObject);
+    var sourceType = TypedValue.GetType(source)!;
+
+    return RaiseEventCore(sourceType, sourceObject, name, memberAccessibility,
+      eventHandlerResolver is null ? null : (eventInfo, source) => eventHandlerResolver(eventInfo, source!),
+      null, positionalParameterValues, namedParameterValues, returnType);
+  }
+
+  public static void RaiseInstanceEvent<TSource>(TSource source, string name, MemberAccessibility memberAccessibility,
+    Func<EventInfo, TSource, Delegate?>? eventHandlerResolver,
+    IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues)
+  {
+    Argument.That.NotNull(source);
+    Argument.That.NotNullOrWhitespace(name);
+
+    RaiseEventCore(typeof(TSource), source, name, memberAccessibility,
+      eventHandlerResolver is null ? null : (eventInfo, source) => eventHandlerResolver(eventInfo, (TSource)source!),
+      null, positionalParameterValues, namedParameterValues, typeof(void));
+  }
+
+  public static object? RaiseInstanceEvent<TSource>(TSource source, string name, MemberAccessibility memberAccessibility,
+    Func<EventInfo, TSource, Delegate?>? eventHandlerResolver,
+    IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues, Type? returnType)
+  {
+    Argument.That.NotNull(source);
+    Argument.That.NotNullOrWhitespace(name);
+
+    return RaiseEventCore(typeof(TSource), source, name, memberAccessibility,
+      eventHandlerResolver is null ? null : (eventInfo, source) => eventHandlerResolver(eventInfo, (TSource)source!),
+      null, positionalParameterValues, namedParameterValues, returnType);
+  }
+
+  #endregion
+  #endregion
+  #region Static event public methods
+  #region Try info methods
+
+  public static bool TryGetStaticEvent(Type sourceType, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes,
+    [NotNullWhen(true)] out EventInfo? eventInfo)
+  {
+    Argument.That.NotNull(sourceType);
+    Argument.That.NotNullOrWhitespace(name);
+
+    return TryGetEventCore(sourceType, null, name, memberAccessibility, typeArguments, positionalParameterTypes, namedParameterTypes, typeof(void), out eventInfo);
+  }
+
+  public static bool TryGetStaticEvent(Type sourceType, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes, Type? returnType,
+    [NotNullWhen(true)] out EventInfo? eventInfo)
+  {
+    Argument.That.NotNull(sourceType);
+    Argument.That.NotNullOrWhitespace(name);
+
+    return TryGetEventCore(sourceType, null, name, memberAccessibility, typeArguments, positionalParameterTypes, namedParameterTypes, returnType, out eventInfo);
+  }
+
+  public static bool TryGetStaticEvent<TSource>(string name, MemberAccessibility memberAccessibility,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes,
+    [NotNullWhen(true)] out EventInfo? eventInfo)
+  {
+    Argument.That.NotNullOrWhitespace(name);
+
+    return TryGetEventCore(typeof(TSource), null, name, memberAccessibility, null, positionalParameterTypes, namedParameterTypes, typeof(void), out eventInfo);
+  }
+
+  public static bool TryGetStaticEvent<TSource>(string name, MemberAccessibility memberAccessibility,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes, Type? returnType,
+    [NotNullWhen(true)] out EventInfo? eventInfo)
+  {
+    Argument.That.NotNullOrWhitespace(name);
+
+    return TryGetEventCore(typeof(TSource), null, name, memberAccessibility, null, positionalParameterTypes, namedParameterTypes, returnType, out eventInfo);
+  }
+
+  #endregion
+  #region Direct info methods
+
+  public static EventInfo GetStaticEvent(Type sourceType, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes)
+  {
+    Argument.That.NotNull(sourceType);
+    Argument.That.NotNullOrWhitespace(name);
+
+    return GetEventCore(sourceType, null, name, memberAccessibility, typeArguments, positionalParameterTypes, namedParameterTypes, typeof(void));
+  }
+
+  public static EventInfo GetStaticEvent(Type sourceType, string name, MemberAccessibility memberAccessibility, IList<Type?>? typeArguments,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes, Type? returnType)
+  {
+    Argument.That.NotNull(sourceType);
+    Argument.That.NotNullOrWhitespace(name);
+
+    return GetEventCore(sourceType, null, name, memberAccessibility, typeArguments, positionalParameterTypes, namedParameterTypes, returnType);
+  }
+
+  public static EventInfo GetStaticEvent<TSource>(string name, MemberAccessibility memberAccessibility,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes)
+  {
+    Argument.That.NotNullOrWhitespace(name);
+
+    return GetEventCore(typeof(TSource), null, name, memberAccessibility, null, positionalParameterTypes, namedParameterTypes, typeof(void));
+  }
+
+  public static EventInfo GetStaticEvent<TSource>(string name, MemberAccessibility memberAccessibility,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes, Type? returnType)
+  {
+    Argument.That.NotNullOrWhitespace(name);
+
+    return GetEventCore(typeof(TSource), null, name, memberAccessibility, null, positionalParameterTypes, namedParameterTypes, returnType);
+  }
+
+  #endregion
+  #region Try add handler methods
+
+  public static bool TryAddStaticEventInstanceHandler(
+    Type eventType, string eventName, MemberAccessibility eventAccessibility, IList<Type?>? eventTypeArguments,
+    object methodSource, string methodName, MemberAccessibility methodAccessibility, IList<Type?>? methodMethodArguments,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes)
+  {
+    Argument.That.NotNull(eventType);
+    Argument.That.NotNullOrWhitespace(eventName);
+
+    Argument.That.NotNull(methodSource);
+    Argument.That.NotNullOrWhitespace(methodName);
+    var methodObject = TypedValue.GetValue(methodSource);
+    Argument.That.NotNull(methodObject);
+    var methodType = TypedValue.GetType(methodSource)!;
+
+    return TryAddEventHandlerCore(
+      eventType, null, eventName, eventAccessibility, eventTypeArguments,
+      methodType, methodObject, methodName, methodAccessibility, null, methodMethodArguments,
+      positionalParameterTypes, namedParameterTypes, typeof(void));
+  }
+
+  public static bool TryAddStaticEventInstanceHandler(
+    Type eventType, string eventName, MemberAccessibility eventAccessibility, IList<Type?>? eventTypeArguments,
+    object methodSource, string methodName, MemberAccessibility methodAccessibility, IList<Type?>? methodMethodArguments,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes, Type? returnType)
+  {
+    Argument.That.NotNull(eventType);
+    Argument.That.NotNullOrWhitespace(eventName);
+
+    Argument.That.NotNull(methodSource);
+    Argument.That.NotNullOrWhitespace(methodName);
+    var methodObject = TypedValue.GetValue(methodSource);
+    Argument.That.NotNull(methodObject);
+    var methodType = TypedValue.GetType(methodSource)!;
+
+    return TryAddEventHandlerCore(
+      eventType, null, eventName, eventAccessibility, eventTypeArguments,
+      methodType, methodObject, methodName, methodAccessibility, null, methodMethodArguments,
+      positionalParameterTypes, namedParameterTypes, returnType);
+  }
+
+  public static bool TryAddStaticEventStaticHandler(
+    Type eventType, string eventName, MemberAccessibility eventAccessibility, IList<Type?>? eventTypeArguments,
+    Type methodType, string methodName, MemberAccessibility methodAccessibility, IList<Type?>? methodTypeArguments, IList<Type?>? methodMethodArguments,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes)
+  {
+    Argument.That.NotNull(eventType);
+    Argument.That.NotNullOrWhitespace(eventName);
+
+    Argument.That.NotNull(methodType);
+    Argument.That.NotNullOrWhitespace(methodName);
+
+    return TryAddEventHandlerCore(
+      eventType, null, eventName, eventAccessibility, eventTypeArguments,
+      methodType, null, methodName, methodAccessibility, methodTypeArguments, methodMethodArguments,
+      positionalParameterTypes, namedParameterTypes, typeof(void));
+  }
+
+  public static bool TryAddStaticEventStaticHandler(
+    Type eventType, string eventName, MemberAccessibility eventAccessibility, IList<Type?>? eventTypeArguments,
+    Type methodType, string methodName, MemberAccessibility methodAccessibility, IList<Type?>? methodTypeArguments, IList<Type?>? methodMethodArguments,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes, Type? returnType)
+  {
+    Argument.That.NotNull(eventType);
+    Argument.That.NotNullOrWhitespace(eventName);
+
+    Argument.That.NotNull(methodType);
+    Argument.That.NotNullOrWhitespace(methodName);
+
+    return TryAddEventHandlerCore(
+      eventType, null, eventName, eventAccessibility, eventTypeArguments,
+      methodType, null, methodName, methodAccessibility, methodTypeArguments, methodMethodArguments,
+      positionalParameterTypes, namedParameterTypes, returnType);
+  }
+
+  public static bool TryAddStaticEventInstanceHandler<TEventSource, TMethodSource>(
+    string eventName, MemberAccessibility eventAccessibility,
+    TMethodSource methodSource, string methodName, MemberAccessibility methodAccessibility, IList<Type?>? methodMethodArguments,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes)
+  {
+    Argument.That.NotNullOrWhitespace(eventName);
+
+    Argument.That.NotNull(methodSource);
+    Argument.That.NotNullOrWhitespace(methodName);
+
+    return TryAddEventHandlerCore(
+      typeof(TEventSource), null, eventName, eventAccessibility, null,
+      typeof(TMethodSource), methodSource, methodName, methodAccessibility, null, methodMethodArguments,
+      positionalParameterTypes, namedParameterTypes, typeof(void));
+  }
+
+  public static bool TryAddStaticEventInstanceHandler<TEventSource, TMethodSource>(
+    string eventName, MemberAccessibility eventAccessibility,
+    TMethodSource methodSource, string methodName, MemberAccessibility methodAccessibility, IList<Type?>? methodMethodArguments,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes, Type? returnType)
+  {
+    Argument.That.NotNullOrWhitespace(eventName);
+
+    Argument.That.NotNull(methodSource);
+    Argument.That.NotNullOrWhitespace(methodName);
+
+    return TryAddEventHandlerCore(
+      typeof(TEventSource), null, eventName, eventAccessibility, null,
+      typeof(TMethodSource), methodSource, methodName, methodAccessibility, null, methodMethodArguments,
+      positionalParameterTypes, namedParameterTypes, returnType);
+  }
+
+  public static bool TryAddStaticEventStaticHandler<TEventSource, TMethodSource>(
+    string eventName, MemberAccessibility eventAccessibility, 
+    string methodName, MemberAccessibility methodAccessibility, IList<Type?>? methodMethodArguments,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes)
+  {
+    Argument.That.NotNullOrWhitespace(eventName);
+
+    Argument.That.NotNullOrWhitespace(methodName);
+
+    return TryAddEventHandlerCore(
+      typeof(TEventSource), null, eventName, eventAccessibility, null,
+      typeof(TMethodSource), null, methodName, methodAccessibility, null, methodMethodArguments,
+      positionalParameterTypes, namedParameterTypes, typeof(void));
+  }
+
+  public static bool TryAddStaticEventStaticHandler<TEventSource, TMethodSource>(
+    string eventName, MemberAccessibility eventAccessibility,
+    string methodName, MemberAccessibility methodAccessibility, IList<Type?>? methodMethodArguments,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes, Type? returnType)
+  {
+    Argument.That.NotNullOrWhitespace(eventName);
+
+    Argument.That.NotNullOrWhitespace(methodName);
+
+    return TryAddEventHandlerCore(
+      typeof(TEventSource), null, eventName, eventAccessibility, null,
+      typeof(TMethodSource), null, methodName, methodAccessibility, null, methodMethodArguments,
+      positionalParameterTypes, namedParameterTypes, returnType);
+  }
+
+  #endregion
+  #region Direct add handler methods
+
+  public static void AddStaticEventInstanceHandler(
+    Type eventType, string eventName, MemberAccessibility eventAccessibility, IList<Type?>? eventTypeArguments,
+    object methodSource, string methodName, MemberAccessibility methodAccessibility, IList<Type?>? methodMethodArguments,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes)
+  {
+    Argument.That.NotNull(eventType);
+    Argument.That.NotNullOrWhitespace(eventName);
+
+    Argument.That.NotNull(methodSource);
+    Argument.That.NotNullOrWhitespace(methodName);
+    var methodObject = TypedValue.GetValue(methodSource);
+    Argument.That.NotNull(methodObject);
+    var methodType = TypedValue.GetType(methodSource)!;
+
+    AddEventHandlerCore(
+      eventType, null, eventName, eventAccessibility, eventTypeArguments,
+      methodType, methodObject, methodName, methodAccessibility, null, methodMethodArguments,
+      positionalParameterTypes, namedParameterTypes, typeof(void));
+  }
+
+  public static void AddStaticEventInstanceHandler(
+    Type eventType, string eventName, MemberAccessibility eventAccessibility, IList<Type?>? eventTypeArguments,
+    object methodSource, string methodName, MemberAccessibility methodAccessibility, IList<Type?>? methodMethodArguments,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes, Type? returnType)
+  {
+    Argument.That.NotNull(eventType);
+    Argument.That.NotNullOrWhitespace(eventName);
+
+    Argument.That.NotNull(methodSource);
+    Argument.That.NotNullOrWhitespace(methodName);
+    var methodObject = TypedValue.GetValue(methodSource);
+    Argument.That.NotNull(methodObject);
+    var methodType = TypedValue.GetType(methodSource)!;
+
+    AddEventHandlerCore(
+      eventType, null, eventName, eventAccessibility, eventTypeArguments,
+      methodType, methodObject, methodName, methodAccessibility, null, methodMethodArguments,
+      positionalParameterTypes, namedParameterTypes, returnType);
+  }
+
+  public static void AddStaticEventInstanceHandler(
+    Type eventType, string eventName, MemberAccessibility eventAccessibility, IList<Type?>? eventTypeArguments,
+    Type methodType, string methodName, MemberAccessibility methodAccessibility, IList<Type?>? methodTypeArguments, IList<Type?>? methodMethodArguments,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes)
+  {
+    Argument.That.NotNull(eventType);
+    Argument.That.NotNullOrWhitespace(eventName);
+
+    Argument.That.NotNull(methodType);
+    Argument.That.NotNullOrWhitespace(methodName);
+
+    AddEventHandlerCore(
+      eventType, null, eventName, eventAccessibility, eventTypeArguments,
+      methodType, null, methodName, methodAccessibility, methodTypeArguments, methodMethodArguments,
+      positionalParameterTypes, namedParameterTypes, typeof(void));
+  }
+
+  public static void AddStaticEventInstanceHandler(
+    Type eventType, string eventName, MemberAccessibility eventAccessibility, IList<Type?>? eventTypeArguments,
+    Type methodType, string methodName, MemberAccessibility methodAccessibility, IList<Type?>? methodTypeArguments, IList<Type?>? methodMethodArguments,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes, Type? returnType)
+  {
+    Argument.That.NotNull(eventType);
+    Argument.That.NotNullOrWhitespace(eventName);
+
+    Argument.That.NotNull(methodType);
+    Argument.That.NotNullOrWhitespace(methodName);
+
+    AddEventHandlerCore(
+      eventType, null, eventName, eventAccessibility, eventTypeArguments,
+      methodType, null, methodName, methodAccessibility, methodTypeArguments, methodMethodArguments,
+      positionalParameterTypes, namedParameterTypes, returnType);
+  }
+
+  public static void AddStaticEventInstanceHandler<TEventSource, TMethodSource>(
+    string eventName, MemberAccessibility eventAccessibility,
+    TMethodSource methodSource, string methodName, MemberAccessibility methodAccessibility, IList<Type?>? methodMethodArguments,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes)
+  {
+    Argument.That.NotNullOrWhitespace(eventName);
+
+    Argument.That.NotNull(methodSource);
+    Argument.That.NotNullOrWhitespace(methodName);
+
+    AddEventHandlerCore(
+      typeof(TEventSource), null, eventName, eventAccessibility, null,
+      typeof(TMethodSource), methodSource, methodName, methodAccessibility, null, methodMethodArguments,
+      positionalParameterTypes, namedParameterTypes, typeof(void));
+  }
+
+  public static void AddStaticEventInstanceHandler<TEventSource, TMethodSource>(
+    string eventName, MemberAccessibility eventAccessibility,
+    TMethodSource methodSource, string methodName, MemberAccessibility methodAccessibility, IList<Type?>? methodMethodArguments,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes, Type? returnType)
+  {
+    Argument.That.NotNullOrWhitespace(eventName);
+
+    Argument.That.NotNull(methodSource);
+    Argument.That.NotNullOrWhitespace(methodName);
+
+    AddEventHandlerCore(
+      typeof(TEventSource), null, eventName, eventAccessibility, null,
+      typeof(TMethodSource), methodSource, methodName, methodAccessibility, null, methodMethodArguments,
+      positionalParameterTypes, namedParameterTypes, returnType);
+  }
+
+  public static void AddStaticEventInstanceHandler<TEventSource, TMethodSource>(
+    string eventName, MemberAccessibility eventAccessibility,
+    string methodName, MemberAccessibility methodAccessibility, IList<Type?>? methodMethodArguments,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes)
+  {
+    Argument.That.NotNullOrWhitespace(eventName);
+
+    Argument.That.NotNullOrWhitespace(methodName);
+
+    AddEventHandlerCore(
+      typeof(TEventSource), null, eventName, eventAccessibility, null,
+      typeof(TMethodSource), null, methodName, methodAccessibility, null, methodMethodArguments,
+      positionalParameterTypes, namedParameterTypes, typeof(void));
+  }
+
+  public static void AddStaticEventInstanceHandler<TEventSource, TMethodSource>(
+    string eventName, MemberAccessibility eventAccessibility,
+    string methodName, MemberAccessibility methodAccessibility, IList<Type?>? methodMethodArguments,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes, Type? returnType)
+  {
+    Argument.That.NotNullOrWhitespace(eventName);
+
+    Argument.That.NotNullOrWhitespace(methodName);
+
+    AddEventHandlerCore(
+      typeof(TEventSource), null, eventName, eventAccessibility, null,
+      typeof(TMethodSource), null, methodName, methodAccessibility, null, methodMethodArguments,
+      positionalParameterTypes, namedParameterTypes, returnType);
+  }
+
+  #endregion
+  #region Try remove handler methods
+
+  public static bool TryRemoveStaticEventInstanceHandler(
+    Type eventType, string eventName, MemberAccessibility eventAccessibility, IList<Type?>? eventTypeArguments,
+    object methodSource, string methodName, MemberAccessibility methodAccessibility, IList<Type?>? methodMethodArguments,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes)
+  {
+    Argument.That.NotNull(eventType);
+    Argument.That.NotNullOrWhitespace(eventName);
+
+    Argument.That.NotNull(methodSource);
+    Argument.That.NotNullOrWhitespace(methodName);
+    var methodObject = TypedValue.GetValue(methodSource);
+    Argument.That.NotNull(methodObject);
+    var methodType = TypedValue.GetType(methodSource)!;
+
+    return TryRemoveEventHandlerCore(
+      eventType, null, eventName, eventAccessibility, eventTypeArguments,
+      methodType, methodObject, methodName, methodAccessibility, null, methodMethodArguments,
+      positionalParameterTypes, namedParameterTypes, typeof(void));
+  }
+
+  public static bool TryRemoveStaticEventInstanceHandler(
+    Type eventType, string eventName, MemberAccessibility eventAccessibility, IList<Type?>? eventTypeArguments,
+    object methodSource, string methodName, MemberAccessibility methodAccessibility, IList<Type?>? methodMethodArguments,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes, Type? returnType)
+  {
+    Argument.That.NotNull(eventType);
+    Argument.That.NotNullOrWhitespace(eventName);
+
+    Argument.That.NotNull(methodSource);
+    Argument.That.NotNullOrWhitespace(methodName);
+    var methodObject = TypedValue.GetValue(methodSource);
+    Argument.That.NotNull(methodObject);
+    var methodType = TypedValue.GetType(methodSource)!;
+
+    return TryRemoveEventHandlerCore(
+      eventType, null, eventName, eventAccessibility, eventTypeArguments,
+      methodType, methodObject, methodName, methodAccessibility, null, methodMethodArguments,
+      positionalParameterTypes, namedParameterTypes, returnType);
+  }
+
+  public static bool TryRemoveStaticEventStaticHandler(
+    Type eventType, string eventName, MemberAccessibility eventAccessibility, IList<Type?>? eventTypeArguments,
+    Type methodType, string methodName, MemberAccessibility methodAccessibility, IList<Type?>? methodTypeArguments, IList<Type?>? methodMethodArguments,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes)
+  {
+    Argument.That.NotNull(eventType);
+    Argument.That.NotNullOrWhitespace(eventName);
+
+    Argument.That.NotNull(methodType);
+    Argument.That.NotNullOrWhitespace(methodName);
+
+    return TryRemoveEventHandlerCore(
+      eventType, null, eventName, eventAccessibility, eventTypeArguments,
+      methodType, null, methodName, methodAccessibility, methodTypeArguments, methodMethodArguments,
+      positionalParameterTypes, namedParameterTypes, typeof(void));
+  }
+
+  public static bool TryRemoveStaticEventStaticHandler(
+    Type eventType, string eventName, MemberAccessibility eventAccessibility, IList<Type?>? eventTypeArguments,
+    Type methodType, string methodName, MemberAccessibility methodAccessibility, IList<Type?>? methodTypeArguments, IList<Type?>? methodMethodArguments,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes, Type? returnType)
+  {
+    Argument.That.NotNull(eventType);
+    Argument.That.NotNullOrWhitespace(eventName);
+
+    Argument.That.NotNull(methodType);
+    Argument.That.NotNullOrWhitespace(methodName);
+
+    return TryRemoveEventHandlerCore(
+      eventType, null, eventName, eventAccessibility, eventTypeArguments,
+      methodType, null, methodName, methodAccessibility, methodTypeArguments, methodMethodArguments,
+      positionalParameterTypes, namedParameterTypes, returnType);
+  }
+
+  public static bool TryRemoveStaticEventInstanceHandler<TEventSource, TMethodSource>(
+    string eventName, MemberAccessibility eventAccessibility,
+    TMethodSource methodSource, string methodName, MemberAccessibility methodAccessibility, IList<Type?>? methodMethodArguments,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes)
+  {
+    Argument.That.NotNullOrWhitespace(eventName);
+
+    Argument.That.NotNull(methodSource);
+    Argument.That.NotNullOrWhitespace(methodName);
+
+    return TryRemoveEventHandlerCore(
+      typeof(TEventSource), null, eventName, eventAccessibility, null,
+      typeof(TMethodSource), methodSource, methodName, methodAccessibility, null, methodMethodArguments,
+      positionalParameterTypes, namedParameterTypes, typeof(void));
+  }
+
+  public static bool TryRemoveStaticEventInstanceHandler<TEventSource, TMethodSource>(
+    string eventName, MemberAccessibility eventAccessibility,
+    TMethodSource methodSource, string methodName, MemberAccessibility methodAccessibility, IList<Type?>? methodMethodArguments,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes, Type? returnType)
+  {
+    Argument.That.NotNullOrWhitespace(eventName);
+
+    Argument.That.NotNull(methodSource);
+    Argument.That.NotNullOrWhitespace(methodName);
+
+    return TryRemoveEventHandlerCore(
+      typeof(TEventSource), null, eventName, eventAccessibility, null,
+      typeof(TMethodSource), methodSource, methodName, methodAccessibility, null, methodMethodArguments,
+      positionalParameterTypes, namedParameterTypes, returnType);
+  }
+
+  public static bool TryRemoveStaticEventStaticHandler<TEventSource, TMethodSource>(
+    string eventName, MemberAccessibility eventAccessibility,
+    string methodName, MemberAccessibility methodAccessibility, IList<Type?>? methodMethodArguments,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes)
+  {
+    Argument.That.NotNullOrWhitespace(eventName);
+
+    Argument.That.NotNullOrWhitespace(methodName);
+
+    return TryRemoveEventHandlerCore(
+      typeof(TEventSource), null, eventName, eventAccessibility, null,
+      typeof(TMethodSource), null, methodName, methodAccessibility, null, methodMethodArguments,
+      positionalParameterTypes, namedParameterTypes, typeof(void));
+  }
+
+  public static bool TryRemoveStaticEventStaticHandler<TEventSource, TMethodSource>(
+    string eventName, MemberAccessibility eventAccessibility,
+    string methodName, MemberAccessibility methodAccessibility, IList<Type?>? methodMethodArguments,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes, Type? returnType)
+  {
+    Argument.That.NotNullOrWhitespace(eventName);
+
+    Argument.That.NotNullOrWhitespace(methodName);
+
+    return TryRemoveEventHandlerCore(
+      typeof(TEventSource), null, eventName, eventAccessibility, null,
+      typeof(TMethodSource), null, methodName, methodAccessibility, null, methodMethodArguments,
+      positionalParameterTypes, namedParameterTypes, returnType);
+  }
+
+  #endregion
+  #region Direct remove handler methods
+
+  public static void RemoveStaticEventInstanceHandler(
+    Type eventType, string eventName, MemberAccessibility eventAccessibility, IList<Type?>? eventTypeArguments,
+    object methodSource, string methodName, MemberAccessibility methodAccessibility, IList<Type?>? methodMethodArguments,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes)
+  {
+    Argument.That.NotNull(eventType);
+    Argument.That.NotNullOrWhitespace(eventName);
+
+    Argument.That.NotNull(methodSource);
+    Argument.That.NotNullOrWhitespace(methodName);
+    var methodObject = TypedValue.GetValue(methodSource);
+    Argument.That.NotNull(methodObject);
+    var methodType = TypedValue.GetType(methodSource)!;
+
+    RemoveEventHandlerCore(
+      eventType, null, eventName, eventAccessibility, eventTypeArguments,
+      methodType, methodObject, methodName, methodAccessibility, null, methodMethodArguments,
+      positionalParameterTypes, namedParameterTypes, typeof(void));
+  }
+
+  public static void RemoveStaticEventInstanceHandler(
+    Type eventType, string eventName, MemberAccessibility eventAccessibility, IList<Type?>? eventTypeArguments,
+    object methodSource, string methodName, MemberAccessibility methodAccessibility, IList<Type?>? methodMethodArguments,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes, Type? returnType)
+  {
+    Argument.That.NotNull(eventType);
+    Argument.That.NotNullOrWhitespace(eventName);
+
+    Argument.That.NotNull(methodSource);
+    Argument.That.NotNullOrWhitespace(methodName);
+    var methodObject = TypedValue.GetValue(methodSource);
+    Argument.That.NotNull(methodObject);
+    var methodType = TypedValue.GetType(methodSource)!;
+
+    RemoveEventHandlerCore(
+      eventType, null, eventName, eventAccessibility, eventTypeArguments,
+      methodType, methodObject, methodName, methodAccessibility, null, methodMethodArguments,
+      positionalParameterTypes, namedParameterTypes, returnType);
+  }
+
+  public static void RemoveStaticEventStaticHandler(
+    Type eventType, string eventName, MemberAccessibility eventAccessibility, IList<Type?>? eventTypeArguments,
+    Type methodType, string methodName, MemberAccessibility methodAccessibility, IList<Type?>? methodTypeArguments, IList<Type?>? methodMethodArguments,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes)
+  {
+    Argument.That.NotNull(eventType);
+    Argument.That.NotNullOrWhitespace(eventName);
+
+    Argument.That.NotNull(methodType);
+    Argument.That.NotNullOrWhitespace(methodName);
+
+    RemoveEventHandlerCore(
+      eventType, null, eventName, eventAccessibility, eventTypeArguments,
+      methodType, null, methodName, methodAccessibility, methodTypeArguments, methodMethodArguments,
+      positionalParameterTypes, namedParameterTypes, typeof(void));
+  }
+
+  public static void RemoveStaticEventStaticHandler(
+    Type eventType, string eventName, MemberAccessibility eventAccessibility, IList<Type?>? eventTypeArguments,
+    Type methodType, string methodName, MemberAccessibility methodAccessibility, IList<Type?>? methodTypeArguments, IList<Type?>? methodMethodArguments,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes, Type? returnType)
+  {
+    Argument.That.NotNull(eventType);
+    Argument.That.NotNullOrWhitespace(eventName);
+
+    Argument.That.NotNull(methodType);
+    Argument.That.NotNullOrWhitespace(methodName);
+
+    RemoveEventHandlerCore(
+      eventType, null, eventName, eventAccessibility, eventTypeArguments,
+      methodType, null, methodName, methodAccessibility, methodTypeArguments, methodMethodArguments,
+      positionalParameterTypes, namedParameterTypes, returnType);
+  }
+
+  public static void RemoveStaticEventInstanceHandler<TEventSource, TMethodSource>(
+    string eventName, MemberAccessibility eventAccessibility,
+    TMethodSource methodSource, string methodName, MemberAccessibility methodAccessibility, IList<Type?>? methodMethodArguments,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes)
+  {
+    Argument.That.NotNullOrWhitespace(eventName);
+
+    Argument.That.NotNull(methodSource);
+    Argument.That.NotNullOrWhitespace(methodName);
+
+    RemoveEventHandlerCore(
+      typeof(TEventSource), null, eventName, eventAccessibility, null,
+      typeof(TMethodSource), methodSource, methodName, methodAccessibility, null, methodMethodArguments,
+      positionalParameterTypes, namedParameterTypes, typeof(void));
+  }
+
+  public static void RemoveStaticEventInstanceHandler<TEventSource, TMethodSource>(
+    string eventName, MemberAccessibility eventAccessibility,
+    TMethodSource methodSource, string methodName, MemberAccessibility methodAccessibility, IList<Type?>? methodMethodArguments,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes, Type? returnType)
+  {
+    Argument.That.NotNullOrWhitespace(eventName);
+
+    Argument.That.NotNull(methodSource);
+    Argument.That.NotNullOrWhitespace(methodName);
+
+    RemoveEventHandlerCore(
+      typeof(TEventSource), null, eventName, eventAccessibility, null,
+      typeof(TMethodSource), methodSource, methodName, methodAccessibility, null, methodMethodArguments,
+      positionalParameterTypes, namedParameterTypes, returnType);
+  }
+
+  public static void RemoveStaticEventStaticHandler<TEventSource, TMethodSource>(
+    string eventName, MemberAccessibility eventAccessibility,
+    string methodName, MemberAccessibility methodAccessibility, IList<Type?>? methodMethodArguments,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes)
+  {
+    Argument.That.NotNullOrWhitespace(eventName);
+
+    Argument.That.NotNullOrWhitespace(methodName);
+
+    RemoveEventHandlerCore(
+      typeof(TEventSource), null, eventName, eventAccessibility, null,
+      typeof(TMethodSource), null, methodName, methodAccessibility, null, methodMethodArguments,
+      positionalParameterTypes, namedParameterTypes, typeof(void));
+  }
+
+  public static void RemoveStaticEventStaticHandler<TEventSource, TMethodSource>(
+    string eventName, MemberAccessibility eventAccessibility,
+    string methodName, MemberAccessibility methodAccessibility, IList<Type?>? methodMethodArguments,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes, Type? returnType)
+  {
+    Argument.That.NotNullOrWhitespace(eventName);
+
+    Argument.That.NotNullOrWhitespace(methodName);
+
+    RemoveEventHandlerCore(
+      typeof(TEventSource), null, eventName, eventAccessibility, null,
+      typeof(TMethodSource), null, methodName, methodAccessibility, null, methodMethodArguments,
+      positionalParameterTypes, namedParameterTypes, returnType);
+  }
+
+  #endregion
+  #region Try clear event handlers methods
+
+  public static bool TryClearStaticEventHandlers(Type sourceType, string name, MemberAccessibility memberAccessibility,
+    Func<EventInfo, Delegate?>? eventHandlerResolver, IList<Type?>? typeArguments,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes)
+  {
+    Argument.That.NotNull(sourceType);
+    Argument.That.NotNullOrWhitespace(name);
+
+    return TryClearEventHandlersCore(sourceType, null, name, memberAccessibility,
+      eventHandlerResolver is null ? null : (eventInfo, source) => eventHandlerResolver(eventInfo),
+      typeArguments, positionalParameterTypes, namedParameterTypes, typeof(void));
+  }
+
+  public static bool TryClearStaticEventHandlers(Type sourceType, string name, MemberAccessibility memberAccessibility,
+    Func<EventInfo, Delegate?>? eventHandlerResolver, IList<Type?>? typeArguments,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes, Type? returnType)
+  {
+    Argument.That.NotNull(sourceType);
+    Argument.That.NotNullOrWhitespace(name);
+
+    return TryClearEventHandlersCore(sourceType, null, name, memberAccessibility,
+      eventHandlerResolver is null ? null : (eventInfo, source) => eventHandlerResolver(eventInfo),
+      typeArguments, positionalParameterTypes, namedParameterTypes, returnType);
+  }
+
+  public static bool TryClearStaticEventHandlers<TSource>(string name, MemberAccessibility memberAccessibility,
+    Func<EventInfo, Delegate?>? eventHandlerResolver,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes)
+  {
+    Argument.That.NotNullOrWhitespace(name);
+
+    return TryClearEventHandlersCore(typeof(TSource), null, name, memberAccessibility,
+      eventHandlerResolver is null ? null : (eventInfo, source) => eventHandlerResolver(eventInfo),
+      null, positionalParameterTypes, namedParameterTypes, typeof(void));
+  }
+
+  public static bool TryClearStaticEventHandlers<TSource>(string name, MemberAccessibility memberAccessibility,
+    Func<EventInfo, Delegate?>? eventHandlerResolver,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes, Type? returnType)
+  {
+    Argument.That.NotNullOrWhitespace(name);
+
+    return TryClearEventHandlersCore(typeof(TSource), null, name, memberAccessibility,
+      eventHandlerResolver is null ? null : (eventInfo, source) => eventHandlerResolver(eventInfo),
+      null, positionalParameterTypes, namedParameterTypes, returnType);
+  }
+
+  #endregion
+  #region Direct clear event handlers methods
+
+  public static void ClearStaticEventHandlers(Type sourceType, string name, MemberAccessibility memberAccessibility,
+    Func<EventInfo, Delegate?>? eventHandlerResolver, IList<Type?>? typeArguments,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes)
+  {
+    Argument.That.NotNull(sourceType);
+    Argument.That.NotNullOrWhitespace(name);
+
+    ClearEventHandlersCore(sourceType, null, name, memberAccessibility,
+      eventHandlerResolver is null ? null : (eventInfo, source) => eventHandlerResolver(eventInfo),
+      typeArguments, positionalParameterTypes, namedParameterTypes, typeof(void));
+  }
+
+  public static void ClearStaticEventHandlers(Type sourceType, string name, MemberAccessibility memberAccessibility,
+    Func<EventInfo, Delegate?>? eventHandlerResolver, IList<Type?>? typeArguments,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes, Type? returnType)
+  {
+    Argument.That.NotNull(sourceType);
+    Argument.That.NotNullOrWhitespace(name);
+
+    ClearEventHandlersCore(sourceType, null, name, memberAccessibility,
+      eventHandlerResolver is null ? null : (eventInfo, source) => eventHandlerResolver(eventInfo),
+      typeArguments, positionalParameterTypes, namedParameterTypes, returnType);
+  }
+
+  public static void ClearStaticEventHandlers<TSource>(string name, MemberAccessibility memberAccessibility,
+    Func<EventInfo, Delegate?>? eventHandlerResolver,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes)
+  {
+    Argument.That.NotNullOrWhitespace(name);
+
+    ClearEventHandlersCore(typeof(TSource), null, name, memberAccessibility,
+      eventHandlerResolver is null ? null : (eventInfo, source) => eventHandlerResolver(eventInfo),
+      null, positionalParameterTypes, namedParameterTypes, typeof(void));
+  }
+
+  public static void ClearStaticEventHandlers<TSource>(string name, MemberAccessibility memberAccessibility,
+    Func<EventInfo, Delegate?>? eventHandlerResolver,
+    IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes, Type? returnType)
+  {
+    Argument.That.NotNullOrWhitespace(name);
+
+    ClearEventHandlersCore(typeof(TSource), null, name, memberAccessibility,
+      eventHandlerResolver is null ? null : (eventInfo, source) => eventHandlerResolver(eventInfo),
+      null, positionalParameterTypes, namedParameterTypes, returnType);
+  }
+
+  #endregion
+  #region Try raise event handler methods
+
+  public static bool TryRaiseStaticEvent(Type sourceType, string name, MemberAccessibility memberAccessibility,
+    Func<EventInfo, Delegate?>? eventHandlerResolver, IList<Type?>? typeArguments,
+    IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues)
+  {
+    Argument.That.NotNull(sourceType);
+    Argument.That.NotNullOrWhitespace(name);
+
+    return TryRaiseEventCore(sourceType, null, name, memberAccessibility,
+      eventHandlerResolver is null ? null : (eventInfo, source) => eventHandlerResolver(eventInfo),
+      typeArguments, positionalParameterValues, namedParameterValues, typeof(void), out var returnValue);
+  }
+
+  public static bool TryRaiseStaticEvent(Type sourceType, string name, MemberAccessibility memberAccessibility,
+    Func<EventInfo, Delegate?>? eventHandlerResolver, IList<Type?>? typeArguments,
+    IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues, Type? returnType, out object? returnValue)
+  {
+    Argument.That.NotNull(sourceType);
+    Argument.That.NotNullOrWhitespace(name);
+
+    return TryRaiseEventCore(sourceType, null, name, memberAccessibility,
+      eventHandlerResolver is null ? null : (eventInfo, source) => eventHandlerResolver(eventInfo),
+      typeArguments, positionalParameterValues, namedParameterValues, returnType, out returnValue);
+  }
+
+  public static bool TryRaiseStaticEvent<TSource>(string name, MemberAccessibility memberAccessibility,
+    Func<EventInfo, Delegate?>? eventHandlerResolver,
+    IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues)
+  {
+    Argument.That.NotNullOrWhitespace(name);
+
+    return TryRaiseEventCore(typeof(TSource), null, name, memberAccessibility,
+      eventHandlerResolver is null ? null : (eventInfo, source) => eventHandlerResolver(eventInfo),
+      null, positionalParameterValues, namedParameterValues, typeof(void), out var returnValue);
+  }
+
+  public static bool TryRaiseStaticEvent<TSource>(string name, MemberAccessibility memberAccessibility,
+    Func<EventInfo, Delegate?>? eventHandlerResolver,
+    IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues, Type? returnType, out object? returnValue)
+  {
+    Argument.That.NotNullOrWhitespace(name);
+
+    return TryRaiseEventCore(typeof(TSource), null, name, memberAccessibility,
+      eventHandlerResolver is null ? null : (eventInfo, source) => eventHandlerResolver(eventInfo),
+      null, positionalParameterValues, namedParameterValues, returnType, out returnValue);
+  }
+
+  #endregion
+  #region Direct raise event handler methods
+
+  public static void RaiseStaticEvent(Type sourceType, string name, MemberAccessibility memberAccessibility,
+    Func<EventInfo, Delegate?>? eventHandlerResolver, IList<Type?>? typeArguments,
+    IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues)
+  {
+    Argument.That.NotNull(sourceType);
+    Argument.That.NotNullOrWhitespace(name);
+
+    RaiseEventCore(sourceType, null, name, memberAccessibility,
+      eventHandlerResolver is null ? null : (eventInfo, source) => eventHandlerResolver(eventInfo),
+      typeArguments, positionalParameterValues, namedParameterValues, typeof(void));
+  }
+
+  public static object? RaiseStaticEvent(Type sourceType, string name, MemberAccessibility memberAccessibility,
+    Func<EventInfo, Delegate?>? eventHandlerResolver, IList<Type?>? typeArguments,
+    IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues, Type? returnType)
+  {
+    Argument.That.NotNull(sourceType);
+    Argument.That.NotNullOrWhitespace(name);
+
+    return RaiseEventCore(sourceType, null, name, memberAccessibility,
+      eventHandlerResolver is null ? null : (eventInfo, source) => eventHandlerResolver(eventInfo),
+      typeArguments, positionalParameterValues, namedParameterValues, returnType);
+  }
+
+  public static void RaiseStaticEvent<TSource>(string name, MemberAccessibility memberAccessibility,
+    Func<EventInfo, Delegate?>? eventHandlerResolver,
+    IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues)
+  {
+    Argument.That.NotNullOrWhitespace(name);
+
+    RaiseEventCore(typeof(TSource), null, name, memberAccessibility,
+      eventHandlerResolver is null ? null : (eventInfo, source) => eventHandlerResolver(eventInfo),
+      null, positionalParameterValues, namedParameterValues, typeof(void));
+  }
+
+  public static object? RaiseStaticEvent<TSource>(string name, MemberAccessibility memberAccessibility,
+    Func<EventInfo, Delegate?>? eventHandlerResolver,
+    IList<object?>? positionalParameterValues, IDictionary<string, object?>? namedParameterValues, Type? returnType)
+  {
+    Argument.That.NotNullOrWhitespace(name);
+
+    return RaiseEventCore(typeof(TSource), null, name, memberAccessibility,
+      eventHandlerResolver is null ? null : (eventInfo, source) => eventHandlerResolver(eventInfo),
+      null, positionalParameterValues, namedParameterValues, returnType);
   }
 
   #endregion
@@ -4003,51 +6477,6 @@ public static class Reflector
   public static bool IsAttributeDefined<T>(ICustomAttributeProvider provider, bool inherit = true)
     where T : Attribute
     => Argument.That.NotNull(provider).IsDefined(typeof(T), inherit);
-
-  #endregion
-  #region Methods filtering
-
-  public static bool MatchParams(MethodBase method, bool exact, params Type[] argTypes)
-  {
-    Argument.That.NotNull(method);
-    Argument.That.NotNull(argTypes);
-
-    return method.GetParameters().All(pi => pi.Position >= argTypes.Length && pi.HasDefaultValue ||
-      pi.Position < argTypes.Length && (argTypes[pi.Position] is null || exact && pi.ParameterType.Equals(argTypes[pi.Position]) || !exact && pi.ParameterType.IsAssignableFrom(argTypes[pi.Position])));
-  }
-
-  public static bool MatchParams(MethodBase method, params object?[] argValues)
-  {
-    Argument.That.NotNull(method);
-    Argument.That.NotNull(argValues);
-
-    return method.GetParameters().All(pi => pi.Position >= argValues.Length && pi.HasDefaultValue || pi.Position < argValues.Length && pi.ParameterType.IsInstanceOfType(argValues[pi.Position]));
-  }
-
-  public static bool MatchResult(MethodInfo method, bool exact, Type resType)
-  {
-    Argument.That.NotNull(method);
-    Argument.That.NotNull(resType);
-
-    return exact && method.ReturnType.Equals(resType) && !exact && resType.IsAssignableFrom(method.ReturnType);
-  }
-
-  public static int CompareParameters(MethodBase xMethod, MethodBase yMethod)
-  {
-    Argument.That.NotNull(xMethod);
-    Argument.That.NotNull(yMethod);
-
-    var xParameters = xMethod.GetParameters();
-    var yParameters = yMethod.GetParameters();
-    int result = 0;
-    for (int i = 0, c = Comparable.Min(xParameters.Length, yParameters.Length); result == 0 && i < c; i++)
-      result = xParameters[i].ParameterType.Equals(yParameters[i].ParameterType) ? 0 :
-        xParameters[i].ParameterType.IsAssignableFrom(yParameters[i].ParameterType) ? 1 :
-        yParameters[i].ParameterType.IsAssignableFrom(xParameters[i].ParameterType) ? -1 : 0;
-    if (result == 0)
-      result = Comparer<int>.Default.Compare(xParameters.Length, yParameters.Length);
-    return result;
-  }
 
   #endregion
   #region Generic parameters

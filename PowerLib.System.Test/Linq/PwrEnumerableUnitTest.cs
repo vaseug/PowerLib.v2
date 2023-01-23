@@ -36,7 +36,7 @@ public class PwrEnumerableUnitTest
     var methodName = Argument.That.InstanceOf<string>(method);
     var genericArgs = Argument.That.OfType<IList<Type?>>(arguments);
     var positionalParams = Argument.That.InstanceOf<IList<object?>>(parameters);
-    var actualResult = Reflector.CallMethod(typeof(PwrEnumerable), methodName, MemberAccessibility.Public, null, genericArgs, positionalParams, null, null);
+    var actualResult = Reflector.CallStaticMethod(typeof(PwrEnumerable), methodName, MemberAccessibility.Public, null, genericArgs, positionalParams, null, null);
 
     Argument.That.EqualCoupled((IEnumerable)expectedResult!, (IEnumerable)actualResult!);
   }
@@ -88,7 +88,7 @@ public class PwrEnumerableUnitTest
     var methodName = Argument.That.InstanceOf<string>(method);
     var genericArgs = Argument.That.OfType<IList<Type?>>(arguments);
     var positionalParams = Argument.That.InstanceOf<IList<object?>>(parameters);
-    var actualResult = Reflector.CallMethod(typeof(PwrEnumerable), methodName, MemberAccessibility.Public, null, genericArgs, positionalParams, null, null);
+    var actualResult = Reflector.CallStaticMethod(typeof(PwrEnumerable), methodName, MemberAccessibility.Public, null, genericArgs, positionalParams, null, null);
 
     Assert.AreEqual(expectedResult, actualResult);
   }
@@ -112,7 +112,7 @@ public class PwrEnumerableUnitTest
     var methodName = Argument.That.InstanceOf<string>(method);
     var genericArgs = Argument.That.OfType<IList<Type?>>(arguments);
     var positionalParams = Argument.That.InstanceOf<IList<object?>>(parameters);
-    var actualResult = Reflector.CallMethod(typeof(PwrEnumerable), methodName, MemberAccessibility.Public, null, genericArgs, positionalParams, null, null)!;
+    var actualResult = Reflector.CallStaticMethod(typeof(PwrEnumerable), methodName, MemberAccessibility.Public, null, genericArgs, positionalParams, null, null)!;
 
     using var enumerator = ((IEnumerable<int>)actualResult).GetEnumerator();
     Assert.IsTrue(enumerator.MoveNext());

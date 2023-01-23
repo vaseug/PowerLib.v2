@@ -92,18 +92,21 @@ public static class EnumerableExtension
 
   public static IReadOnlyDictionary<TKey, TValue> AsReadOnlyDictionary<TKey, TValue>(this IEnumerable<KeyValuePair<TKey, TValue>> collection)
     where TKey : notnull
-  => collection.AsReadOnlyDictionary(null);
+  => Argument.That.NotNull(collection) as IReadOnlyDictionary<TKey, TValue> ?? new ReadOnlyDictionary<TKey, TValue>(collection as IDictionary<TKey, TValue> ??
+#if NETCOREAPP2_0_OR_GREATER
+      new Dictionary<TKey, TValue>(collection, null));
+#else
+      collection.ToDictionary(null));
+#endif
 
   public static IReadOnlyDictionary<TKey, TValue> AsReadOnlyDictionary<TKey, TValue>(this IEnumerable<KeyValuePair<TKey, TValue>> collection, IEqualityComparer<TKey>? equalityComparer)
     where TKey : notnull
-  {
-    return Argument.That.NotNull(collection) as IReadOnlyDictionary<TKey, TValue> ?? new ReadOnlyDictionary<TKey, TValue>(collection as IDictionary<TKey, TValue> ??
+    => Argument.That.NotNull(collection) as IReadOnlyDictionary<TKey, TValue> ?? new ReadOnlyDictionary<TKey, TValue>(collection as IDictionary<TKey, TValue> ??
 #if NETCOREAPP2_0_OR_GREATER
       new Dictionary<TKey, TValue>(collection, equalityComparer));
 #else
       collection.ToDictionary(equalityComparer));
 #endif
-  }
 
   public static Dictionary<TKey, TValue> ToDictionary<TKey, TValue>(this IEnumerable<KeyValuePair<TKey, TValue>> collection)
     where TKey : notnull

@@ -1338,45 +1338,87 @@ public static class ArgumentExtension
   #endregion
   #region Range validation
 
-  public static Argument<int> InRangeOut(this Argument argument, Argument<int> total, Argument<int> index, int basis = 0, string? message = null)
+  public static Argument<int> InRangeOut(this Argument argument, Argument<int> total, Argument<int> index, string? message = null)
+  {
+    argument.Self().InRangeOut(total.Value, index.Value, message, total.Name, index.Name);
+    return index;
+  }
+
+  public static Argument<int> InRangeIn(this Argument argument, Argument<int> total, Argument<int> index, string? message = null)
+  {
+    argument.Self().InRangeIn(total.Value, index.Value, message, total.Name, index.Name);
+    return index;
+  }
+
+  public static Argument<int> InRangeBasisOut(this Argument argument, Argument<int> total, Argument<int> index, int basis, string? message = null)
   {
     argument.Self().InRangeOut(total.Value, index.Value, basis, message, total.Name, index.Name);
     return index;
   }
 
-  public static Argument<int> InRangeIn(this Argument argument, Argument<int> total, Argument<int> index, int basis = 0, string? message = null)
+  public static Argument<int> InRangeBasisIn(this Argument argument, Argument<int> total, Argument<int> index, int basis, string? message = null)
   {
     argument.Self().InRangeIn(total.Value, index.Value, basis, message, total.Name, index.Name);
     return index;
   }
 
-  public static Argument<(int index, int count)> InRangeOut(this Argument argument, Argument<int> total, Argument<int> index, Argument<int> count, int basis = 0, string? message = null)
+  public static Argument<(int index, int count)> InRangeOut(this Argument argument, Argument<int> total, Argument<int> index, Argument<int> count, string? message = null)
   {
     return new()
     {
-      Value = argument.Self().InRangeOut(total.Value, index.Value, count.Value, basis, message, total.Name, index.Name, count.Name),
+      Value = argument.Self().InRangeOut(total.Value, index.Value, count.Value, message, total.Name, index.Name, count.Name),
       Name = null,
     };
   }
 
-  public static Argument<(int index, int count)> InRangeIn(this Argument argument, Argument<int> total, Argument<int> index, Argument<int> count, int basis = 0, string? message = null)
+  public static Argument<(int index, int count)> InRangeIn(this Argument argument, Argument<int> total, Argument<int> index, Argument<int> count, string? message = null)
   {
     return new()
     {
-      Value = argument.Self().InRangeIn(total.Value, index.Value, count.Value, basis, message, total.Name, index.Name, count.Name),
+      Value = argument.Self().InRangeIn(total.Value, index.Value, count.Value, message, total.Name, index.Name, count.Name),
       Name = null,
     };
   }
 
-  public static Argument<(int index, int count)> InRangeOut(this Argument argument, Argument<int> total, Argument<(int index, int count)> range, int basis = 0, string? message = null)
+  public static Argument<(int index, int count)> InRangeBasisOut(this Argument argument, Argument<int> total, Argument<int> index, Argument<int> count, int basis, string? message = null)
   {
-    argument.Self().InRangeOut(total.Value, range.Value, basis, message, total.Name, range.Name);
+    return new()
+    {
+      Value = argument.Self().InRangeBasisOut(total.Value, index.Value, count.Value, basis, message, total.Name, index.Name, count.Name),
+      Name = null,
+    };
+  }
+
+  public static Argument<(int index, int count)> InRangeBasisIn(this Argument argument, Argument<int> total, Argument<int> index, Argument<int> count, int basis, string? message = null)
+  {
+    return new()
+    {
+      Value = argument.Self().InRangeBasisIn(total.Value, index.Value, count.Value, basis, message, total.Name, index.Name, count.Name),
+      Name = null,
+    };
+  }
+
+  public static Argument<(int index, int count)> InRangeOut(this Argument argument, Argument<int> total, Argument<(int index, int count)> range, string? message = null)
+  {
+    argument.Self().InRangeOut(total.Value, range.Value, message, total.Name, range.Name);
     return range;
   }
 
-  public static Argument<(int index, int count)> InRangeIn(this Argument argument, Argument<int> total, Argument<(int index, int count)> range, int basis = 0, string? message = null)
+  public static Argument<(int index, int count)> InRangeIn(this Argument argument, Argument<int> total, Argument<(int index, int count)> range, string? message = null)
   {
-    argument.Self().InRangeIn(total.Value, range.Value, basis, message, total.Name, range.Name);
+    argument.Self().InRangeIn(total.Value, range.Value, message, total.Name, range.Name);
+    return range;
+  }
+
+  public static Argument<(int index, int count)> InRangeBasisOut(this Argument argument, Argument<int> total, Argument<(int index, int count)> range, int basis, string? message = null)
+  {
+    argument.Self().InRangeBasisOut(total.Value, range.Value, basis, message, total.Name, range.Name);
+    return range;
+  }
+
+  public static Argument<(int index, int count)> InRangeBasisIn(this Argument argument, Argument<int> total, Argument<(int index, int count)> range, int basis, string? message = null)
+  {
+    argument.Self().InRangeBasisIn(total.Value, range.Value, basis, message, total.Name, range.Name);
     return range;
   }
 
@@ -1398,45 +1440,87 @@ public static class ArgumentExtension
     };
   }
 
-  public static Argument<long> InRangeOut(this Argument argument, Argument<long> total, Argument<long> index, long basis = 0L, string? message = null)
+  public static Argument<long> InRangeOut(this Argument argument, Argument<long> total, Argument<long> index, string? message = null)
   {
-    argument.Self().InRangeOut(total.Value, index.Value, basis, message, total.Name, index.Name);
+    argument.Self().InRangeOut(total.Value, index.Value, message, total.Name, index.Name);
     return index;
   }
 
-  public static Argument<long> InRangeIn(this Argument argument, Argument<long> total, Argument<long> index, long basis = 0L, string? message = null)
+  public static Argument<long> InRangeIn(this Argument argument, Argument<long> total, Argument<long> index, string? message = null)
   {
-    argument.Self().InRangeIn(total.Value, index.Value, basis, message, total.Name, index.Name);
+    argument.Self().InRangeIn(total.Value, index.Value, message, total.Name, index.Name);
     return index;
   }
 
-  public static Argument<(long index, long count)> InRangeOut(this Argument argument, Argument<long> total, Argument<long> index, Argument<long> count, long basis = 0L, string? message = null)
+  public static Argument<long> InRangeBasisOut(this Argument argument, Argument<long> total, Argument<long> index, long basis, string? message = null)
+  {
+    argument.Self().InRangeBasisOut(total.Value, index.Value, basis, message, total.Name, index.Name);
+    return index;
+  }
+
+  public static Argument<long> InRangeBasisIn(this Argument argument, Argument<long> total, Argument<long> index, long basis, string? message = null)
+  {
+    argument.Self().InRangeBasisIn(total.Value, index.Value, basis, message, total.Name, index.Name);
+    return index;
+  }
+
+  public static Argument<(long index, long count)> InRangeOut(this Argument argument, Argument<long> total, Argument<long> index, Argument<long> count, string? message = null)
   {
     return new()
     {
-      Value = argument.Self().InRangeOut(total.Value, index.Value, count.Value, basis, message, total.Name, index.Name, count.Name),
+      Value = argument.Self().InRangeOut(total.Value, index.Value, count.Value, message, total.Name, index.Name, count.Name),
       Name = null,
     };
   }
 
-  public static Argument<(long index, long count)> InRangeIn(this Argument argument, Argument<long> total, Argument<long> index, Argument<long> count, long basis = 0L, string? message = null)
+  public static Argument<(long index, long count)> InRangeIn(this Argument argument, Argument<long> total, Argument<long> index, Argument<long> count, string? message = null)
   {
     return new()
     {
-      Value = argument.Self().InRangeIn(total.Value, index.Value, count.Value, basis, message, total.Name, index.Name, count.Name),
+      Value = argument.Self().InRangeIn(total.Value, index.Value, count.Value, message, total.Name, index.Name, count.Name),
       Name = null,
     };
   }
 
-  public static Argument<(long index, long count)> InRangeOut(this Argument argument, Argument<long> total, Argument<(long index, long count)> range, long basis = 0L, string? message = null)
+  public static Argument<(long index, long count)> InRangeBasisOut(this Argument argument, Argument<long> total, Argument<long> index, Argument<long> count, long basis, string? message = null)
   {
-    argument.Self().InRangeOut(total.Value, range.Value, basis, message, total.Name, range.Name);
+    return new()
+    {
+      Value = argument.Self().InRangeBasisOut(total.Value, index.Value, count.Value, basis, message, total.Name, index.Name, count.Name),
+      Name = null,
+    };
+  }
+
+  public static Argument<(long index, long count)> InRangeBasisIn(this Argument argument, Argument<long> total, Argument<long> index, Argument<long> count, long basis, string? message = null)
+  {
+    return new()
+    {
+      Value = argument.Self().InRangeBasisIn(total.Value, index.Value, count.Value, basis, message, total.Name, index.Name, count.Name),
+      Name = null,
+    };
+  }
+
+  public static Argument<(long index, long count)> InRangeOut(this Argument argument, Argument<long> total, Argument<(long index, long count)> range, string? message = null)
+  {
+    argument.Self().InRangeOut(total.Value, range.Value, message, total.Name, range.Name);
     return range;
   }
 
-  public static Argument<(long index, long count)> InRangeIn(this Argument argument, Argument<long> total, Argument<(long index, long count)> range, long basis = 0L, string? message = null)
+  public static Argument<(long index, long count)> InRangeIn(this Argument argument, Argument<long> total, Argument<(long index, long count)> range, string? message = null)
   {
-    argument.Self().InRangeIn(total.Value, range.Value, basis, message, total.Name, range.Name);
+    argument.Self().InRangeIn(total.Value, range.Value, message, total.Name, range.Name);
+    return range;
+  }
+
+  public static Argument<(long index, long count)> InRangeBasisOut(this Argument argument, Argument<long> total, Argument<(long index, long count)> range, long basis, string? message = null)
+  {
+    argument.Self().InRangeBasisOut(total.Value, range.Value, basis, message, total.Name, range.Name);
+    return range;
+  }
+
+  public static Argument<(long index, long count)> InRangeBasisIn(this Argument argument, Argument<long> total, Argument<(long index, long count)> range, long basis, string? message = null)
+  {
+    argument.Self().InRangeBasisIn(total.Value, range.Value, basis, message, total.Name, range.Name);
     return range;
   }
 

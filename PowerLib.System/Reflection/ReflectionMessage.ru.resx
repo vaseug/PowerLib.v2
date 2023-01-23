@@ -117,14 +117,32 @@
   <resheader name="writer">
     <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
   </resheader>
+  <data name="ConstructorAmbiguousMatch" xml:space="preserve">
+    <value>Неоднозначное сопоставление конструктора.</value>
+  </data>
   <data name="ConstructorNotFound" xml:space="preserve">
     <value>Конструктор не найден.</value>
+  </data>
+  <data name="EventAmbiguousMatch" xml:space="preserve">
+    <value>Неоднозначное сопоставление события.</value>
+  </data>
+  <data name="EventNotFound" xml:space="preserve">
+    <value>Событие не найдено.</value>
+  </data>
+  <data name="FieldAmbiguousMatch" xml:space="preserve">
+    <value>Неоднозначное сопоставление поля.</value>
   </data>
   <data name="FieldNotFound" xml:space="preserve">
     <value>Поле не найдено.</value>
   </data>
+  <data name="MethodAmbiguousMatch" xml:space="preserve">
+    <value>Неоднозначное сопоставление метода.</value>
+  </data>
   <data name="MethodNotFound" xml:space="preserve">
     <value>Метод не найден.</value>
+  </data>
+  <data name="PropertyAmbiguousMatch" xml:space="preserve">
+    <value>Неоднозначное сопоставление свойства.</value>
   </data>
   <data name="PropertyNotFound" xml:space="preserve">
     <value>Свойство не найдено.</value>

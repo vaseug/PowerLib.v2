@@ -8,8 +8,10 @@ internal enum ReflectionMessage
   PropertyNotFound,
   MethodNotFound,
   ConstructorNotFound,
+  EventNotFound,
   FieldAmbiguousMatch,
   PropertyAmbiguousMatch,
   MethodAmbiguousMatch,
   ConstructorAmbiguousMatch,
+  EventAmbiguousMatch,
 }

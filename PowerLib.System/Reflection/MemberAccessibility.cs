@@ -9,6 +9,7 @@ public enum MemberAccessibility
   IgnoreCase = 0x1,
   DeclaredOnly = 0x2,
   FlattenHierarchy = 0x4,
+  TopHierarchy = 0x8,
   Family = 0x10,
   Assembly = 0x20,
   FamilyOrAssembly = 0x40,

@@ -1,9 +1,10 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
+    <!--TargetFramework>net6.0</TargetFramework-->
     <TargetFrameworks>net48;net6.0;net7.0</TargetFrameworks>
 		<LangVersion>10.0</LangVersion>
-    <Version>2.1.1</Version>
+    <Version>2.2.0</Version>
     <SignAssembly>False</SignAssembly>
     <AllowUnsafeBlocks>False</AllowUnsafeBlocks>
     <EnforceCodeStyleInBuild>True</EnforceCodeStyleInBuild>
@@ -17,7 +18,7 @@
     <PackageProjectUrl></PackageProjectUrl>
     <PackageTags>Helper;Extension;DataStructure;Algorithm;Collection;Reflection</PackageTags>
     <Description>This library contains a lot of helper classes and extension methods to make it easier to work with collections of objects, data structures, algorithms, and existing .NET framework functionality.</Description>
-    <PackageReleaseNotes>Add extension methods to work with file system with a few fixes.</PackageReleaseNotes>
+    <PackageReleaseNotes>Event support has been added to reflection: adding, removing, clearing and raising event handlers. Complete reflection refactoring done.</PackageReleaseNotes>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <RepositoryUrl>https://github.com/vaseug/PowerLib.v2</RepositoryUrl>
     <PackageLicenseFile>LICENSE</PackageLicenseFile>
