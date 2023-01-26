@@ -20,3 +20,4 @@ using System.Diagnostics.CodeAnalysis;
 [assembly: SuppressMessage("Design", "CA1069:Enums values should not be duplicated", Justification = "By design", Scope = "module")]
 [assembly: SuppressMessage("Globalization", "CA1307:Specify StringComparison for clarity", Justification = "By design", Scope = "module")]
 [assembly: SuppressMessage("Design", "CA1030:Use events where appropriate", Justification = "By design", Scope = "module")]
+[assembly: SuppressMessage("Reliability", "CA2008:Do not create tasks without passing a TaskScheduler", Justification = "By design", Scope = "module")]

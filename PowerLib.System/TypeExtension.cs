@@ -8,6 +8,10 @@ namespace PowerLib.System;
 
 public static class TypeExtension
 {
+  private const string GetAwaiter = nameof(GetAwaiter);
+  private const string GetResult = nameof(GetResult);
+  private const string IsCompleted = nameof(IsCompleted);
+
   public static bool IsNullable(this Type type)
   {
     Argument.That.NotNull(type);
@@ -42,6 +46,38 @@ public static class TypeExtension
 
     return type.IsGenericType && type.IsClass && type.IsSealed && type.IsNotPublic
       && Attribute.IsDefined(type.IsGenericTypeDefinition ? type : type.GetGenericTypeDefinition(), typeof(CompilerGeneratedAttribute), false);
+  }
+
+  public static bool IsAwaitable(this Type type, Type? resultType = null)
+  {
+    Argument.That.NotNull(type);
+
+    var getAwaiterMethod = type.GetMethod(GetAwaiter, Type.EmptyTypes);
+    if (getAwaiterMethod is null)
+      return false;
+    var awaiterType = getAwaiterMethod.ReturnType;
+    if (!(typeof(INotifyCompletion).IsAssignableFrom(awaiterType) && awaiterType.GetProperty(IsCompleted, typeof(bool)) is not null))
+      return false;
+    var resultMethod = awaiterType.GetMethod(GetResult, Type.EmptyTypes);
+    if (resultMethod is null)
+      return false;
+    if (resultType is not null && resultMethod.ReturnType != resultType)
+      return false;
+    return true;
+  }
+
+  public static Type? GetAwaitableResultType(this Type type)
+  {
+    Argument.That.NotNull(type);
+
+    var getAwaiterMethod = type.GetMethod(GetAwaiter, Type.EmptyTypes);
+    if (getAwaiterMethod is null)
+      return null;
+    var awaiterType = getAwaiterMethod.ReturnType;
+    if (!(typeof(INotifyCompletion).IsAssignableFrom(awaiterType) && awaiterType.GetProperty(IsCompleted, typeof(bool)) is not null))
+      return null;
+    var resultMethod = awaiterType.GetMethod(GetResult, Type.EmptyTypes);
+    return resultMethod?.ReturnType;
   }
 
   public static bool IsMadeOf(this Type type, Type typeDefinition)

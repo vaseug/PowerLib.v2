@@ -32,7 +32,7 @@ public class PwrEnumerableUnitTest
   [MemberData(nameof(EnumerableResultData))]
   public void EnumerableResultTest(string methodName, Type?[] genericArgs, object?[] positionalParams, object? expectedResult)
   {
-    var actualResult = Reflector.CallStaticMethod(typeof(PwrEnumerable), methodName, MemberAccessibility.Public, null, genericArgs, positionalParams, null, null);
+    var actualResult = Reflector.CallMethod(typeof(PwrEnumerable), methodName, MemberAccessibility.Public, null, genericArgs, positionalParams, null, null);
 
     Argument.That.EqualCoupled((IEnumerable)expectedResult!, (IEnumerable)actualResult!);
   }
@@ -81,7 +81,7 @@ public class PwrEnumerableUnitTest
   [MemberData(nameof(ScalarResultData))]
   public void ScalarResultTest(string methodName, Type?[] genericArgs, object?[] positionalParams, object? expectedResult)
   {
-    var actualResult = Reflector.CallStaticMethod(typeof(PwrEnumerable), methodName, MemberAccessibility.Public, null, genericArgs, positionalParams, null, null);
+    var actualResult = Reflector.CallMethod(typeof(PwrEnumerable), methodName, MemberAccessibility.Public, null, genericArgs, positionalParams, null, null);
 
     Assert.Equal(expectedResult, actualResult);
   }
@@ -102,7 +102,7 @@ public class PwrEnumerableUnitTest
   [MemberData(nameof(SortingData))]
   public void SortingTest(string methodName, Type?[] genericArgs, object?[] positionalParams)
   {
-    var actualResult = Reflector.CallStaticMethod(typeof(PwrEnumerable), methodName, MemberAccessibility.Public, null, genericArgs, positionalParams, null, null)!;
+    var actualResult = Reflector.CallMethod(typeof(PwrEnumerable), methodName, MemberAccessibility.Public, null, genericArgs, positionalParams, null, null)!;
 
     using var enumerator = ((IEnumerable<int>)actualResult).GetEnumerator();
     Assert.True(enumerator.MoveNext());

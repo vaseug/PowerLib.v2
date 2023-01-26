@@ -36,7 +36,7 @@ public class ListExtensionUnitTest
   {
     var genericArgs = Argument.That.OfType<IList<Type?>>(arguments);
     var positionalParams = Argument.That.InstanceOf<IList<object?>>(parameters);
-    var actualResult = Reflector.CallStaticMethod(typeof(ListExtension), "Match", MemberAccessibility.Public, null, genericArgs, positionalParams, null, expectedResult?.GetType());
+    var actualResult = Reflector.CallMethod(typeof(ListExtension), "Match", MemberAccessibility.Public, null, genericArgs, positionalParams, null, expectedResult?.GetType());
     Assert.AreEqual(expectedResult, actualResult);
   }
 
@@ -157,7 +157,7 @@ public class ListExtensionUnitTest
     var positionalParams = originalParams
       .Select(item => item is Array array ? array.Clone() : item)
       .ToArray();
-    Reflector.CallStaticMethod(typeof(ListExtension), methodName, MemberAccessibility.Public, null, genericArgs, positionalParams, null);
+    Reflector.CallMethod(typeof(ListExtension), methodName, MemberAccessibility.Public, null, genericArgs, positionalParams, null);
     AssertSorted(originalParams[0], positionalParams[0], range, comparer);
   }
 
@@ -169,20 +169,20 @@ public class ListExtensionUnitTest
     if (comparer != null)
       Assert.IsInstanceOfType(comparer, typeof(IComparer<>).MakeGenericType(actArray.GetType().GetElementType()!));
     else
-      comparer = Reflector.GetStaticPropertyValue(typeof(Comparer<>).MakeGenericType(actArray.GetType().GetElementType()!), nameof(Comparer<dynamic>.Default), MemberAccessibility.Public, null, null);
+      comparer = Reflector.GetPropertyValue(typeof(Comparer<>).MakeGenericType(actArray.GetType().GetElementType()!), nameof(Comparer<dynamic>.Default), MemberAccessibility.Public, null, null);
     var rangeTuple = ((int index, int count))range;
     int index = rangeTuple.index, count = rangeTuple.count < 0 ? actArray.Length - index : rangeTuple.count;
     for (int i = 0; i < actArray.Length; i++)
     {
       if (i < index || i >= index + count)
       {
-        var result = Reflector.CallInstanceMethod(comparer!, "Compare", MemberAccessibility.Public, null, new[] { orgArray.GetValue(i), actArray.GetValue(i) }, null, typeof(int));
+        var result = Reflector.CallMethod(comparer!, "Compare", MemberAccessibility.Public, null, new[] { orgArray.GetValue(i), actArray.GetValue(i) }, null, typeof(int));
         Assert.IsInstanceOfType(result, typeof(int));
         Assert.IsTrue((int)result! == 0);
       }
       else if (i > index)
       {
-        var result = Reflector.CallInstanceMethod(comparer!, "Compare", MemberAccessibility.Public, null, new[] { actArray.GetValue(i - 1), actArray.GetValue(i) }, null, typeof(int));
+        var result = Reflector.CallMethod(comparer!, "Compare", MemberAccessibility.Public, null, new[] { actArray.GetValue(i - 1), actArray.GetValue(i) }, null, typeof(int));
         Assert.IsInstanceOfType(result, typeof(int));
         Assert.IsTrue((int)result! <= 0);
       }
@@ -240,7 +240,7 @@ public class ListExtensionUnitTest
       .Select(item => item is Array array ? array.Clone() : item)
       .ToArray();
 
-    var actualResult = Reflector.CallStaticMethod(typeof(ListExtension), methodName, MemberAccessibility.Public, null, genericArgs, positionalParams, null, expectedResult?.GetType());
+    var actualResult = Reflector.CallMethod(typeof(ListExtension), methodName, MemberAccessibility.Public, null, genericArgs, positionalParams, null, expectedResult?.GetType());
     Assert.AreEqual(expectedResult, actualResult);
   }
 
