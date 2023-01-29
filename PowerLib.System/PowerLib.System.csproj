@@ -4,7 +4,7 @@
     <!--TargetFramework>net6.0</TargetFramework-->
     <TargetFrameworks>net48;net6.0;net7.0</TargetFrameworks>
 		<LangVersion>10.0</LangVersion>
-    <Version>2.3.0</Version>
+    <Version>2.3.1</Version>
     <SignAssembly>False</SignAssembly>
     <AllowUnsafeBlocks>False</AllowUnsafeBlocks>
     <EnforceCodeStyleInBuild>True</EnforceCodeStyleInBuild>
@@ -18,7 +18,7 @@
     <PackageProjectUrl></PackageProjectUrl>
     <PackageTags>Helper;Extension;DataStructure;Algorithm;Collection;Reflection</PackageTags>
     <Description>This library contains a lot of helper classes and extension methods to make it easier to work with collections of objects, data structures, algorithms, and existing .NET framework functionality.</Description>
-    <PackageReleaseNotes>Added support for asynchronous event raising with synchronous and awaitable handlers. Improved filtering on the return value of awaitable methods. Reverse Reflector member names previous refactoring.</PackageReleaseNotes>
+    <PackageReleaseNotes>Fixed error on checking a parameter with an output value if a TypedValue substitute with an interface type is specified as the searched parameter type.</PackageReleaseNotes>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <RepositoryUrl>https://github.com/vaseug/PowerLib.v2</RepositoryUrl>
     <PackageLicenseFile>LICENSE</PackageLicenseFile>

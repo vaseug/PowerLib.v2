@@ -5,11 +5,7 @@ using System.Globalization;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
-using System.Security.Cryptography;
-using System.Threading;
 using System.Threading.Tasks;
-using System.Xml.Linq;
 using PowerLib.System.Collections.Generic.Extensions;
 using PowerLib.System.Collections.Matching;
 using PowerLib.System.Linq;
@@ -147,6 +143,8 @@ public static class Reflector
         case TypeVariance.Covariant:
           if (!memberType.IsInterface)
           {
+            if (memberType.IsByRef)
+              memberType = memberType.GetElementType()!;
             if (sourceType.IsInterface)
             {
               foreach (var iface in memberType.GetInterfaces())
