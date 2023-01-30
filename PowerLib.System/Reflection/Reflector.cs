@@ -3419,12 +3419,7 @@ public static class Reflector
       {
         if (positionalParameterTypes is not null && parameterIndex < positionalParameterTypes.Count)
           sourceType = positionalParameterTypes[parameterIndex];
-        if (sourceType is null)
-        {
-          if (!parameterType.IsNullAssignable())
-            return false;
-        }
-        else
+        if (sourceType is not null)
         {
           var variance = parameterInfo.IsOut ? TypeVariance.Covariant : parameterType.IsByRef ? TypeVariance.Invariant : TypeVariance.Contravariant;
           if (!MatchType(sourceType, variance, parameterType, sourceTypeArguments, resultTypeArguments, sourceMethodArguments, resultMethodArguments))
