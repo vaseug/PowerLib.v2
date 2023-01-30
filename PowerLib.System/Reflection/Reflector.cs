@@ -3384,7 +3384,7 @@ public static class Reflector
     IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes, Type? returnType, bool awaitable,
     out SignatureWeight methodWeight)
   {
-    if (MatchMethod(methodInfo, sourceTypeArguments, resultTypeArguments, sourceMethodArguments, resultMethodArguments, positionalParameterTypes, namedParameterTypes, out var signatureWeight))
+    if (MatchMethod(sourceType, methodInfo, sourceTypeArguments, resultTypeArguments, sourceMethodArguments, resultMethodArguments, positionalParameterTypes, namedParameterTypes, out var signatureWeight))
     {
       var awaitableResultType = methodInfo.ReturnType.GetAwaitableResultType();
       if (!awaitable || awaitableResultType is not null)
@@ -3512,14 +3512,14 @@ public static class Reflector
     signatureWeight.GenericArguments += genericArguments.Count;
   }
 
-  private static bool MatchMethod(MethodBase methodBase,
+  private static bool MatchMethod(Type sourceType, MethodBase methodBase,
     IReadOnlyList<Type?>? sourceTypeArguments, IList<Type?>? resultTypeArguments, IReadOnlyList<Type?>? sourceMethodArguments, IList<Type?>? resultMethodArguments,
     IReadOnlyList<Type?>? positionalParameterTypes, IReadOnlyDictionary<string, Type?>? namedParameterTypes,
     out SignatureWeight methodWeight)
   {
     methodWeight = default;
     var currentWeight = new SignatureWeight();
-    var genericTypeArguments = methodBase.ReflectedType?.GetGenericArguments();
+    var genericTypeArguments = sourceType?.GetGenericArguments();
     var genericMethodArguments = methodBase.IsGenericMethod ? methodBase.GetGenericArguments() : Type.EmptyTypes;
     if (!MatchArguments(genericTypeArguments, sourceTypeArguments, resultTypeArguments, genericMethodArguments, sourceMethodArguments, resultMethodArguments))
       return false;
@@ -4269,7 +4269,7 @@ public static class Reflector
       .Select(constructorInfo =>
       {
         var resultTypeArguments = new Type[sourceTypeArguments?.Count ?? constructorInfo.DeclaringType?.GetGenericArguments().Length ?? 0];
-        var matched = MatchMethod(constructorInfo, sourceTypeArguments, resultTypeArguments, null, null, positionalParameterTypes, namedParameterTypes, out var constructorWeight);
+        var matched = MatchMethod(sourceType, constructorInfo, sourceTypeArguments, resultTypeArguments, null, null, positionalParameterTypes, namedParameterTypes, out var constructorWeight);
         return (constructorInfo: matched ? constructorInfo : null, constructorWeight, typeArguments: resultTypeArguments);
       })
       .Where(tuple => tuple.constructorInfo is not null)
