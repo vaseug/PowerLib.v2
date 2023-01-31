@@ -14,4 +14,6 @@ internal enum ReflectionMessage
   MethodAmbiguousMatch,
   ConstructorAmbiguousMatch,
   EventAmbiguousMatch,
+  NotAllTypeGenericArgumentsAreDefined,
+  NotAllMethodGenericArgumentsAreDefined,
 }

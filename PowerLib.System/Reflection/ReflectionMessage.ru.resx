@@ -141,6 +141,12 @@
   <data name="MethodNotFound" xml:space="preserve">
     <value>Метод не найден.</value>
   </data>
+  <data name="NotAllMethodGenericArgumentsAreDefined" xml:space="preserve">
+    <value>Не все аргументы унивесального метода определены.</value>
+  </data>
+  <data name="NotAllTypeGenericArgumentsAreDefined" xml:space="preserve">
+    <value>Не все аргументы унивесального типа определены.</value>
+  </data>
   <data name="PropertyAmbiguousMatch" xml:space="preserve">
     <value>Неоднозначное сопоставление свойства.</value>
   </data>

@@ -353,6 +353,7 @@ public static class Reflector
     {
       if (sourceType.IsGenericType && !sourceType.IsConstructedGenericType && typeArguments is not null)
       {
+        Operation.That.IsValid(typeArguments.All(genType => genType is not null && !genType.IsGenericParameter), FormatMessage(ReflectionMessage.NotAllTypeGenericArgumentsAreDefined));
         sourceType = sourceType.MakeGenericType(typeArguments);
         fieldInfo = MatchField(sourceType, staticMember, name, memberAccessibility, shouldWrite, null, valueType, variance);
       }
@@ -1397,6 +1398,7 @@ public static class Reflector
     {
       if (sourceType.IsGenericType && !sourceType.IsConstructedGenericType && typeArguments is not null)
       {
+        Operation.That.IsValid(typeArguments.All(genType => genType is not null && !genType.IsGenericParameter), FormatMessage(ReflectionMessage.NotAllTypeGenericArgumentsAreDefined));
         sourceType = sourceType.MakeGenericType(typeArguments);
         propertyInfo = MatchProperty(sourceType, staticMember, name, memberAccessibility, shouldRead, shouldWrite, sourceTypeArguments, positionalParameterTypes, namedParameterTypes, valueType, variance);
       }
@@ -3579,11 +3581,13 @@ public static class Reflector
     {
       if (sourceType.IsGenericType && !sourceType.IsConstructedGenericType)
       {
+        Operation.That.IsValid(typeArguments.All(genType => genType is not null && !genType.IsGenericParameter), FormatMessage(ReflectionMessage.NotAllTypeGenericArgumentsAreDefined));
         sourceType = sourceType.MakeGenericType(typeArguments);
         methodInfo = MatchMethod(sourceType, staticMember, name, memberAccessibility, typeArguments, methodArguments, positionalParameterTypes, namedParameterTypes, returnType, awaitable);
       }
       if (methodInfo is not null && methodInfo.IsGenericMethod && methodInfo.IsGenericMethodDefinition)
       {
+        Operation.That.IsValid(methodArguments.All(genType => genType is not null && !genType.IsGenericParameter), FormatMessage(ReflectionMessage.NotAllMethodGenericArgumentsAreDefined));
         methodInfo = methodInfo.MakeGenericMethod(methodArguments);
       }
     }
@@ -4294,6 +4298,7 @@ public static class Reflector
     {
       if (sourceType.IsGenericType && !sourceType.IsConstructedGenericType)
       {
+        Operation.That.IsValid(typeArguments.All(genType => genType is not null && !genType.IsGenericParameter), FormatMessage(ReflectionMessage.NotAllTypeGenericArgumentsAreDefined));
         sourceType = sourceType.MakeGenericType(typeArguments);
         constructorInfo = MatchConstructor(sourceType, staticMember, memberAccessibility, typeArguments, positionalParameterTypes, namedParameterTypes);
       }
@@ -4497,6 +4502,7 @@ public static class Reflector
     {
       if (sourceType.IsGenericType && !sourceType.IsConstructedGenericType)
       {
+        Operation.That.IsValid(typeArguments.All(genType => genType is not null && !genType.IsGenericParameter), FormatMessage(ReflectionMessage.NotAllTypeGenericArgumentsAreDefined));
         sourceType = sourceType.MakeGenericType(typeArguments);
         eventInfo = MatchEvent(sourceType, staticMember, name, memberAccessibility, typeArguments, positionalParameterTypes, namedParameterTypes, returnType, awaitable);
       }

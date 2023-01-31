@@ -141,6 +141,12 @@
   <data name="MethodNotFound" xml:space="preserve">
     <value>Method is not found.</value>
   </data>
+  <data name="NotAllMethodGenericArgumentsAreDefined" xml:space="preserve">
+    <value>Not all method generic arguments are defined.</value>
+  </data>
+  <data name="NotAllTypeGenericArgumentsAreDefined" xml:space="preserve">
+    <value>Not all type generic arguments are defined.</value>
+  </data>
   <data name="PropertyAmbiguousMatch" xml:space="preserve">
     <value>Property ambiguous match.</value>
   </data>
