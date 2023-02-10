@@ -34,7 +34,7 @@ public abstract class ResourceAccessor<TKey>
   #endregion
   #region Public methods
 
-  public string FormatString(TKey key, params object[] args)
+  public string FormatString(TKey key, params object?[] args)
     => FormatString(null, key, args);
 
   public string FormatString(IFormatProvider? formatProvider, TKey key, params object?[] args)

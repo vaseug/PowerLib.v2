@@ -1,8 +1,7 @@
 using System;
-using System.Collections;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
-using PowerLib.System.Arrays;
+using PowerLib.System.Buffers;
 using PowerLib.System.Collections.Generic.Extensions;
 using PowerLib.System.Validation;
 
@@ -115,7 +114,6 @@ public static class ListExtension
       _ => GetRangeCore(list, range.index, range.count),
     };
   }
-
 
   #endregion
   #region Set
@@ -671,7 +669,7 @@ public static class ListExtension
   {
     if (sIndex == dIndex)
       return;
-    var values = ArrayController.Acquire<T>(count);
+    var values = ArrayBuffer.Acquire<T>(count);
     try
     {
       CopyCore(list, sIndex, values, 0, count, false);
@@ -686,7 +684,7 @@ public static class ListExtension
     }
     finally
     {
-      ArrayController.Release(values);
+      ArrayBuffer.Release(values);
     }
   }
 
@@ -753,7 +751,7 @@ public static class ListExtension
     }
     if (lowerCount > upperCount)
     {
-      var buffer = ArrayController.Acquire<T>(lowerCount - upperCount);
+      var buffer = ArrayBuffer.Acquire<T>(lowerCount - upperCount);
       try
       {
         for (int index = 0, count = lowerCount - upperCount, sIndex = lowerIndex + upperCount; index < count; index++)
@@ -765,12 +763,12 @@ public static class ListExtension
       }
       finally
       {
-        ArrayController.Release(buffer);
+        ArrayBuffer.Release(buffer);
       }
     }
     else if (lowerCount < upperCount)
     {
-      var buffer = ArrayController.Acquire<T>(upperCount - lowerCount);
+      var buffer = ArrayBuffer.Acquire<T>(upperCount - lowerCount);
       try
       {
         for (int index = 0, count = upperCount - lowerCount, sIndex = upperIndex + lowerCount; index < count; index++)
@@ -782,7 +780,7 @@ public static class ListExtension
       }
       finally
       {
-        ArrayController.Release(buffer);
+        ArrayBuffer.Release(buffer);
       }
     }
   }
@@ -1726,7 +1724,7 @@ public static class ListExtension
       {
         int li = 0, ri = 0;
         int lb = bi, mb = bi + bs, rb = Comparable.Min(bi + (bs << 1), bc);
-        var ta = ArrayController.Acquire<TSource>(rb - lb);
+        var ta = ArrayBuffer.Acquire<TSource>(rb - lb);
         try
         {
           while (lb + li < mb && mb < rb - ri)
@@ -1759,7 +1757,7 @@ public static class ListExtension
         }
         finally
         {
-          ArrayController.Release(ta);
+          ArrayBuffer.Release(ta);
         }
       }
     }
@@ -3669,9 +3667,6 @@ public static class ListExtension
   #endregion
   #endregion
   #region Cast methods
-
-  public static IReadOnlyList<T> AsReadOnlyList<T>(this IReadOnlyList<T> list)
-    => list;
 
   public static IList<T> AsList<T>(this IList<T> list)
     => list;

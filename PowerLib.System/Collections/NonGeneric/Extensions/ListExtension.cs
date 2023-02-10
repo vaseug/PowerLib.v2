@@ -1,7 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
-using PowerLib.System.Arrays;
+using PowerLib.System.Buffers;
 using PowerLib.System.Collections.Generic.Extensions;
 using PowerLib.System.Validation;
 
@@ -610,7 +610,7 @@ public static class ListExtension
   {
     if (sIndex == dIndex)
       return;
-    var values = ArrayController.Acquire<object?>(count);
+    var values = ArrayBuffer.Acquire<object?>(count);
     try
     {
       CopyCore(list, sIndex, values, 0, count, false);
@@ -625,7 +625,7 @@ public static class ListExtension
     }
     finally
     {
-      ArrayController.Release(values);
+      ArrayBuffer.Release(values);
     }
   }
 
@@ -692,7 +692,7 @@ public static class ListExtension
     }
     if (lowerCount > upperCount)
     {
-      var buffer = ArrayController.Acquire<object?>(lowerCount - upperCount);
+      var buffer = ArrayBuffer.Acquire<object?>(lowerCount - upperCount);
       try
       {
         for (int index = 0, count = lowerCount - upperCount, sIndex = lowerIndex + upperCount; index < count; index++)
@@ -704,12 +704,12 @@ public static class ListExtension
       }
       finally
       {
-        ArrayController.Release(buffer);
+        ArrayBuffer.Release(buffer);
       }
     }
     else if (lowerCount < upperCount)
     {
-      var buffer = ArrayController.Acquire<object?>(upperCount - lowerCount);
+      var buffer = ArrayBuffer.Acquire<object?>(upperCount - lowerCount);
       try
       {
         for (int index = 0, count = upperCount - lowerCount, sIndex = upperIndex + lowerCount; index < count; index++)
@@ -721,7 +721,7 @@ public static class ListExtension
       }
       finally
       {
-        ArrayController.Release(buffer);
+        ArrayBuffer.Release(buffer);
       }
     }
   }
@@ -1651,7 +1651,7 @@ public static class ListExtension
       {
         int li = 0, ri = 0;
         int lb = bi, mb = bi + bs, rb = Comparable.Min(bi + (bs << 1), bc);
-        var ta = ArrayController.Acquire<object?>(rb - lb);
+        var ta = ArrayBuffer.Acquire<object?>(rb - lb);
         try
         {
           while (lb + li < mb && mb < rb - ri)
@@ -1684,7 +1684,7 @@ public static class ListExtension
         }
         finally
         {
-          ArrayController.Release(ta);
+          ArrayBuffer.Release(ta);
         }
       }
     }
