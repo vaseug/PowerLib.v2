@@ -37,6 +37,30 @@ namespace PowerLib.System.IO
     #endregion
     #region Internal methods
 
+    private static IEnumerable<FileSystemInfo> GetChildrenCore(DirectoryInfo directoryInfo, Func<DirectoryInfo, string?> searchPatternSelector)
+    {
+      var searchPattern = searchPatternSelector(directoryInfo);
+      return searchPattern?.Length == 0 ? Enumerable.Empty<FileSystemInfo>() : directoryInfo.EnumerateFileSystemInfos(searchPattern ?? DefaultSearchPattern, SearchOption.TopDirectoryOnly);
+    }
+
+    private static IEnumerable<FileSystemInfo> GetChildrenCore(IReadOnlyList<DirectoryInfo> parentalDirectoryInfos, Func<IReadOnlyList<DirectoryInfo>, string?> searchPatternSelector)
+    {
+      var searchPattern = searchPatternSelector(parentalDirectoryInfos);
+      return searchPattern?.Length == 0 ? Enumerable.Empty<FileSystemInfo>() : parentalDirectoryInfos.GetLast().EnumerateFileSystemInfos(searchPattern ?? DefaultSearchPattern, SearchOption.TopDirectoryOnly);
+    }
+
+    private static IEnumerable<DirectoryInfo> GetChildDirectoriesCore(DirectoryInfo directoryInfo, Func<DirectoryInfo, string?> searchPatternSelector)
+    {
+      var searchPattern = searchPatternSelector(directoryInfo);
+      return searchPattern?.Length == 0 ? Enumerable.Empty<DirectoryInfo>() : directoryInfo.EnumerateDirectories(searchPattern ?? DefaultSearchPattern, SearchOption.TopDirectoryOnly);
+    }
+
+    private static IEnumerable<DirectoryInfo> GetChildDirectoriesCore(IReadOnlyList<DirectoryInfo> parentalDirectoryInfos, Func<IReadOnlyList<DirectoryInfo>, string?> searchPatternSelector)
+    {
+      var searchPattern = searchPatternSelector(parentalDirectoryInfos);
+      return searchPattern?.Length == 0 ? Enumerable.Empty<DirectoryInfo>() : parentalDirectoryInfos.GetLast().EnumerateDirectories(searchPattern ?? DefaultSearchPattern, SearchOption.TopDirectoryOnly);
+    }
+
     private static bool HasChildrenCore(FileSystemInfo fileSystemInfo, bool refresh)
     {
       if (fileSystemInfo is DirectoryInfo directoryInfo)
@@ -270,6 +294,340 @@ namespace PowerLib.System.IO
       }
     }
 
+    private static IEnumerable<FileSystemInfo> EnumerateFileSystemInfosCore(DirectoryInfo startDirectoryInfo,
+      Func<DirectoryInfo, string?> searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Predicate<FileSystemInfo>? predicate, Comparison<FileSystemInfo>? comparison)
+    {
+      var excludeStart = traversalOptions.IsFlagsSet(FileSystemTraversalOptions.ExcludeStartDirectory);
+      var excludeEmpty = traversalOptions.IsFlagsSet(FileSystemTraversalOptions.ExcludeEmptyDirectory);
+      var reverse = traversalOptions.IsFlagsSet(FileSystemTraversalOptions.Reverse);
+      var refresh = traversalOptions.IsFlagsSet(FileSystemTraversalOptions.Refresh);
+      var children = EnumerateFileSystemInfosCore(startDirectoryInfo, maxDepth, excludeEmpty,
+        directoryInfo => GetChildrenCore(directoryInfo, searchPatternSelector),
+        fileSystemInfo => HasChildrenCore(fileSystemInfo, refresh),
+        predicate, comparison);
+      if (reverse)
+        children = children.Reverse();
+      using var enumerator = children.GetEnumerator();
+      if (enumerator.MoveNext())
+      {
+        if (!excludeStart && !reverse)
+          yield return startDirectoryInfo;
+        do
+          yield return enumerator.Current;
+        while (enumerator.MoveNext());
+        if (!excludeStart && reverse)
+          yield return startDirectoryInfo;
+      }
+      else if (!excludeEmpty && !excludeStart)
+        yield return startDirectoryInfo;
+    }
+
+    private static IEnumerable<TFileSystemInfo> EnumerateFileSystemInfosCore<TFileSystemInfo>(DirectoryInfo startDirectoryInfo,
+      Func<DirectoryInfo, string?> searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Predicate<FileSystemInfo>? predicate, Comparison<FileSystemInfo>? comparison, Func<FileSystemInfo, TFileSystemInfo> selector)
+    {
+      var excludeStart = traversalOptions.IsFlagsSet(FileSystemTraversalOptions.ExcludeStartDirectory);
+      var excludeEmpty = traversalOptions.IsFlagsSet(FileSystemTraversalOptions.ExcludeEmptyDirectory);
+      var reverse = traversalOptions.IsFlagsSet(FileSystemTraversalOptions.Reverse);
+      var refresh = traversalOptions.IsFlagsSet(FileSystemTraversalOptions.Refresh);
+      var children = EnumerateFileSystemInfosCore(startDirectoryInfo, maxDepth, excludeEmpty,
+        directoryInfo => GetChildrenCore(directoryInfo, searchPatternSelector),
+        fileSystemInfo => HasChildrenCore(fileSystemInfo, refresh),
+        predicate, comparison,
+        (fileSystemInfo) => TryOut.Success(selector(fileSystemInfo)));
+      if (reverse)
+        children = children.Reverse();
+      using var enumerator = children.GetEnumerator();
+      if (enumerator.MoveNext())
+      {
+        if (!excludeStart && !reverse)
+          yield return selector(startDirectoryInfo);
+        do
+          yield return enumerator.Current;
+        while (enumerator.MoveNext());
+        if (!excludeStart && reverse)
+          yield return selector(startDirectoryInfo);
+      }
+      else if (!excludeEmpty && !excludeStart)
+        yield return selector(startDirectoryInfo);
+    }
+
+    private static IEnumerable<FileSystemInfo> EnumerateFileSystemInfosCore(DirectoryInfo startDirectoryInfo,
+      Func<IReadOnlyList<DirectoryInfo>, string?> searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Predicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Comparison<FileSystemInfo>? comparison)
+    {
+      var excludeStart = traversalOptions.IsFlagsSet(FileSystemTraversalOptions.ExcludeStartDirectory);
+      var excludeEmpty = traversalOptions.IsFlagsSet(FileSystemTraversalOptions.ExcludeEmptyDirectory);
+      var reverse = traversalOptions.IsFlagsSet(FileSystemTraversalOptions.Reverse);
+      var refresh = traversalOptions.IsFlagsSet(FileSystemTraversalOptions.Refresh);
+      var context = Array.Empty<DirectoryInfo>();
+      var children = EnumerateFileSystemInfosCore(startDirectoryInfo, context, maxDepth, excludeEmpty,
+        parentalDirectoryInfos => GetChildrenCore(parentalDirectoryInfos, searchPatternSelector),
+        fileSystemInfo => HasChildrenCore(fileSystemInfo, refresh),
+        predicate, comparison);
+      if (reverse)
+        children = children.Reverse();
+      using var enumerator = children.GetEnumerator();
+      if (enumerator.MoveNext())
+      {
+        if (!excludeStart && !reverse)
+          yield return startDirectoryInfo;
+        do
+          yield return enumerator.Current;
+        while (enumerator.MoveNext());
+        if (!excludeStart && reverse)
+          yield return startDirectoryInfo;
+      }
+      else if (!excludeEmpty && !excludeStart)
+        yield return startDirectoryInfo;
+    }
+
+    private static IEnumerable<TFileSystemInfo> EnumerateFileSystemInfosCore<TFileSystemInfo>(DirectoryInfo startDirectoryInfo,
+      Func<IReadOnlyList<DirectoryInfo>, string?> searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Predicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Comparison<FileSystemInfo>? comparison,
+      Func<FileSystemInfo, IReadOnlyList<DirectoryInfo>, TFileSystemInfo> selector)
+    {
+      var excludeStart = traversalOptions.IsFlagsSet(FileSystemTraversalOptions.ExcludeStartDirectory);
+      var excludeEmpty = traversalOptions.IsFlagsSet(FileSystemTraversalOptions.ExcludeEmptyDirectory);
+      var reverse = traversalOptions.IsFlagsSet(FileSystemTraversalOptions.Reverse);
+      var refresh = traversalOptions.IsFlagsSet(FileSystemTraversalOptions.Refresh);
+      var context = Array.Empty<DirectoryInfo>();
+      var children = EnumerateFileSystemInfosCore(startDirectoryInfo, context, maxDepth, excludeEmpty,
+        parentalDirectoryInfos => GetChildrenCore(parentalDirectoryInfos, searchPatternSelector),
+        fileSystemInfo => HasChildrenCore(fileSystemInfo, refresh),
+        predicate, comparison,
+        (fileSystemInfo, parentalDirectoryInfos) => TryOut.Success(selector(fileSystemInfo, parentalDirectoryInfos)));
+      if (reverse)
+        children = children.Reverse();
+      using var enumerator = children.GetEnumerator();
+      if (enumerator.MoveNext())
+      {
+        if (!excludeStart && !reverse)
+          yield return selector(startDirectoryInfo, context);
+        do
+          yield return enumerator.Current;
+        while (enumerator.MoveNext());
+        if (!excludeStart && reverse)
+          yield return selector(startDirectoryInfo, context);
+      }
+      else if (!excludeEmpty && !excludeStart)
+        yield return selector(startDirectoryInfo, context);
+    }
+
+    private static IEnumerable<DirectoryInfo> EnumerateDirectoriesCore(DirectoryInfo startDirectoryInfo,
+      Func<DirectoryInfo, string?> searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Predicate<DirectoryInfo>? predicate, Comparison<DirectoryInfo>? comparison)
+    {
+      var excludeStart = traversalOptions.IsFlagsSet(FileSystemTraversalOptions.ExcludeStartDirectory);
+      var excludeEmpty = traversalOptions.IsFlagsSet(FileSystemTraversalOptions.ExcludeEmptyDirectory);
+      var reverse = traversalOptions.IsFlagsSet(FileSystemTraversalOptions.Reverse);
+      var refresh = traversalOptions.IsFlagsSet(FileSystemTraversalOptions.Refresh);
+      var children = EnumerateFileSystemInfosCore(startDirectoryInfo, maxDepth, excludeEmpty,
+        directoryInfo => GetChildDirectoriesCore(directoryInfo, searchPatternSelector),
+        fileSystemInfo => HasChildrenCore(fileSystemInfo, refresh),
+        fileSystemInfo => fileSystemInfo is DirectoryInfo directoryInfo && (predicate?.Invoke(directoryInfo) ?? true),
+        comparison is not null ? (x, y) => comparison((DirectoryInfo)x, (DirectoryInfo)y) : default)
+        .Cast<DirectoryInfo>();
+      if (reverse)
+        children = children.Reverse();
+      using var enumerator = children.GetEnumerator();
+      if (enumerator.MoveNext())
+      {
+        if (!excludeStart && !reverse)
+          yield return startDirectoryInfo;
+        do
+          yield return enumerator.Current;
+        while (enumerator.MoveNext());
+        if (!excludeStart && reverse)
+          yield return startDirectoryInfo;
+      }
+      else if (!excludeEmpty && !excludeStart)
+        yield return startDirectoryInfo;
+    }
+
+    private static IEnumerable<TDirectoryInfo> EnumerateDirectoriesCore<TDirectoryInfo>(DirectoryInfo startDirectoryInfo,
+      Func<DirectoryInfo, string?> searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Predicate<DirectoryInfo>? predicate, Comparison<DirectoryInfo>? comparison, Func<DirectoryInfo, TDirectoryInfo> selector)
+    {
+      var excludeStart = traversalOptions.IsFlagsSet(FileSystemTraversalOptions.ExcludeStartDirectory);
+      var excludeEmpty = traversalOptions.IsFlagsSet(FileSystemTraversalOptions.ExcludeEmptyDirectory);
+      var reverse = traversalOptions.IsFlagsSet(FileSystemTraversalOptions.Reverse);
+      var refresh = traversalOptions.IsFlagsSet(FileSystemTraversalOptions.Refresh);
+      var children = EnumerateFileSystemInfosCore(startDirectoryInfo, maxDepth, excludeEmpty,
+        directoryInfo => GetChildDirectoriesCore(directoryInfo, searchPatternSelector),
+        fileSystemInfo => HasChildrenCore(fileSystemInfo, refresh),
+        fileSystemInfo => fileSystemInfo is DirectoryInfo directoryInfo && (predicate?.Invoke(directoryInfo) ?? true),
+        comparison is not null ? (x, y) => comparison((DirectoryInfo)x, (DirectoryInfo)y) : default,
+        fileSystemInfo => fileSystemInfo is DirectoryInfo directoryInfo ? TryOut.Success(selector(directoryInfo)) : TryOut.Failure<TDirectoryInfo>());
+      if (reverse)
+        children = children.Reverse();
+      using var enumerator = children.GetEnumerator();
+      if (enumerator.MoveNext())
+      {
+        if (!excludeStart && !reverse)
+          yield return selector(startDirectoryInfo);
+        do
+          yield return enumerator.Current;
+        while (enumerator.MoveNext());
+        if (!excludeStart && reverse)
+          yield return selector(startDirectoryInfo);
+      }
+      else if (!excludeEmpty && !excludeStart)
+        yield return selector(startDirectoryInfo);
+    }
+
+    private static IEnumerable<DirectoryInfo> EnumerateDirectoriesCore(DirectoryInfo startDirectoryInfo,
+      Func<IReadOnlyList<DirectoryInfo>, string?> searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Predicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Comparison<DirectoryInfo>? comparison)
+    {
+      Argument.That.NotNull(startDirectoryInfo);
+      Argument.That.NonNegative(maxDepth);
+
+      var excludeStart = traversalOptions.IsFlagsSet(FileSystemTraversalOptions.ExcludeStartDirectory);
+      var excludeEmpty = traversalOptions.IsFlagsSet(FileSystemTraversalOptions.ExcludeEmptyDirectory);
+      var reverse = traversalOptions.IsFlagsSet(FileSystemTraversalOptions.Reverse);
+      var refresh = traversalOptions.IsFlagsSet(FileSystemTraversalOptions.Refresh);
+      var context = Array.Empty<DirectoryInfo>();
+      var children = EnumerateFileSystemInfosCore(startDirectoryInfo, context, maxDepth, excludeEmpty,
+        parentalDirectoryInfos => GetChildDirectoriesCore(parentalDirectoryInfos, searchPatternSelector),
+        fileSystemInfo => HasChildrenCore(fileSystemInfo, refresh),
+        ((FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos) element) =>
+          element.fileSystemInfo is DirectoryInfo directoryInfo && (predicate?.Invoke((directoryInfo, element.parentalDirectoryInfos)) ?? true),
+        comparison is not null ? (x, y) => comparison((DirectoryInfo)x, (DirectoryInfo)y) : default)
+        .Cast<DirectoryInfo>();
+      if (reverse)
+        children = children.Reverse();
+      using var enumerator = children.GetEnumerator();
+      if (enumerator.MoveNext())
+      {
+        if (!excludeStart && !reverse)
+          yield return startDirectoryInfo;
+        do
+          yield return enumerator.Current;
+        while (enumerator.MoveNext());
+        if (!excludeStart && reverse)
+          yield return startDirectoryInfo;
+      }
+      else if (!excludeEmpty && !excludeStart)
+        yield return startDirectoryInfo;
+    }
+
+    private static IEnumerable<TDirectoryInfo> EnumerateDirectoriesCore<TDirectoryInfo>(DirectoryInfo startDirectoryInfo,
+      Func<IReadOnlyList<DirectoryInfo>, string?> searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Predicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Comparison<DirectoryInfo>? comparison, Func<DirectoryInfo, IReadOnlyList<DirectoryInfo>, TDirectoryInfo> selector)
+    {
+      var excludeStart = traversalOptions.IsFlagsSet(FileSystemTraversalOptions.ExcludeStartDirectory);
+      var excludeEmpty = traversalOptions.IsFlagsSet(FileSystemTraversalOptions.ExcludeEmptyDirectory);
+      var reverse = traversalOptions.IsFlagsSet(FileSystemTraversalOptions.Reverse);
+      var refresh = traversalOptions.IsFlagsSet(FileSystemTraversalOptions.Refresh);
+      var context = Array.Empty<DirectoryInfo>();
+      var children = EnumerateFileSystemInfosCore(startDirectoryInfo, context, maxDepth, excludeEmpty,
+        parentalDirectoryInfos => GetChildDirectoriesCore(parentalDirectoryInfos, searchPatternSelector),
+        fileSystemInfo => HasChildrenCore(fileSystemInfo, refresh),
+        ((FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos) element) =>
+          element.fileSystemInfo is DirectoryInfo directoryInfo && (predicate?.Invoke((directoryInfo, element.parentalDirectoryInfos)) ?? true),
+        comparison is not null ? (x, y) => comparison((DirectoryInfo)x, (DirectoryInfo)y) : default,
+        (FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)
+          => fileSystemInfo is DirectoryInfo directoryInfo ? TryOut.Success(selector(directoryInfo, parentalDirectoryInfos)) : TryOut.Failure<TDirectoryInfo>());
+      if (reverse)
+        children = children.Reverse();
+      using var enumerator = children.GetEnumerator();
+      if (enumerator.MoveNext())
+      {
+        if (!excludeStart && !reverse)
+          yield return selector(startDirectoryInfo, context);
+        do
+          yield return enumerator.Current;
+        while (enumerator.MoveNext());
+        if (!excludeStart && reverse)
+          yield return selector(startDirectoryInfo, context);
+      }
+      else if (!excludeEmpty && !excludeStart)
+        yield return selector(startDirectoryInfo, context);
+    }
+
+    private static IEnumerable<FileInfo> EnumerateFilesCore(DirectoryInfo startDirectoryInfo,
+      Func<DirectoryInfo, string?> searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Predicate<FileInfo>? filePredicate, Predicate<DirectoryInfo>? directoryPredicate, Comparison<FileSystemInfo>? comparison)
+    {
+      var reverse = traversalOptions.IsFlagsSet(FileSystemTraversalOptions.Reverse);
+      var refresh = traversalOptions.IsFlagsSet(FileSystemTraversalOptions.Refresh);
+      var children = EnumerateFileSystemInfosCore(startDirectoryInfo, maxDepth, true,
+        directoryInfo => GetChildrenCore(directoryInfo, searchPatternSelector),
+        fileSystemInfo => HasChildrenCore(fileSystemInfo, refresh),
+        (FileSystemInfo fileSystemInfo) =>
+          fileSystemInfo is DirectoryInfo directoryInfo && (directoryPredicate?.Invoke(directoryInfo) ?? true) ||
+          fileSystemInfo is FileInfo fileInfo && (filePredicate?.Invoke(fileInfo) ?? true),
+        comparison)
+        .OfType<FileInfo>();
+      if (reverse)
+        children = children.Reverse();
+      return children;
+    }
+
+    private static IEnumerable<TFileInfo> EnumerateFilesCore<TFileInfo>(DirectoryInfo startDirectoryInfo,
+      Func<DirectoryInfo, string?> searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Predicate<FileInfo>? filePredicate, Predicate<DirectoryInfo>? directoryPredicate, Comparison<FileSystemInfo>? comparison,
+      Func<FileInfo, TFileInfo> selector)
+    {
+      var reverse = traversalOptions.IsFlagsSet(FileSystemTraversalOptions.Reverse);
+      var refresh = traversalOptions.IsFlagsSet(FileSystemTraversalOptions.Refresh);
+      var children = EnumerateFileSystemInfosCore(startDirectoryInfo, maxDepth, true,
+        directoryInfo => GetChildrenCore(directoryInfo, searchPatternSelector),
+        fileSystemInfo => HasChildrenCore(fileSystemInfo, refresh),
+        fileSystemInfo =>
+          fileSystemInfo is DirectoryInfo directoryInfo && (directoryPredicate?.Invoke(directoryInfo) ?? true) ||
+          fileSystemInfo is FileInfo fileInfo && (filePredicate?.Invoke(fileInfo) ?? true),
+        comparison,
+        fileSystemInfo => fileSystemInfo is FileInfo fileInfo ? TryOut.Success(selector(fileInfo)) : TryOut.Failure<TFileInfo>());
+      if (reverse)
+        children = children.Reverse();
+      return children;
+    }
+
+    private static IEnumerable<FileInfo> EnumerateFilesCore(DirectoryInfo startDirectoryInfo,
+      Func<IReadOnlyList<DirectoryInfo>, string?> searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Predicate<(FileInfo fileInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? filePredicate, Predicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? directoryPredicate,
+      Comparison<FileSystemInfo>? comparison)
+    {
+      var reverse = traversalOptions.IsFlagsSet(FileSystemTraversalOptions.Reverse);
+      var refresh = traversalOptions.IsFlagsSet(FileSystemTraversalOptions.Refresh);
+      var context = Array.Empty<DirectoryInfo>();
+      var children = EnumerateFileSystemInfosCore(startDirectoryInfo, context, maxDepth, true,
+        parentalDirectoryInfos => GetChildrenCore(parentalDirectoryInfos, searchPatternSelector),
+        fileSystemInfo => HasChildrenCore(fileSystemInfo, refresh),
+        ((FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos) element) =>
+          element.fileSystemInfo is DirectoryInfo directoryInfo && (directoryPredicate?.Invoke((directoryInfo, element.parentalDirectoryInfos)) ?? true) ||
+          element.fileSystemInfo is FileInfo fileInfo && (filePredicate?.Invoke((fileInfo, element.parentalDirectoryInfos)) ?? true),
+        comparison)
+        .OfType<FileInfo>();
+      if (reverse)
+        children = children.Reverse();
+      return children;
+    }
+
+    private static IEnumerable<TFileInfo> EnumerateFilesCore<TFileInfo>(DirectoryInfo startDirectoryInfo,
+      Func<IReadOnlyList<DirectoryInfo>, string?> searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Predicate<(FileInfo fileInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? filePredicate, Predicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? directoryPredicate,
+      Comparison<FileSystemInfo>? comparison, Func<FileInfo, IReadOnlyList<DirectoryInfo>, TFileInfo> selector)
+    {
+      var reverse = traversalOptions.IsFlagsSet(FileSystemTraversalOptions.Reverse);
+      var refresh = traversalOptions.IsFlagsSet(FileSystemTraversalOptions.Refresh);
+      var context = Array.Empty<DirectoryInfo>();
+      var children = EnumerateFileSystemInfosCore(startDirectoryInfo, context, maxDepth, true,
+        parentalDirectoryInfos => GetChildrenCore(parentalDirectoryInfos, searchPatternSelector),
+        fileSystemInfo => HasChildrenCore(fileSystemInfo, refresh),
+        ((FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos) element) =>
+          element.fileSystemInfo is DirectoryInfo directoryInfo && (directoryPredicate?.Invoke((directoryInfo, element.parentalDirectoryInfos)) ?? true) ||
+          element.fileSystemInfo is FileInfo fileInfo && (filePredicate?.Invoke((fileInfo, element.parentalDirectoryInfos)) ?? true),
+        comparison,
+        (fileSystemInfo, parentalDirectoryInfos) => fileSystemInfo is FileInfo fileInfo ? TryOut.Success(selector(fileInfo, parentalDirectoryInfos)) : TryOut.Failure<TFileInfo>());
+      if (reverse)
+        children = children.Reverse();
+      return children;
+    }
+
     private static int ProcessFileSystemInfoCore(DirectoryInfo sourceDirectoryInfo, bool refresh, Func<DirectoryInfo, IEnumerable<FileSystemInfo>> getter, Func<FileSystemInfo, bool> action)
     {
       int count = 0;
@@ -386,29 +744,7 @@ namespace PowerLib.System.IO
       Argument.That.NotNull(startDirectoryInfo);
       Argument.That.NonNegative(maxDepth);
 
-      var excludeStart = traversalOptions.IsFlagsSet(FileSystemTraversalOptions.ExcludeStartDirectory);
-      var excludeEmpty = traversalOptions.IsFlagsSet(FileSystemTraversalOptions.ExcludeEmptyDirectory);
-      var reverse = traversalOptions.IsFlagsSet(FileSystemTraversalOptions.Reverse);
-      var refresh = traversalOptions.IsFlagsSet(FileSystemTraversalOptions.Refresh);
-      var children = EnumerateFileSystemInfosCore(startDirectoryInfo, maxDepth, excludeEmpty,
-        directoryInfo => directoryInfo.EnumerateFileSystemInfos(searchPatternSelector?.Invoke(directoryInfo) ?? DefaultSearchPattern, SearchOption.TopDirectoryOnly),
-        fileSystemInfo => HasChildrenCore(fileSystemInfo, refresh),
-        predicate, comparison);
-      if (reverse)
-        children = children.Reverse();
-      using var enumerator = children.GetEnumerator();
-      if (enumerator.MoveNext())
-      {
-        if (!excludeStart && !reverse)
-          yield return startDirectoryInfo;
-        do
-          yield return enumerator.Current;
-        while (enumerator.MoveNext());
-        if (!excludeStart && reverse)
-          yield return startDirectoryInfo;
-      }
-      else if (!excludeEmpty && !excludeStart)
-        yield return startDirectoryInfo;
+      return EnumerateFileSystemInfosCore(startDirectoryInfo, searchPatternSelector ?? (_ => DefaultSearchPattern), maxDepth, traversalOptions, predicate, comparison);
     }
 
     public static IEnumerable<FileSystemInfo> EnumerateFileSystemInfos(this DirectoryInfo startDirectoryInfo,
@@ -519,30 +855,7 @@ namespace PowerLib.System.IO
       Argument.That.NonNegative(maxDepth);
       Argument.That.NotNull(selector);
 
-      var excludeStart = traversalOptions.IsFlagsSet(FileSystemTraversalOptions.ExcludeStartDirectory);
-      var excludeEmpty = traversalOptions.IsFlagsSet(FileSystemTraversalOptions.ExcludeEmptyDirectory);
-      var reverse = traversalOptions.IsFlagsSet(FileSystemTraversalOptions.Reverse);
-      var refresh = traversalOptions.IsFlagsSet(FileSystemTraversalOptions.Refresh);
-      var children = EnumerateFileSystemInfosCore(startDirectoryInfo, maxDepth, excludeEmpty,
-        directoryInfo => directoryInfo.EnumerateFileSystemInfos(searchPatternSelector?.Invoke(directoryInfo) ?? DefaultSearchPattern, SearchOption.TopDirectoryOnly),
-        fileSystemInfo => HasChildrenCore(fileSystemInfo, refresh),
-        predicate, comparison,
-        (fileSystemInfo) => TryOut.Success(selector(fileSystemInfo)));
-      if (reverse)
-        children = children.Reverse();
-      using var enumerator = children.GetEnumerator();
-      if (enumerator.MoveNext())
-      {
-        if (!excludeStart && !reverse)
-          yield return selector(startDirectoryInfo);
-        do
-          yield return enumerator.Current;
-        while (enumerator.MoveNext());
-        if (!excludeStart && reverse)
-          yield return selector(startDirectoryInfo);
-      }
-      else if (!excludeEmpty && !excludeStart)
-        yield return selector(startDirectoryInfo);
+      return EnumerateFileSystemInfosCore(startDirectoryInfo, searchPatternSelector ?? (_ => DefaultSearchPattern), maxDepth, traversalOptions, predicate, comparison, selector);
     }
 
     public static IEnumerable<TFileSystemInfo> EnumerateFileSystemInfos<TFileSystemInfo>(this DirectoryInfo startDirectoryInfo,
@@ -653,30 +966,7 @@ namespace PowerLib.System.IO
       Argument.That.NotNull(startDirectoryInfo);
       Argument.That.NonNegative(maxDepth);
 
-      var excludeStart = traversalOptions.IsFlagsSet(FileSystemTraversalOptions.ExcludeStartDirectory);
-      var excludeEmpty = traversalOptions.IsFlagsSet(FileSystemTraversalOptions.ExcludeEmptyDirectory);
-      var reverse = traversalOptions.IsFlagsSet(FileSystemTraversalOptions.Reverse);
-      var refresh = traversalOptions.IsFlagsSet(FileSystemTraversalOptions.Refresh);
-      var context = Array.Empty<DirectoryInfo>();
-      var children = EnumerateFileSystemInfosCore(startDirectoryInfo, context, maxDepth, excludeEmpty,
-        parentalDirectoryInfos => parentalDirectoryInfos.GetLast().EnumerateFileSystemInfos(searchPatternSelector?.Invoke(parentalDirectoryInfos) ?? DefaultSearchPattern, SearchOption.TopDirectoryOnly),
-        fileSystemInfo => HasChildrenCore(fileSystemInfo, refresh),
-        predicate, comparison);
-      if (reverse)
-        children = children.Reverse();
-      using var enumerator = children.GetEnumerator();
-      if (enumerator.MoveNext())
-      {
-        if (!excludeStart && !reverse)
-          yield return startDirectoryInfo;
-        do
-          yield return enumerator.Current;
-        while (enumerator.MoveNext());
-        if (!excludeStart && reverse)
-          yield return startDirectoryInfo;
-      }
-      else if (!excludeEmpty && !excludeStart)
-        yield return startDirectoryInfo;
+      return EnumerateFileSystemInfosCore(startDirectoryInfo, searchPatternSelector ?? (_ => DefaultSearchPattern), maxDepth, traversalOptions, predicate, comparison);
     }
 
     public static IEnumerable<FileSystemInfo> EnumerateFileSystemInfosEx(this DirectoryInfo startDirectoryInfo,
@@ -788,31 +1078,7 @@ namespace PowerLib.System.IO
       Argument.That.NonNegative(maxDepth);
       Argument.That.NotNull(selector);
 
-      var excludeStart = traversalOptions.IsFlagsSet(FileSystemTraversalOptions.ExcludeStartDirectory);
-      var excludeEmpty = traversalOptions.IsFlagsSet(FileSystemTraversalOptions.ExcludeEmptyDirectory);
-      var reverse = traversalOptions.IsFlagsSet(FileSystemTraversalOptions.Reverse);
-      var refresh = traversalOptions.IsFlagsSet(FileSystemTraversalOptions.Refresh);
-      var context = Array.Empty<DirectoryInfo>();
-      var children = EnumerateFileSystemInfosCore(startDirectoryInfo, context, maxDepth, excludeEmpty,
-        parentalDirectoryInfos => parentalDirectoryInfos.GetLast().EnumerateFileSystemInfos(searchPatternSelector?.Invoke(parentalDirectoryInfos) ?? DefaultSearchPattern, SearchOption.TopDirectoryOnly),
-        fileSystemInfo => HasChildrenCore(fileSystemInfo, refresh),
-        predicate, comparison,
-        (fileSystemInfo, parentalDirectoryInfos) => TryOut.Success(selector(fileSystemInfo, parentalDirectoryInfos)));
-      if (reverse)
-        children = children.Reverse();
-      using var enumerator = children.GetEnumerator();
-      if (enumerator.MoveNext())
-      {
-        if (!excludeStart && !reverse)
-          yield return selector(startDirectoryInfo, context);
-        do
-          yield return enumerator.Current;
-        while (enumerator.MoveNext());
-        if (!excludeStart && reverse)
-          yield return selector(startDirectoryInfo, context);
-      }
-      else if (!excludeEmpty && !excludeStart)
-        yield return selector(startDirectoryInfo, context);
+      return EnumerateFileSystemInfosCore(startDirectoryInfo, searchPatternSelector ?? (_ => DefaultSearchPattern), maxDepth, traversalOptions, predicate, comparison, selector);
     }
 
     public static IEnumerable<TFileSystemInfo> EnumerateFileSystemInfosEx<TFileSystemInfo>(this DirectoryInfo startDirectoryInfo,
@@ -923,31 +1189,7 @@ namespace PowerLib.System.IO
       Argument.That.NotNull(startDirectoryInfo);
       Argument.That.NonNegative(maxDepth);
 
-      var excludeStart = traversalOptions.IsFlagsSet(FileSystemTraversalOptions.ExcludeStartDirectory);
-      var excludeEmpty = traversalOptions.IsFlagsSet(FileSystemTraversalOptions.ExcludeEmptyDirectory);
-      var reverse = traversalOptions.IsFlagsSet(FileSystemTraversalOptions.Reverse);
-      var refresh = traversalOptions.IsFlagsSet(FileSystemTraversalOptions.Refresh);
-      var children = EnumerateFileSystemInfosCore(startDirectoryInfo, maxDepth, excludeEmpty,
-        directoryInfo => directoryInfo.EnumerateDirectories(searchPatternSelector?.Invoke(directoryInfo) ?? DefaultSearchPattern, SearchOption.TopDirectoryOnly),
-        fileSystemInfo => HasChildrenCore(fileSystemInfo, refresh),
-        fileSystemInfo => fileSystemInfo is DirectoryInfo directoryInfo && (predicate?.Invoke(directoryInfo) ?? true),
-        comparison is not null ? (x, y) => comparison((DirectoryInfo)x, (DirectoryInfo)y) : default)
-        .Cast<DirectoryInfo>();
-      if (reverse)
-        children = children.Reverse();
-      using var enumerator = children.GetEnumerator();
-      if (enumerator.MoveNext())
-      {
-        if (!excludeStart && !reverse)
-          yield return startDirectoryInfo;
-        do
-          yield return enumerator.Current;
-        while (enumerator.MoveNext());
-        if (!excludeStart && reverse)
-          yield return startDirectoryInfo;
-      }
-      else if (!excludeEmpty && !excludeStart)
-        yield return startDirectoryInfo;
+      return EnumerateDirectoriesCore(startDirectoryInfo, searchPatternSelector ?? (_ => DefaultSearchPattern), maxDepth, traversalOptions, predicate, comparison);
     }
 
     public static IEnumerable<DirectoryInfo> EnumerateDirectories(this DirectoryInfo startDirectoryInfo,
@@ -1059,31 +1301,7 @@ namespace PowerLib.System.IO
       Argument.That.NonNegative(maxDepth);
       Argument.That.NotNull(selector);
 
-      var excludeStart = traversalOptions.IsFlagsSet(FileSystemTraversalOptions.ExcludeStartDirectory);
-      var excludeEmpty = traversalOptions.IsFlagsSet(FileSystemTraversalOptions.ExcludeEmptyDirectory);
-      var reverse = traversalOptions.IsFlagsSet(FileSystemTraversalOptions.Reverse);
-      var refresh = traversalOptions.IsFlagsSet(FileSystemTraversalOptions.Refresh);
-      var children = EnumerateFileSystemInfosCore(startDirectoryInfo, maxDepth, excludeEmpty,
-        directoryInfo => directoryInfo.EnumerateDirectories(searchPatternSelector?.Invoke(directoryInfo) ?? DefaultSearchPattern, SearchOption.TopDirectoryOnly),
-        fileSystemInfo => HasChildrenCore(fileSystemInfo, refresh),
-        fileSystemInfo => fileSystemInfo is DirectoryInfo directoryInfo && (predicate?.Invoke(directoryInfo) ?? true),
-        comparison is not null ? (x, y) => comparison((DirectoryInfo)x, (DirectoryInfo)y) : default,
-        fileSystemInfo => fileSystemInfo is DirectoryInfo directoryInfo ? TryOut.Success(selector(directoryInfo)) : TryOut.Failure<TDirectoryInfo>());
-      if (reverse)
-        children = children.Reverse();
-      using var enumerator = children.GetEnumerator();
-      if (enumerator.MoveNext())
-      {
-        if (!excludeStart && !reverse)
-          yield return selector(startDirectoryInfo);
-        do
-          yield return enumerator.Current;
-        while (enumerator.MoveNext());
-        if (!excludeStart && reverse)
-          yield return selector(startDirectoryInfo);
-      }
-      else if (!excludeEmpty && !excludeStart)
-        yield return selector(startDirectoryInfo);
+      return EnumerateDirectoriesCore(startDirectoryInfo, searchPatternSelector ?? (_ => DefaultSearchPattern), maxDepth, traversalOptions, predicate, comparison, selector);
     }
 
     public static IEnumerable<TDirectoryInfo> EnumerateDirectories<TDirectoryInfo>(this DirectoryInfo startDirectoryInfo,
@@ -1194,33 +1412,7 @@ namespace PowerLib.System.IO
       Argument.That.NotNull(startDirectoryInfo);
       Argument.That.NonNegative(maxDepth);
 
-      var excludeStart = traversalOptions.IsFlagsSet(FileSystemTraversalOptions.ExcludeStartDirectory);
-      var excludeEmpty = traversalOptions.IsFlagsSet(FileSystemTraversalOptions.ExcludeEmptyDirectory);
-      var reverse = traversalOptions.IsFlagsSet(FileSystemTraversalOptions.Reverse);
-      var refresh = traversalOptions.IsFlagsSet(FileSystemTraversalOptions.Refresh);
-      var context = Array.Empty<DirectoryInfo>();
-      var children = EnumerateFileSystemInfosCore(startDirectoryInfo, context, maxDepth, excludeEmpty,
-        parentalDirectoryInfos => parentalDirectoryInfos.GetLast().EnumerateDirectories(searchPatternSelector?.Invoke(parentalDirectoryInfos) ?? DefaultSearchPattern, SearchOption.TopDirectoryOnly),
-        fileSystemInfo => HasChildrenCore(fileSystemInfo, refresh),
-        ((FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos) element) =>
-          element.fileSystemInfo is DirectoryInfo directoryInfo && (predicate?.Invoke((directoryInfo, element.parentalDirectoryInfos)) ?? true),
-        comparison is not null ? (x, y) => comparison((DirectoryInfo)x, (DirectoryInfo)y) : default)
-        .Cast<DirectoryInfo>();
-      if (reverse)
-        children = children.Reverse();
-      using var enumerator = children.GetEnumerator();
-      if (enumerator.MoveNext())
-      {
-        if (!excludeStart && !reverse)
-          yield return startDirectoryInfo;
-        do
-          yield return enumerator.Current;
-        while (enumerator.MoveNext());
-        if (!excludeStart && reverse)
-          yield return startDirectoryInfo;
-      }
-      else if (!excludeEmpty && !excludeStart)
-        yield return startDirectoryInfo;
+      return EnumerateDirectoriesCore(startDirectoryInfo, searchPatternSelector ?? (_ => DefaultSearchPattern), maxDepth, traversalOptions, predicate, comparison);
     }
 
     public static IEnumerable<DirectoryInfo> EnumerateDirectoriesEx(this DirectoryInfo startDirectoryInfo,
@@ -1332,34 +1524,7 @@ namespace PowerLib.System.IO
       Argument.That.NonNegative(maxDepth);
       Argument.That.NotNull(selector);
 
-      var excludeStart = traversalOptions.IsFlagsSet(FileSystemTraversalOptions.ExcludeStartDirectory);
-      var excludeEmpty = traversalOptions.IsFlagsSet(FileSystemTraversalOptions.ExcludeEmptyDirectory);
-      var reverse = traversalOptions.IsFlagsSet(FileSystemTraversalOptions.Reverse);
-      var refresh = traversalOptions.IsFlagsSet(FileSystemTraversalOptions.Refresh);
-      var context = Array.Empty<DirectoryInfo>();
-      var children = EnumerateFileSystemInfosCore(startDirectoryInfo, context, maxDepth, excludeEmpty,
-        parentalDirectoryInfos => parentalDirectoryInfos.GetLast().EnumerateDirectories(searchPatternSelector?.Invoke(parentalDirectoryInfos) ?? DefaultSearchPattern, SearchOption.TopDirectoryOnly),
-        fileSystemInfo => HasChildrenCore(fileSystemInfo, refresh),
-        ((FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos) element) =>
-          element.fileSystemInfo is DirectoryInfo directoryInfo && (predicate?.Invoke((directoryInfo, element.parentalDirectoryInfos)) ?? true),
-        comparison is not null ? (x, y) => comparison((DirectoryInfo)x, (DirectoryInfo)y) : default,
-        (FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)
-          => fileSystemInfo is DirectoryInfo directoryInfo ? TryOut.Success(selector(directoryInfo, parentalDirectoryInfos)) : TryOut.Failure<TDirectoryInfo>());
-      if (reverse)
-        children = children.Reverse();
-      using var enumerator = children.GetEnumerator();
-      if (enumerator.MoveNext())
-      {
-        if (!excludeStart && !reverse)
-          yield return selector(startDirectoryInfo, context);
-        do
-          yield return enumerator.Current;
-        while (enumerator.MoveNext());
-        if (!excludeStart && reverse)
-          yield return selector(startDirectoryInfo, context);
-      }
-      else if (!excludeEmpty && !excludeStart)
-        yield return selector(startDirectoryInfo, context);
+      return EnumerateDirectoriesCore(startDirectoryInfo, searchPatternSelector ?? (_ => DefaultSearchPattern), maxDepth, traversalOptions, predicate, comparison, selector);
     }
 
     public static IEnumerable<TDirectoryInfo> EnumerateDirectoriesEx<TDirectoryInfo>(this DirectoryInfo startDirectoryInfo,
@@ -1470,19 +1635,7 @@ namespace PowerLib.System.IO
       Argument.That.NotNull(startDirectoryInfo);
       Argument.That.NonNegative(maxDepth);
 
-      var reverse = traversalOptions.IsFlagsSet(FileSystemTraversalOptions.Reverse);
-      var refresh = traversalOptions.IsFlagsSet(FileSystemTraversalOptions.Refresh);
-      var children = EnumerateFileSystemInfosCore(startDirectoryInfo, maxDepth, true,
-        directoryInfo => directoryInfo.EnumerateFileSystemInfos(searchPatternSelector?.Invoke(directoryInfo) ?? DefaultSearchPattern, SearchOption.TopDirectoryOnly),
-        fileSystemInfo => HasChildrenCore(fileSystemInfo, refresh),
-        (FileSystemInfo fileSystemInfo) =>
-          fileSystemInfo is DirectoryInfo directoryInfo && (directoryPredicate?.Invoke(directoryInfo) ?? true) ||
-          fileSystemInfo is FileInfo fileInfo && (filePredicate?.Invoke(fileInfo) ?? true),
-        comparison)
-        .OfType<FileInfo>();
-      if (reverse)
-        children = children.Reverse();
-      return children;
+      return EnumerateFilesCore(startDirectoryInfo, searchPatternSelector ?? (_ => DefaultSearchPattern), maxDepth, traversalOptions, filePredicate, directoryPredicate, comparison);
     }
 
     public static IEnumerable<FileInfo> EnumerateFiles(this DirectoryInfo startDirectoryInfo,
@@ -1599,19 +1752,7 @@ namespace PowerLib.System.IO
       Argument.That.NonNegative(maxDepth);
       Argument.That.NotNull(selector);
 
-      var reverse = traversalOptions.IsFlagsSet(FileSystemTraversalOptions.Reverse);
-      var refresh = traversalOptions.IsFlagsSet(FileSystemTraversalOptions.Refresh);
-      var children = EnumerateFileSystemInfosCore(startDirectoryInfo, maxDepth, true,
-        directoryInfo => directoryInfo.EnumerateFileSystemInfos(searchPatternSelector?.Invoke(directoryInfo) ?? DefaultSearchPattern, SearchOption.TopDirectoryOnly),
-        fileSystemInfo => HasChildrenCore(fileSystemInfo, refresh),
-        fileSystemInfo =>
-          fileSystemInfo is DirectoryInfo directoryInfo && (directoryPredicate?.Invoke(directoryInfo) ?? true) ||
-          fileSystemInfo is FileInfo fileInfo && (filePredicate?.Invoke(fileInfo) ?? true),
-        comparison,
-        fileSystemInfo => fileSystemInfo is FileInfo fileInfo ? TryOut.Success(selector(fileInfo)) : TryOut.Failure<TFileInfo>());
-      if (reverse)
-        children = children.Reverse();
-      return children;
+      return EnumerateFilesCore(startDirectoryInfo, searchPatternSelector ?? (_ => DefaultSearchPattern), maxDepth, traversalOptions, filePredicate, directoryPredicate, comparison, selector);
     }
 
     public static IEnumerable<TFileInfo> EnumerateFiles<TFileInfo>(this DirectoryInfo startDirectoryInfo,
@@ -1737,20 +1878,7 @@ namespace PowerLib.System.IO
       Argument.That.NotNull(startDirectoryInfo);
       Argument.That.NonNegative(maxDepth);
 
-      var reverse = traversalOptions.IsFlagsSet(FileSystemTraversalOptions.Reverse);
-      var refresh = traversalOptions.IsFlagsSet(FileSystemTraversalOptions.Refresh);
-      var context = Array.Empty<DirectoryInfo>();
-      var children = EnumerateFileSystemInfosCore(startDirectoryInfo, context, maxDepth, true,
-        parentalDirectoryInfos => parentalDirectoryInfos.GetLast().EnumerateFileSystemInfos(searchPatternSelector?.Invoke(parentalDirectoryInfos) ?? DefaultSearchPattern, SearchOption.TopDirectoryOnly),
-        fileSystemInfo => HasChildrenCore(fileSystemInfo, refresh),
-        ((FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos) element) =>
-          element.fileSystemInfo is DirectoryInfo directoryInfo && (directoryPredicate?.Invoke((directoryInfo, element.parentalDirectoryInfos)) ?? true) ||
-          element.fileSystemInfo is FileInfo fileInfo && (filePredicate?.Invoke((fileInfo, element.parentalDirectoryInfos)) ?? true),
-        comparison)
-        .OfType<FileInfo>();
-      if (reverse)
-        children = children.Reverse();
-      return children;
+      return EnumerateFilesCore(startDirectoryInfo, searchPatternSelector ?? (_ => DefaultSearchPattern), maxDepth, traversalOptions, filePredicate, directoryPredicate, comparison);
     }
 
     public static IEnumerable<FileInfo> EnumerateFilesEx(this DirectoryInfo startDirectoryInfo,
@@ -1867,20 +1995,7 @@ namespace PowerLib.System.IO
       Argument.That.NonNegative(maxDepth);
       Argument.That.NotNull(selector);
 
-      var reverse = traversalOptions.IsFlagsSet(FileSystemTraversalOptions.Reverse);
-      var refresh = traversalOptions.IsFlagsSet(FileSystemTraversalOptions.Refresh);
-      var context = Array.Empty<DirectoryInfo>();
-      var children = EnumerateFileSystemInfosCore(startDirectoryInfo, context, maxDepth, true,
-        parentalDirectoryInfos => parentalDirectoryInfos.GetLast().EnumerateFileSystemInfos(searchPatternSelector?.Invoke(parentalDirectoryInfos) ?? DefaultSearchPattern, SearchOption.TopDirectoryOnly),
-        fileSystemInfo => HasChildrenCore(fileSystemInfo, refresh),
-        ((FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos) element) =>
-          element.fileSystemInfo is DirectoryInfo directoryInfo && (directoryPredicate?.Invoke((directoryInfo, element.parentalDirectoryInfos)) ?? true) ||
-          element.fileSystemInfo is FileInfo fileInfo && (filePredicate?.Invoke((fileInfo, element.parentalDirectoryInfos)) ?? true),
-        comparison,
-        (fileSystemInfo, parentalDirectoryInfos) => fileSystemInfo is FileInfo fileInfo ? TryOut.Success(selector(fileInfo, parentalDirectoryInfos)) : TryOut.Failure<TFileInfo>());
-      if (reverse)
-        children = children.Reverse();
-      return children;
+      return EnumerateFilesCore(startDirectoryInfo, searchPatternSelector ?? (_ => DefaultSearchPattern), maxDepth, traversalOptions, filePredicate, directoryPredicate, comparison, selector);
     }
 
     public static IEnumerable<TFileInfo> EnumerateFilesEx<TFileInfo>(this DirectoryInfo startDirectoryInfo,
@@ -2008,7 +2123,8 @@ namespace PowerLib.System.IO
       Argument.That.NotNull(copying);
 
       return ProcessFileSystemInfoCore(sourceDirectoryInfo, traversalOptions.IsFlagsSet(FileSystemTraversalOptions.Refresh),
-        directoryInfo => directoryInfo.EnumerateFileSystemInfos(searchPatternSelector, maxDepth, traversalOptions, predicate, new SelectComparer<FileSystemInfo, bool>(fileSystemInfo => fileSystemInfo is FileInfo).Compare),
+        directoryInfo => EnumerateFileSystemInfosCore(directoryInfo, searchPatternSelector ?? (_ => DefaultSearchPattern), maxDepth, traversalOptions, predicate,
+          new SelectComparer<FileSystemInfo, bool>(fileSystemInfo => fileSystemInfo is FileInfo).Compare),
         fileSystemInfo => CopyCore(fileSystemInfo, copying));
     }
 
@@ -2069,7 +2185,8 @@ namespace PowerLib.System.IO
       Argument.That.NotNull(copying);
 
       return ProcessFileSystemInfoCore(sourceDirectoryInfo, traversalOptions.IsFlagsSet(FileSystemTraversalOptions.Refresh),
-        directoryInfo => directoryInfo.EnumerateFileSystemInfosEx(searchPatternSelector, maxDepth, traversalOptions, predicate, new SelectComparer<FileSystemInfo, bool>(fileSystemInfo => fileSystemInfo is FileInfo).Compare),
+        directoryInfo => EnumerateFileSystemInfosCore(directoryInfo, searchPatternSelector ?? (_ => DefaultSearchPattern), maxDepth, traversalOptions, predicate,
+          new SelectComparer<FileSystemInfo, bool>(fileSystemInfo => fileSystemInfo is FileInfo).Compare),
         fileSystemInfo => CopyCore(fileSystemInfo, copying));
     }
 
@@ -2130,7 +2247,8 @@ namespace PowerLib.System.IO
       Argument.That.NotNull(moving);
 
       return ProcessFileSystemInfoCore(sourceDirectoryInfo, traversalOptions.IsFlagsSet(FileSystemTraversalOptions.Refresh),
-        directoryInfo => directoryInfo.EnumerateFileSystemInfos(searchPatternSelector, maxDepth, traversalOptions, predicate, new SelectComparer<FileSystemInfo, bool>(fileSystemInfo => fileSystemInfo is FileInfo).Compare),
+        directoryInfo => EnumerateFileSystemInfosCore(directoryInfo, searchPatternSelector ?? (_ => DefaultSearchPattern), maxDepth, traversalOptions, predicate,
+          new SelectComparer<FileSystemInfo, bool>(fileSystemInfo => fileSystemInfo is FileInfo).Compare),
         fileSystemInfo => MoveCore(fileSystemInfo, moving));
     }
 
@@ -2191,7 +2309,8 @@ namespace PowerLib.System.IO
       Argument.That.NotNull(moving);
 
       return ProcessFileSystemInfoCore(sourceDirectoryInfo, traversalOptions.IsFlagsSet(FileSystemTraversalOptions.Refresh),
-        directoryInfo => directoryInfo.EnumerateFileSystemInfosEx(searchPatternSelector, maxDepth, traversalOptions, predicate, new SelectComparer<FileSystemInfo, bool>(fileSystemInfo => fileSystemInfo is FileInfo).Compare),
+        directoryInfo => EnumerateFileSystemInfosCore(directoryInfo, searchPatternSelector ?? (_ => DefaultSearchPattern), maxDepth, traversalOptions, predicate,
+          new SelectComparer<FileSystemInfo, bool>(fileSystemInfo => fileSystemInfo is FileInfo).Compare),
         fileSystemInfo => MoveCore(fileSystemInfo, moving));
     }
 
@@ -2252,7 +2371,8 @@ namespace PowerLib.System.IO
       Argument.That.NotNull(deleting);
 
       return ProcessFileSystemInfoCore(sourceDirectoryInfo, traversalOptions.IsFlagsSet(FileSystemTraversalOptions.Refresh),
-        directoryInfo => directoryInfo.EnumerateFileSystemInfos(searchPatternSelector, maxDepth, traversalOptions, predicate, new SelectComparer<FileSystemInfo, bool>(fileSystemInfo => fileSystemInfo is FileInfo).Compare),
+        directoryInfo => EnumerateFileSystemInfosCore(directoryInfo, searchPatternSelector ?? (_ => DefaultSearchPattern), maxDepth, traversalOptions, predicate,
+          new SelectComparer<FileSystemInfo, bool>(fileSystemInfo => fileSystemInfo is FileInfo).Compare),
         fileSystemInfo => DeleteCore(fileSystemInfo, deleting));
     }
 
@@ -2313,7 +2433,8 @@ namespace PowerLib.System.IO
       Argument.That.NotNull(deleting);
 
       return ProcessFileSystemInfoCore(sourceDirectoryInfo, traversalOptions.IsFlagsSet(FileSystemTraversalOptions.Refresh),
-        directoryInfo => directoryInfo.EnumerateFileSystemInfosEx(searchPatternSelector, maxDepth, traversalOptions, predicate, new SelectComparer<FileSystemInfo, bool>(fileSystemInfo => fileSystemInfo is FileInfo).Compare),
+        directoryInfo => EnumerateFileSystemInfosCore(directoryInfo, searchPatternSelector ?? (_ => DefaultSearchPattern), maxDepth, traversalOptions, predicate,
+          new SelectComparer<FileSystemInfo, bool>(fileSystemInfo => fileSystemInfo is FileInfo).Compare),
         fileSystemInfo => DeleteCore(fileSystemInfo, deleting));
     }
 
