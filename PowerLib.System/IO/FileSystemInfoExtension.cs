@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -277,16 +278,18 @@ namespace PowerLib.System.IO
       }
     }
 
-    private static IEnumerable<FileSystemInfo> EnumerateFileSystemInfosCore(DirectoryInfo startDirectoryInfo, DirectoryInfo[] parentalDirectoryInfos, int maxDepth, bool excludeEmpty,
+    private static IEnumerable<FileSystemInfo> EnumerateFileSystemInfosCore(DirectoryInfo startDirectoryInfo,
+      ParentalDirectoriesContext parentalDirectoriesContext, int maxDepth, bool excludeEmpty,
       Func<IReadOnlyList<DirectoryInfo>, IEnumerable<FileSystemInfo>> getChildren, Predicate<FileSystemInfo> hasChildren,
       Predicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Comparison<FileSystemInfo>? comparison)
     {
       if (maxDepth == 0 || !hasChildren(startDirectoryInfo))
         yield break;
-      parentalDirectoryInfos = parentalDirectoryInfos.Concat(Enumerable.Repeat(startDirectoryInfo, 1)).ToArray();
-      var children = getChildren(parentalDirectoryInfos);
+      parentalDirectoriesContext.Push(startDirectoryInfo);
+      var level = parentalDirectoriesContext.Total;
+      var children = getChildren(parentalDirectoriesContext.AtLevel(level));
       if (predicate is not null)
-        children = children.Where(fileSystemInfo => predicate((fileSystemInfo, parentalDirectoryInfos)));
+        children = children.Where(fileSystemInfo => predicate((fileSystemInfo, parentalDirectoriesContext.AtLevel(level))));
       if (comparison is not null)
         children = children.Sort(comparison);
       foreach (FileSystemInfo fileSystemInfo in children)
@@ -300,7 +303,7 @@ namespace PowerLib.System.IO
         {
           if (fileSystemInfo is DirectoryInfo directoryInfo)
           {
-            using var enumerator = EnumerateFileSystemInfosCore(directoryInfo, parentalDirectoryInfos, maxDepth - 1, excludeEmpty, getChildren, hasChildren, predicate, comparison)
+            using var enumerator = EnumerateFileSystemInfosCore(directoryInfo, parentalDirectoriesContext, maxDepth - 1, excludeEmpty, getChildren, hasChildren, predicate, comparison)
               .GetEnumerator();
             if (enumerator.MoveNext())
             {
@@ -321,19 +324,22 @@ namespace PowerLib.System.IO
         else if (!excludeEmpty)
           yield return fileSystemInfo!;
       }
+      parentalDirectoriesContext.Pop();
     }
 
-    private static IEnumerable<TFileSystemInfo> EnumerateFileSystemInfosCore<TFileSystemInfo>(DirectoryInfo startDirectoryInfo, DirectoryInfo[] parentalDirectoryInfos, int maxDepth, bool excludeEmpty,
+    private static IEnumerable<TFileSystemInfo> EnumerateFileSystemInfosCore<TFileSystemInfo>(DirectoryInfo startDirectoryInfo,
+      ParentalDirectoriesContext parentalDirectoriesContext, int maxDepth, bool excludeEmpty,
       Func<IReadOnlyList<DirectoryInfo>, IEnumerable<FileSystemInfo>> getChildren, Predicate<FileSystemInfo> hasChildren,
       Predicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Comparison<FileSystemInfo>? comparison,
       Func<FileSystemInfo, IReadOnlyList<DirectoryInfo>, TryOut<TFileSystemInfo>> selector)
     {
       if (maxDepth == 0 || !hasChildren(startDirectoryInfo))
         yield break;
-      parentalDirectoryInfos = parentalDirectoryInfos.Concat(Enumerable.Repeat(startDirectoryInfo, 1)).ToArray();
-      var children = getChildren(parentalDirectoryInfos);
+      parentalDirectoriesContext.Push(startDirectoryInfo);
+      var level = parentalDirectoriesContext.Total;
+      var children = getChildren(parentalDirectoriesContext.AtLevel(level));
       if (predicate is not null)
-        children = children.Where(fileSystemInfo => predicate((fileSystemInfo, parentalDirectoryInfos)));
+        children = children.Where(fileSystemInfo => predicate((fileSystemInfo, parentalDirectoriesContext.AtLevel(level))));
       if (comparison is not null)
         children = children.Sort(comparison);
       foreach (FileSystemInfo fileSystemInfo in children)
@@ -342,7 +348,7 @@ namespace PowerLib.System.IO
         {
           if (!(excludeEmpty && fileSystemInfo is DirectoryInfo))
           {
-            var result = selector(fileSystemInfo, parentalDirectoryInfos);
+            var result = selector(fileSystemInfo, parentalDirectoriesContext.AtLevel(level));
             if (result.Success)
               yield return result.Value!;
           }
@@ -352,11 +358,11 @@ namespace PowerLib.System.IO
           var directoryInfo = fileSystemInfo as DirectoryInfo;
           if (directoryInfo is not null)
           {
-            using var enumerator = EnumerateFileSystemInfosCore(directoryInfo, parentalDirectoryInfos, maxDepth - 1, excludeEmpty, getChildren, hasChildren, predicate, comparison, selector)
+            using var enumerator = EnumerateFileSystemInfosCore(directoryInfo, parentalDirectoriesContext, maxDepth - 1, excludeEmpty, getChildren, hasChildren, predicate, comparison, selector)
               .GetEnumerator();
             if (enumerator.MoveNext())
             {
-              var result = selector(fileSystemInfo, parentalDirectoryInfos);
+              var result = selector(fileSystemInfo, parentalDirectoriesContext.AtLevel(level));
               if (result.Success)
                 yield return result.Value!;
               if (maxDepth == 1)
@@ -368,25 +374,26 @@ namespace PowerLib.System.IO
             }
             else if (!excludeEmpty)
             {
-              var result = selector(fileSystemInfo, parentalDirectoryInfos);
+              var result = selector(fileSystemInfo, parentalDirectoriesContext.AtLevel(level));
               if (result.Success)
                 yield return result.Value!;
             }
           }
           else
           {
-            var result = selector(fileSystemInfo, parentalDirectoryInfos);
+            var result = selector(fileSystemInfo, parentalDirectoriesContext.AtLevel(level));
             if (result.Success)
               yield return result.Value!;
           }
         }
         else if (!excludeEmpty)
         {
-          var result = selector(fileSystemInfo, parentalDirectoryInfos);
+          var result = selector(fileSystemInfo, parentalDirectoriesContext.AtLevel(level));
           if (result.Success)
             yield return result.Value!;
         }
       }
+      parentalDirectoriesContext.Pop();
     }
 
     private static IEnumerable<FileSystemInfo> EnumerateFileSystemInfosCore(DirectoryInfo startDirectoryInfo,
@@ -456,8 +463,8 @@ namespace PowerLib.System.IO
       var excludeEmpty = traversalOptions.IsFlagsSet(FileSystemTraversalOptions.ExcludeEmptyDirectory);
       var reverse = traversalOptions.IsFlagsSet(FileSystemTraversalOptions.Reverse);
       var refresh = traversalOptions.IsFlagsSet(FileSystemTraversalOptions.Refresh);
-      var context = Array.Empty<DirectoryInfo>();
-      var children = EnumerateFileSystemInfosCore(startDirectoryInfo, context, maxDepth, excludeEmpty,
+      var parentalDirectoriesContext = new ParentalDirectoriesContext();
+      var children = EnumerateFileSystemInfosCore(startDirectoryInfo, parentalDirectoriesContext, maxDepth, excludeEmpty,
         parentalDirectoryInfos => GetChildrenCore(parentalDirectoryInfos, searchPatternSelector),
         fileSystemInfo => HasChildrenCore(fileSystemInfo, refresh),
         predicate, comparison);
@@ -487,8 +494,9 @@ namespace PowerLib.System.IO
       var excludeEmpty = traversalOptions.IsFlagsSet(FileSystemTraversalOptions.ExcludeEmptyDirectory);
       var reverse = traversalOptions.IsFlagsSet(FileSystemTraversalOptions.Reverse);
       var refresh = traversalOptions.IsFlagsSet(FileSystemTraversalOptions.Refresh);
-      var context = Array.Empty<DirectoryInfo>();
-      var children = EnumerateFileSystemInfosCore(startDirectoryInfo, context, maxDepth, excludeEmpty,
+      var parentalDirectoriesContext = new ParentalDirectoriesContext();
+      var level = parentalDirectoriesContext.Total;
+      var children = EnumerateFileSystemInfosCore(startDirectoryInfo, parentalDirectoriesContext, maxDepth, excludeEmpty,
         parentalDirectoryInfos => GetChildrenCore(parentalDirectoryInfos, searchPatternSelector),
         fileSystemInfo => HasChildrenCore(fileSystemInfo, refresh),
         predicate, comparison,
@@ -499,15 +507,15 @@ namespace PowerLib.System.IO
       if (enumerator.MoveNext())
       {
         if (!excludeStart && !reverse)
-          yield return selector(startDirectoryInfo, context);
+          yield return selector(startDirectoryInfo, parentalDirectoriesContext.AtLevel(level));
         do
           yield return enumerator.Current;
         while (enumerator.MoveNext());
         if (!excludeStart && reverse)
-          yield return selector(startDirectoryInfo, context);
+          yield return selector(startDirectoryInfo, parentalDirectoriesContext.AtLevel(level));
       }
       else if (!excludeEmpty && !excludeStart)
-        yield return selector(startDirectoryInfo, context);
+        yield return selector(startDirectoryInfo, parentalDirectoriesContext.AtLevel(level));
     }
 
     private static IEnumerable<DirectoryInfo> EnumerateDirectoriesCore(DirectoryInfo startDirectoryInfo,
@@ -583,8 +591,8 @@ namespace PowerLib.System.IO
       var excludeEmpty = traversalOptions.IsFlagsSet(FileSystemTraversalOptions.ExcludeEmptyDirectory);
       var reverse = traversalOptions.IsFlagsSet(FileSystemTraversalOptions.Reverse);
       var refresh = traversalOptions.IsFlagsSet(FileSystemTraversalOptions.Refresh);
-      var context = Array.Empty<DirectoryInfo>();
-      var children = EnumerateFileSystemInfosCore(startDirectoryInfo, context, maxDepth, excludeEmpty,
+      var parentalDirectoriesContext = new ParentalDirectoriesContext();
+      var children = EnumerateFileSystemInfosCore(startDirectoryInfo, parentalDirectoriesContext, maxDepth, excludeEmpty,
         parentalDirectoryInfos => GetChildDirectoriesCore(parentalDirectoryInfos, searchPatternSelector),
         fileSystemInfo => HasChildrenCore(fileSystemInfo, refresh),
         ((FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos) element) =>
@@ -616,8 +624,9 @@ namespace PowerLib.System.IO
       var excludeEmpty = traversalOptions.IsFlagsSet(FileSystemTraversalOptions.ExcludeEmptyDirectory);
       var reverse = traversalOptions.IsFlagsSet(FileSystemTraversalOptions.Reverse);
       var refresh = traversalOptions.IsFlagsSet(FileSystemTraversalOptions.Refresh);
-      var context = Array.Empty<DirectoryInfo>();
-      var children = EnumerateFileSystemInfosCore(startDirectoryInfo, context, maxDepth, excludeEmpty,
+      var parentalDirectoriesContext = new ParentalDirectoriesContext();
+      var level = parentalDirectoriesContext.Total;
+      var children = EnumerateFileSystemInfosCore(startDirectoryInfo, parentalDirectoriesContext, maxDepth, excludeEmpty,
         parentalDirectoryInfos => GetChildDirectoriesCore(parentalDirectoryInfos, searchPatternSelector),
         fileSystemInfo => HasChildrenCore(fileSystemInfo, refresh),
         ((FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos) element) =>
@@ -631,15 +640,15 @@ namespace PowerLib.System.IO
       if (enumerator.MoveNext())
       {
         if (!excludeStart && !reverse)
-          yield return selector(startDirectoryInfo, context);
+          yield return selector(startDirectoryInfo, parentalDirectoriesContext.AtLevel(level));
         do
           yield return enumerator.Current;
         while (enumerator.MoveNext());
         if (!excludeStart && reverse)
-          yield return selector(startDirectoryInfo, context);
+          yield return selector(startDirectoryInfo, parentalDirectoriesContext.AtLevel(level));
       }
       else if (!excludeEmpty && !excludeStart)
-        yield return selector(startDirectoryInfo, context);
+        yield return selector(startDirectoryInfo, parentalDirectoriesContext.AtLevel(level));
     }
 
     private static IEnumerable<FileInfo> EnumerateFilesCore(DirectoryInfo startDirectoryInfo,
@@ -688,8 +697,8 @@ namespace PowerLib.System.IO
     {
       var reverse = traversalOptions.IsFlagsSet(FileSystemTraversalOptions.Reverse);
       var refresh = traversalOptions.IsFlagsSet(FileSystemTraversalOptions.Refresh);
-      var context = Array.Empty<DirectoryInfo>();
-      var children = EnumerateFileSystemInfosCore(startDirectoryInfo, context, maxDepth, true,
+      var parentalDirectoriesContext = new ParentalDirectoriesContext();
+      var children = EnumerateFileSystemInfosCore(startDirectoryInfo, parentalDirectoriesContext, maxDepth, true,
         parentalDirectoryInfos => GetChildrenCore(parentalDirectoryInfos, searchPatternSelector),
         fileSystemInfo => HasChildrenCore(fileSystemInfo, refresh),
         ((FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos) element) =>
@@ -709,8 +718,8 @@ namespace PowerLib.System.IO
     {
       var reverse = traversalOptions.IsFlagsSet(FileSystemTraversalOptions.Reverse);
       var refresh = traversalOptions.IsFlagsSet(FileSystemTraversalOptions.Refresh);
-      var context = Array.Empty<DirectoryInfo>();
-      var children = EnumerateFileSystemInfosCore(startDirectoryInfo, context, maxDepth, true,
+      var parentalDirectoriesContext = new ParentalDirectoriesContext();
+      var children = EnumerateFileSystemInfosCore(startDirectoryInfo, parentalDirectoriesContext, maxDepth, true,
         parentalDirectoryInfos => GetChildrenCore(parentalDirectoryInfos, searchPatternSelector),
         fileSystemInfo => HasChildrenCore(fileSystemInfo, refresh),
         ((FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos) element) =>
@@ -3732,6 +3741,42 @@ namespace PowerLib.System.IO
       Func<IReadOnlyList<DirectoryInfo>, string?> searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
       IPredicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Func<FileSystemInfo, TryOut<DeleteOptions>> deleting)
       => sourceDirectoryInfo.DeleteEx(searchPatternSelector, maxDepth, traversalOptions, predicate?.AsPredicate(), deleting);
+
+    #endregion
+    #region Embedded types
+
+    private sealed class ParentalDirectoriesContext : IReadOnlyList<DirectoryInfo>
+    {
+      private IList<DirectoryInfo> _list = new List<DirectoryInfo>();
+      private int _level;
+
+      internal void Push(DirectoryInfo directoryInfo)
+        => _list.Add(directoryInfo);
+
+      internal void Pop()
+      {
+        _list.RemoveLast();
+        if (_level > _list.Count)
+          _level--;
+      }
+
+      internal int Total => _list.Count;
+
+      internal ParentalDirectoriesContext AtLevel(int level)
+      {
+        _level = level;
+        return this;
+      }
+
+      public int Count => _level;
+
+      public DirectoryInfo this[int index] => _list[Argument.That.InRangeIn(_level, index)];
+
+      public IEnumerator<DirectoryInfo> GetEnumerator()
+        => _list.Enumerate(0, _level).GetEnumerator();
+
+      IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+    }
 
     #endregion
   }

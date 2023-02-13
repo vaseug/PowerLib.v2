@@ -3,7 +3,7 @@
   <PropertyGroup>
     <TargetFrameworks>net48;net6.0;net7.0</TargetFrameworks>
 		<LangVersion>10.0</LangVersion>
-    <Version>2.3.8</Version>
+    <Version>2.3.9</Version>
     <SignAssembly>False</SignAssembly>
     <AllowUnsafeBlocks>False</AllowUnsafeBlocks>
     <EnforceCodeStyleInBuild>True</EnforceCodeStyleInBuild>
@@ -17,7 +17,7 @@
     <PackageProjectUrl></PackageProjectUrl>
     <PackageTags>Helper;Extension;DataStructure;Algorithm;Collection;Reflection</PackageTags>
     <Description>This library contains a lot of helper classes and extension methods to make it easier to work with collections of objects, data structures, algorithms, and existing .NET framework functionality.</Description>
-    <PackageReleaseNotes>Changes have been made to the interpretation of NULL values for parameters of methods of the FileSystemInfoExtension class for consistency with the standard API. Added several variations of methods for a set of parameters.</PackageReleaseNotes>
+    <PackageReleaseNotes>Optimized internal memory allocation for the context of parent directories in the extended enumeration methods of the FileSystemInfoExtension class.</PackageReleaseNotes>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <RepositoryUrl>https://github.com/vaseug/PowerLib.v2</RepositoryUrl>
     <PackageLicenseFile>LICENSE</PackageLicenseFile>
