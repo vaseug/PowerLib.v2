@@ -34,31 +34,40 @@ namespace PowerLib.System.IO
     public static bool IsBaseOf(this DirectoryInfo directoryInfo, FileSystemInfo fileSystemInfo)
       => PwrPath.IsBaseOf(Argument.That.NotNull(directoryInfo).FullName, Argument.That.NotNull(fileSystemInfo).FullName);
 
+    public static bool HasChildren(this DirectoryInfo directoryInfo)
+      => Argument.That.NotNull(directoryInfo).EnumerateFileSystemInfos().Any();
+
     #endregion
     #region Internal methods
+
+    private static string? DefaultSearchPatternSelector(DirectoryInfo directoryInfo)
+      => DefaultSearchPattern;
+
+    private static string? DefaultSearchPatternSelector(IReadOnlyList<DirectoryInfo> directoryInfos)
+      => DefaultSearchPattern;
 
     private static IEnumerable<FileSystemInfo> GetChildrenCore(DirectoryInfo directoryInfo, Func<DirectoryInfo, string?> searchPatternSelector)
     {
       var searchPattern = searchPatternSelector(directoryInfo);
-      return searchPattern?.Length == 0 ? Enumerable.Empty<FileSystemInfo>() : directoryInfo.EnumerateFileSystemInfos(searchPattern ?? DefaultSearchPattern, SearchOption.TopDirectoryOnly);
+      return searchPattern is null ? Enumerable.Empty<FileSystemInfo>() : directoryInfo.EnumerateFileSystemInfos(searchPattern, SearchOption.TopDirectoryOnly);
     }
 
     private static IEnumerable<FileSystemInfo> GetChildrenCore(IReadOnlyList<DirectoryInfo> parentalDirectoryInfos, Func<IReadOnlyList<DirectoryInfo>, string?> searchPatternSelector)
     {
       var searchPattern = searchPatternSelector(parentalDirectoryInfos);
-      return searchPattern?.Length == 0 ? Enumerable.Empty<FileSystemInfo>() : parentalDirectoryInfos.GetLast().EnumerateFileSystemInfos(searchPattern ?? DefaultSearchPattern, SearchOption.TopDirectoryOnly);
+      return searchPattern is null ? Enumerable.Empty<FileSystemInfo>() : parentalDirectoryInfos.GetLast().EnumerateFileSystemInfos(searchPattern, SearchOption.TopDirectoryOnly);
     }
 
     private static IEnumerable<DirectoryInfo> GetChildDirectoriesCore(DirectoryInfo directoryInfo, Func<DirectoryInfo, string?> searchPatternSelector)
     {
       var searchPattern = searchPatternSelector(directoryInfo);
-      return searchPattern?.Length == 0 ? Enumerable.Empty<DirectoryInfo>() : directoryInfo.EnumerateDirectories(searchPattern ?? DefaultSearchPattern, SearchOption.TopDirectoryOnly);
+      return searchPattern is null ? Enumerable.Empty<DirectoryInfo>() : directoryInfo.EnumerateDirectories(searchPattern, SearchOption.TopDirectoryOnly);
     }
 
     private static IEnumerable<DirectoryInfo> GetChildDirectoriesCore(IReadOnlyList<DirectoryInfo> parentalDirectoryInfos, Func<IReadOnlyList<DirectoryInfo>, string?> searchPatternSelector)
     {
       var searchPattern = searchPatternSelector(parentalDirectoryInfos);
-      return searchPattern?.Length == 0 ? Enumerable.Empty<DirectoryInfo>() : parentalDirectoryInfos.GetLast().EnumerateDirectories(searchPattern ?? DefaultSearchPattern, SearchOption.TopDirectoryOnly);
+      return searchPattern is null ? Enumerable.Empty<DirectoryInfo>() : parentalDirectoryInfos.GetLast().EnumerateDirectories(searchPattern, SearchOption.TopDirectoryOnly);
     }
 
     private static bool HasChildrenCore(FileSystemInfo fileSystemInfo, bool refresh)
@@ -70,6 +79,92 @@ namespace PowerLib.System.IO
         return directoryInfo.Exists && directoryInfo.EnumerateFileSystemInfos().Any();
       }
       return false;
+    }
+
+    private static int ProcessFileSystemInfoCore(DirectoryInfo sourceDirectoryInfo, bool refresh, Func<DirectoryInfo, IEnumerable<FileSystemInfo>> getter, Func<FileSystemInfo, bool> action)
+    {
+      int count = 0;
+      foreach (var fileSystemInfo in getter(sourceDirectoryInfo))
+      {
+        if (refresh)
+          fileSystemInfo.Refresh();
+        if (action(fileSystemInfo))
+          count++;
+      }
+      return count;
+    }
+
+    private static bool CopyCore(FileSystemInfo fileSystemInfo, Func<FileSystemInfo, TryOut<CopyOptions>> copying)
+    {
+      var options = copying(fileSystemInfo);
+      if (!options.Success || string.IsNullOrEmpty(options.Value.TargetPath) || !fileSystemInfo.Exists)
+        return false;
+      switch (fileSystemInfo)
+      {
+        case FileInfo fileInfo:
+          var targetDirectory = Path.GetDirectoryName(options.Value.TargetPath);
+          Argument.That.NotNull(targetDirectory);
+          if (!Directory.Exists(targetDirectory) && options.Value.EnsureDirectory)
+            Directory.CreateDirectory(targetDirectory);
+          fileInfo.CopyTo(options.Value.TargetPath, options.Value.Overwrite);
+          return true;
+        default:
+          return false;
+      }
+    }
+
+    private static bool MoveCore(FileSystemInfo fileSystemInfo, Func<FileSystemInfo, TryOut<MoveOptions>> moving)
+    {
+      var options = moving(fileSystemInfo);
+      if (!options.Success || string.IsNullOrEmpty(options.Value.TargetPath) || !fileSystemInfo.Exists)
+        return false;
+      var targetDirectory = Path.GetDirectoryName(options.Value.TargetPath);
+      Argument.That.NotNull(targetDirectory);
+      switch (fileSystemInfo)
+      {
+        case FileInfo fileInfo:
+          if (!Directory.Exists(targetDirectory) && options.Value.EnsureDirectory)
+            Directory.CreateDirectory(targetDirectory);
+          if (fileInfo.Attributes.IsFlagsSet(FileAttributes.ReadOnly) && options.Value.ClearReadOnly)
+            fileInfo.Attributes = fileInfo.Attributes.InverseFlags(FileAttributes.ReadOnly);
+#if NETCOREAPP3_0_OR_GREATER
+          fileInfo.MoveTo(options.Value.TargetPath, options.Value.Overwrite);
+#else
+          fileInfo.MoveTo(options.Value.TargetPath);
+#endif
+          return true;
+        case DirectoryInfo directoryInfo:
+          if (!Directory.Exists(targetDirectory) && options.Value.EnsureDirectory)
+            Directory.CreateDirectory(targetDirectory);
+          if (directoryInfo.Attributes.IsFlagsSet(FileAttributes.ReadOnly) && options.Value.ClearReadOnly)
+            directoryInfo.Attributes = directoryInfo.Attributes.InverseFlags(FileAttributes.ReadOnly);
+          directoryInfo.MoveTo(options.Value.TargetPath);
+          return true;
+        default:
+          return false;
+      }
+    }
+
+    private static bool DeleteCore(FileSystemInfo fileSystemInfo, Func<FileSystemInfo, TryOut<DeleteOptions>> deleting)
+    {
+      var options = deleting(fileSystemInfo);
+      if (!options.Success || !fileSystemInfo.Exists)
+        return false;
+      switch (fileSystemInfo)
+      {
+        case FileInfo fileInfo:
+          if (fileInfo.Attributes.IsFlagsSet(FileAttributes.ReadOnly) && options.Value.ClearReadOnly)
+            fileInfo.Attributes = fileInfo.Attributes.InverseFlags(FileAttributes.ReadOnly);
+          fileInfo.Delete();
+          return true;
+        case DirectoryInfo directoryInfo:
+          if (directoryInfo.Attributes.IsFlagsSet(FileAttributes.ReadOnly) && options.Value.ClearReadOnly)
+            directoryInfo.Attributes = directoryInfo.Attributes.InverseFlags(FileAttributes.ReadOnly);
+          directoryInfo.Delete(options.Value.Recursive);
+          return true;
+        default:
+          return false;
+      }
     }
 
     private static IEnumerable<FileSystemInfo> EnumerateFileSystemInfosCore(DirectoryInfo parentDirectoryInfo, int maxDepth, bool excludeEmpty,
@@ -628,90 +723,64 @@ namespace PowerLib.System.IO
       return children;
     }
 
-    private static int ProcessFileSystemInfoCore(DirectoryInfo sourceDirectoryInfo, bool refresh, Func<DirectoryInfo, IEnumerable<FileSystemInfo>> getter, Func<FileSystemInfo, bool> action)
+    private static int CopyCore(DirectoryInfo sourceDirectoryInfo,
+      Func<DirectoryInfo, string?> searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Predicate<FileSystemInfo>? predicate, Func<FileSystemInfo, TryOut<CopyOptions>> copying)
     {
-      int count = 0;
-      foreach (var fileSystemInfo in getter(sourceDirectoryInfo))
-      {
-        if (refresh)
-          fileSystemInfo.Refresh();
-        if (action(fileSystemInfo))
-          count++;
-      }
-      return count;
+      return ProcessFileSystemInfoCore(sourceDirectoryInfo, traversalOptions.IsFlagsSet(FileSystemTraversalOptions.Refresh),
+        directoryInfo => EnumerateFileSystemInfosCore(directoryInfo, searchPatternSelector, maxDepth, traversalOptions, predicate,
+          new SelectComparer<FileSystemInfo, bool>(fileSystemInfo => fileSystemInfo is FileInfo).Compare),
+        fileSystemInfo => CopyCore(fileSystemInfo, copying));
     }
 
-    private static bool CopyCore(FileSystemInfo fileSystemInfo, Func<FileSystemInfo, TryOut<CopyOptions>> copying)
+    private static int CopyCore(DirectoryInfo sourceDirectoryInfo,
+      Func<IReadOnlyList<DirectoryInfo>, string?> searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Predicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Func<FileSystemInfo, TryOut<CopyOptions>> copying)
     {
-      var options = copying(fileSystemInfo);
-      if (!options.Success || string.IsNullOrEmpty(options.Value.TargetPath) || !fileSystemInfo.Exists)
-        return false;
-      switch (fileSystemInfo)
-      {
-        case FileInfo fileInfo:
-          var targetDirectory = Path.GetDirectoryName(options.Value.TargetPath);
-          Argument.That.NotNull(targetDirectory);
-          if (!Directory.Exists(targetDirectory) && options.Value.EnsureDirectory)
-            Directory.CreateDirectory(targetDirectory);
-          fileInfo.CopyTo(options.Value.TargetPath, options.Value.Overwrite);
-          return true;
-        default:
-          return false;
-      }
+      return ProcessFileSystemInfoCore(sourceDirectoryInfo, traversalOptions.IsFlagsSet(FileSystemTraversalOptions.Refresh),
+        directoryInfo => EnumerateFileSystemInfosCore(directoryInfo, searchPatternSelector, maxDepth, traversalOptions, predicate,
+          new SelectComparer<FileSystemInfo, bool>(fileSystemInfo => fileSystemInfo is FileInfo).Compare),
+        fileSystemInfo => CopyCore(fileSystemInfo, copying));
     }
 
-    private static bool MoveCore(FileSystemInfo fileSystemInfo, Func<FileSystemInfo, TryOut<MoveOptions>> moving)
+    private static int MoveCore(DirectoryInfo sourceDirectoryInfo,
+      Func<DirectoryInfo, string?> searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Predicate<FileSystemInfo>? predicate, Func<FileSystemInfo, TryOut<MoveOptions>> moving)
     {
-      var options = moving(fileSystemInfo);
-      if (!options.Success || string.IsNullOrEmpty(options.Value.TargetPath) || !fileSystemInfo.Exists)
-        return false;
-      var targetDirectory = Path.GetDirectoryName(options.Value.TargetPath);
-      Argument.That.NotNull(targetDirectory);
-      switch (fileSystemInfo)
-      {
-        case FileInfo fileInfo:
-          if (!Directory.Exists(targetDirectory) && options.Value.EnsureDirectory)
-            Directory.CreateDirectory(targetDirectory);
-          if (fileInfo.Attributes.IsFlagsSet(FileAttributes.ReadOnly) && options.Value.ClearReadOnly)
-            fileInfo.Attributes = fileInfo.Attributes.InverseFlags(FileAttributes.ReadOnly);
-#if NETCOREAPP3_0_OR_GREATER
-          fileInfo.MoveTo(options.Value.TargetPath, options.Value.Overwrite);
-#else
-          fileInfo.MoveTo(options.Value.TargetPath);
-#endif
-          return true;
-        case DirectoryInfo directoryInfo:
-          if (!Directory.Exists(targetDirectory) && options.Value.EnsureDirectory)
-            Directory.CreateDirectory(targetDirectory);
-          if (directoryInfo.Attributes.IsFlagsSet(FileAttributes.ReadOnly) && options.Value.ClearReadOnly)
-            directoryInfo.Attributes = directoryInfo.Attributes.InverseFlags(FileAttributes.ReadOnly);
-          directoryInfo.MoveTo(options.Value.TargetPath);
-          return true;
-        default:
-          return false;
-      }
+      return ProcessFileSystemInfoCore(sourceDirectoryInfo, traversalOptions.IsFlagsSet(FileSystemTraversalOptions.Refresh),
+        directoryInfo => EnumerateFileSystemInfosCore(directoryInfo, searchPatternSelector, maxDepth, traversalOptions, predicate,
+          new SelectComparer<FileSystemInfo, bool>(fileSystemInfo => fileSystemInfo is FileInfo).Compare),
+        fileSystemInfo => MoveCore(fileSystemInfo, moving));
     }
 
-    private static bool DeleteCore(FileSystemInfo fileSystemInfo, Func<FileSystemInfo, TryOut<DeleteOptions>> deleting)
+    private static int MoveCore(DirectoryInfo sourceDirectoryInfo,
+      Func<IReadOnlyList<DirectoryInfo>, string?> searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Predicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Func<FileSystemInfo, TryOut<MoveOptions>> moving)
     {
-      var options = deleting(fileSystemInfo);
-      if (!options.Success || !fileSystemInfo.Exists)
-        return false;
-      switch (fileSystemInfo)
-      {
-        case FileInfo fileInfo:
-          if (fileInfo.Attributes.IsFlagsSet(FileAttributes.ReadOnly) && options.Value.ClearReadOnly)
-            fileInfo.Attributes = fileInfo.Attributes.InverseFlags(FileAttributes.ReadOnly);
-          fileInfo.Delete();
-          return true;
-        case DirectoryInfo directoryInfo:
-          if (directoryInfo.Attributes.IsFlagsSet(FileAttributes.ReadOnly) && options.Value.ClearReadOnly)
-            directoryInfo.Attributes = directoryInfo.Attributes.InverseFlags(FileAttributes.ReadOnly);
-          directoryInfo.Delete(options.Value.Recursive);
-          return true;
-        default:
-          return false;
-      }
+      return ProcessFileSystemInfoCore(sourceDirectoryInfo, traversalOptions.IsFlagsSet(FileSystemTraversalOptions.Refresh),
+        directoryInfo => EnumerateFileSystemInfosCore(directoryInfo, searchPatternSelector, maxDepth, traversalOptions, predicate,
+          new SelectComparer<FileSystemInfo, bool>(fileSystemInfo => fileSystemInfo is FileInfo).Compare),
+        fileSystemInfo => MoveCore(fileSystemInfo, moving));
+    }
+
+    private static int DeleteCore(DirectoryInfo sourceDirectoryInfo,
+      Func<DirectoryInfo, string?> searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Predicate<FileSystemInfo>? predicate, Func<FileSystemInfo, TryOut<DeleteOptions>> deleting)
+    {
+      return ProcessFileSystemInfoCore(sourceDirectoryInfo, traversalOptions.IsFlagsSet(FileSystemTraversalOptions.Refresh),
+        directoryInfo => EnumerateFileSystemInfosCore(directoryInfo, searchPatternSelector, maxDepth, traversalOptions, predicate,
+          new SelectComparer<FileSystemInfo, bool>(fileSystemInfo => fileSystemInfo is FileInfo).Compare),
+        fileSystemInfo => DeleteCore(fileSystemInfo, deleting));
+    }
+
+    private static int DeleteCore(DirectoryInfo sourceDirectoryInfo,
+      Func<IReadOnlyList<DirectoryInfo>, string?> searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Predicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Func<FileSystemInfo, TryOut<DeleteOptions>> deleting)
+    {
+      return ProcessFileSystemInfoCore(sourceDirectoryInfo, traversalOptions.IsFlagsSet(FileSystemTraversalOptions.Refresh),
+        directoryInfo => EnumerateFileSystemInfosCore(directoryInfo, searchPatternSelector, maxDepth, traversalOptions, predicate,
+          new SelectComparer<FileSystemInfo, bool>(fileSystemInfo => fileSystemInfo is FileInfo).Compare),
+        fileSystemInfo => DeleteCore(fileSystemInfo, deleting));
     }
 
     #endregion
@@ -720,31 +789,71 @@ namespace PowerLib.System.IO
     public static IEnumerable<FileSystemInfo> EnumerateFileSystemInfos(this DirectoryInfo startDirectoryInfo,
       FileSystemTraversalOptions traversalOptions,
       Predicate<FileSystemInfo>? predicate, Comparison<FileSystemInfo>? comparison)
-      => startDirectoryInfo.EnumerateFileSystemInfos(default(Func<DirectoryInfo, string?>), int.MaxValue, traversalOptions, predicate, comparison);
+    {
+      Argument.That.NotNull(startDirectoryInfo);
+
+      return EnumerateFileSystemInfosCore(startDirectoryInfo, DefaultSearchPatternSelector, int.MaxValue, traversalOptions, predicate, comparison);
+    }
 
     public static IEnumerable<FileSystemInfo> EnumerateFileSystemInfos(this DirectoryInfo startDirectoryInfo,
-      string? searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
       Predicate<FileSystemInfo>? predicate, Comparison<FileSystemInfo>? comparison)
-      => startDirectoryInfo.EnumerateFileSystemInfos(searchPattern is not null ? _ => searchPattern : null, searchOption == SearchOption.TopDirectoryOnly ? 1 : int.MaxValue, traversalOptions, predicate, comparison);
+    {
+      Argument.That.NotNull(startDirectoryInfo);
+
+      return EnumerateFileSystemInfosCore(startDirectoryInfo, DefaultSearchPatternSelector, searchOption == SearchOption.TopDirectoryOnly ? 1 : int.MaxValue, traversalOptions, predicate, comparison);
+    }
 
     public static IEnumerable<FileSystemInfo> EnumerateFileSystemInfos(this DirectoryInfo startDirectoryInfo,
-      string? searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
-      Predicate<FileSystemInfo>? predicate, Comparison<FileSystemInfo>? comparison)
-      => startDirectoryInfo.EnumerateFileSystemInfos(searchPattern is not null ? _ => searchPattern : null, maxDepth, traversalOptions, predicate, comparison);
-
-    public static IEnumerable<FileSystemInfo> EnumerateFileSystemInfos(this DirectoryInfo startDirectoryInfo,
-      Func<DirectoryInfo, string?>? searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
-      Predicate<FileSystemInfo>? predicate, Comparison<FileSystemInfo>? comparison)
-      => startDirectoryInfo.EnumerateFileSystemInfos(searchPatternSelector, searchOption == SearchOption.TopDirectoryOnly ? 1 : int.MaxValue, traversalOptions, predicate, comparison);
-
-    public static IEnumerable<FileSystemInfo> EnumerateFileSystemInfos(this DirectoryInfo startDirectoryInfo,
-      Func<DirectoryInfo, string?>? searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      int maxDepth, FileSystemTraversalOptions traversalOptions,
       Predicate<FileSystemInfo>? predicate, Comparison<FileSystemInfo>? comparison)
     {
       Argument.That.NotNull(startDirectoryInfo);
       Argument.That.NonNegative(maxDepth);
 
-      return EnumerateFileSystemInfosCore(startDirectoryInfo, searchPatternSelector ?? (_ => DefaultSearchPattern), maxDepth, traversalOptions, predicate, comparison);
+      return EnumerateFileSystemInfosCore(startDirectoryInfo, DefaultSearchPatternSelector, maxDepth, traversalOptions, predicate, comparison);
+    }
+
+    public static IEnumerable<FileSystemInfo> EnumerateFileSystemInfos(this DirectoryInfo startDirectoryInfo,
+      string searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      Predicate<FileSystemInfo>? predicate, Comparison<FileSystemInfo>? comparison)
+    {
+      Argument.That.NotNull(startDirectoryInfo);
+      Argument.That.NotNull(searchPattern);
+
+      return EnumerateFileSystemInfosCore(startDirectoryInfo, _ => searchPattern, searchOption == SearchOption.TopDirectoryOnly ? 1 : int.MaxValue, traversalOptions, predicate, comparison);
+    }
+
+    public static IEnumerable<FileSystemInfo> EnumerateFileSystemInfos(this DirectoryInfo startDirectoryInfo,
+      string searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Predicate<FileSystemInfo>? predicate, Comparison<FileSystemInfo>? comparison)
+    {
+      Argument.That.NotNull(startDirectoryInfo);
+      Argument.That.NotNull(searchPattern);
+      Argument.That.NonNegative(maxDepth);
+
+      return EnumerateFileSystemInfosCore(startDirectoryInfo, _ => searchPattern, maxDepth, traversalOptions, predicate, comparison);
+    }
+
+    public static IEnumerable<FileSystemInfo> EnumerateFileSystemInfos(this DirectoryInfo startDirectoryInfo,
+      Func<DirectoryInfo, string?> searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      Predicate<FileSystemInfo>? predicate, Comparison<FileSystemInfo>? comparison)
+    {
+      Argument.That.NotNull(startDirectoryInfo);
+      Argument.That.NotNull(searchPatternSelector);
+
+      return EnumerateFileSystemInfosCore(startDirectoryInfo, searchPatternSelector, searchOption == SearchOption.TopDirectoryOnly ? 1 : int.MaxValue, traversalOptions, predicate, comparison);
+    }
+
+    public static IEnumerable<FileSystemInfo> EnumerateFileSystemInfos(this DirectoryInfo startDirectoryInfo,
+      Func<DirectoryInfo, string?> searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Predicate<FileSystemInfo>? predicate, Comparison<FileSystemInfo>? comparison)
+    {
+      Argument.That.NotNull(startDirectoryInfo);
+      Argument.That.NotNull(searchPatternSelector);
+      Argument.That.NonNegative(maxDepth);
+
+      return EnumerateFileSystemInfosCore(startDirectoryInfo, searchPatternSelector, maxDepth, traversalOptions, predicate, comparison);
     }
 
     public static IEnumerable<FileSystemInfo> EnumerateFileSystemInfos(this DirectoryInfo startDirectoryInfo,
@@ -753,22 +862,32 @@ namespace PowerLib.System.IO
       => startDirectoryInfo.EnumerateFileSystemInfos(traversalOptions, predicate?.AsPredicate(), comparer?.AsComparison());
 
     public static IEnumerable<FileSystemInfo> EnumerateFileSystemInfos(this DirectoryInfo startDirectoryInfo,
-      string? searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      IPredicate<FileSystemInfo>? predicate, IComparer<FileSystemInfo>? comparer)
+      => startDirectoryInfo.EnumerateFileSystemInfos(searchOption, traversalOptions, predicate?.AsPredicate(), comparer?.AsComparison());
+
+    public static IEnumerable<FileSystemInfo> EnumerateFileSystemInfos(this DirectoryInfo startDirectoryInfo,
+      int maxDepth, FileSystemTraversalOptions traversalOptions,
+      IPredicate<FileSystemInfo>? predicate, IComparer<FileSystemInfo>? comparer)
+      => startDirectoryInfo.EnumerateFileSystemInfos(maxDepth, traversalOptions, predicate?.AsPredicate(), comparer?.AsComparison());
+
+    public static IEnumerable<FileSystemInfo> EnumerateFileSystemInfos(this DirectoryInfo startDirectoryInfo,
+      string searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
       IPredicate<FileSystemInfo>? predicate, IComparer<FileSystemInfo>? comparer)
       => startDirectoryInfo.EnumerateFileSystemInfos(searchPattern, searchOption, traversalOptions, predicate?.AsPredicate(), comparer?.AsComparison());
 
     public static IEnumerable<FileSystemInfo> EnumerateFileSystemInfos(this DirectoryInfo startDirectoryInfo,
-      string? searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      string searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
       IPredicate<FileSystemInfo>? predicate, IComparer<FileSystemInfo>? comparer)
       => startDirectoryInfo.EnumerateFileSystemInfos(searchPattern, maxDepth, traversalOptions, predicate?.AsPredicate(), comparer?.AsComparison());
 
     public static IEnumerable<FileSystemInfo> EnumerateFileSystemInfos(this DirectoryInfo startDirectoryInfo,
-      Func<DirectoryInfo, string?>? searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      Func<DirectoryInfo, string?> searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
       IPredicate<FileSystemInfo>? predicate, IComparer<FileSystemInfo>? comparer)
       => startDirectoryInfo.EnumerateFileSystemInfos(searchPatternSelector, searchOption, traversalOptions, predicate?.AsPredicate(), comparer?.AsComparison());
 
     public static IEnumerable<FileSystemInfo> EnumerateFileSystemInfos(this DirectoryInfo startDirectoryInfo,
-      Func<DirectoryInfo, string?>? searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Func<DirectoryInfo, string?> searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
       IPredicate<FileSystemInfo>? predicate, IComparer<FileSystemInfo>? comparer)
       => startDirectoryInfo.EnumerateFileSystemInfos(searchPatternSelector, maxDepth, traversalOptions, predicate?.AsPredicate(), comparer?.AsComparison());
 
@@ -781,46 +900,67 @@ namespace PowerLib.System.IO
       => startDirectoryInfo.EnumerateFileSystemInfos(traversalOptions, predicate, comparison).ToArray();
 
     public static FileSystemInfo[] GetFileSystemInfos(this DirectoryInfo startDirectoryInfo,
-      string? searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      Predicate<FileSystemInfo>? predicate, Comparison<FileSystemInfo>? comparison)
+      => startDirectoryInfo.EnumerateFileSystemInfos(searchOption, traversalOptions, predicate, comparison).ToArray();
+
+    public static FileSystemInfo[] GetFileSystemInfos(this DirectoryInfo startDirectoryInfo,
+      int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Predicate<FileSystemInfo>? predicate, Comparison<FileSystemInfo>? comparison)
+      => startDirectoryInfo.EnumerateFileSystemInfos(maxDepth, traversalOptions, predicate, comparison).ToArray();
+
+    public static FileSystemInfo[] GetFileSystemInfos(this DirectoryInfo startDirectoryInfo,
+      string searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
       Predicate<FileSystemInfo>? predicate, Comparison<FileSystemInfo>? comparison)
       => startDirectoryInfo.EnumerateFileSystemInfos(searchPattern, searchOption, traversalOptions, predicate, comparison).ToArray();
 
     public static FileSystemInfo[] GetFileSystemInfos(this DirectoryInfo startDirectoryInfo,
-      string? searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      string searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
       Predicate<FileSystemInfo>? predicate, Comparison<FileSystemInfo>? comparison)
       => startDirectoryInfo.EnumerateFileSystemInfos(searchPattern, maxDepth, traversalOptions, predicate, comparison).ToArray();
 
     public static FileSystemInfo[] GetFileSystemInfos(this DirectoryInfo startDirectoryInfo,
-      Func<DirectoryInfo, string?>? searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      Func<DirectoryInfo, string?> searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
       Predicate<FileSystemInfo>? predicate, Comparison<FileSystemInfo>? comparison)
       => startDirectoryInfo.EnumerateFileSystemInfos(searchPatternSelector, searchOption, traversalOptions, predicate, comparison).ToArray();
 
     public static FileSystemInfo[] GetFileSystemInfos(this DirectoryInfo startDirectoryInfo,
-      Func<DirectoryInfo, string?>? searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Func<DirectoryInfo, string?> searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
       Predicate<FileSystemInfo>? predicate, Comparison<FileSystemInfo>? comparison)
       => startDirectoryInfo.EnumerateFileSystemInfos(searchPatternSelector, maxDepth, traversalOptions, predicate, comparison).ToArray();
 
-    public static FileSystemInfo[] GetFileSystemInfos(this DirectoryInfo startDirectoryInfo, FileSystemTraversalOptions traversalOptions,
+    public static FileSystemInfo[] GetFileSystemInfos(this DirectoryInfo startDirectoryInfo,
+      FileSystemTraversalOptions traversalOptions,
       IPredicate<FileSystemInfo>? predicate, IComparer<FileSystemInfo>? comparer)
       => startDirectoryInfo.EnumerateFileSystemInfos(traversalOptions, predicate, comparer).ToArray();
 
     public static FileSystemInfo[] GetFileSystemInfos(this DirectoryInfo startDirectoryInfo,
-      string? searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      IPredicate<FileSystemInfo>? predicate, IComparer<FileSystemInfo>? comparer)
+      => startDirectoryInfo.EnumerateFileSystemInfos(searchOption, traversalOptions, predicate, comparer).ToArray();
+
+    public static FileSystemInfo[] GetFileSystemInfos(this DirectoryInfo startDirectoryInfo,
+      int maxDepth, FileSystemTraversalOptions traversalOptions,
+      IPredicate<FileSystemInfo>? predicate, IComparer<FileSystemInfo>? comparer)
+      => startDirectoryInfo.EnumerateFileSystemInfos(maxDepth, traversalOptions, predicate, comparer).ToArray();
+
+    public static FileSystemInfo[] GetFileSystemInfos(this DirectoryInfo startDirectoryInfo,
+      string searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
       IPredicate<FileSystemInfo>? predicate, IComparer<FileSystemInfo>? comparer)
       => startDirectoryInfo.EnumerateFileSystemInfos(searchPattern, searchOption, traversalOptions, predicate, comparer).ToArray();
 
     public static FileSystemInfo[] GetFileSystemInfos(this DirectoryInfo startDirectoryInfo,
-      string? searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      string searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
       IPredicate<FileSystemInfo>? predicate, IComparer<FileSystemInfo>? comparer)
       => startDirectoryInfo.EnumerateFileSystemInfos(searchPattern, maxDepth, traversalOptions, predicate, comparer).ToArray();
 
     public static FileSystemInfo[] GetFileSystemInfos(this DirectoryInfo startDirectoryInfo,
-      Func<DirectoryInfo, string?>? searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      Func<DirectoryInfo, string?> searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
       IPredicate<FileSystemInfo>? predicate, IComparer<FileSystemInfo>? comparer)
       => startDirectoryInfo.EnumerateFileSystemInfos(searchPatternSelector, searchOption, traversalOptions, predicate, comparer).ToArray();
 
     public static FileSystemInfo[] GetFileSystemInfos(this DirectoryInfo startDirectoryInfo,
-      Func<DirectoryInfo, string?>? searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Func<DirectoryInfo, string?> searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
       IPredicate<FileSystemInfo>? predicate, IComparer<FileSystemInfo>? comparer)
       => startDirectoryInfo.EnumerateFileSystemInfos(searchPatternSelector, maxDepth, traversalOptions, predicate, comparer).ToArray();
 
@@ -830,32 +970,78 @@ namespace PowerLib.System.IO
     public static IEnumerable<TFileSystemInfo> EnumerateFileSystemInfos<TFileSystemInfo>(this DirectoryInfo startDirectoryInfo,
       FileSystemTraversalOptions traversalOptions,
       Predicate<FileSystemInfo>? predicate, Comparison<FileSystemInfo>? comparison, Func<FileSystemInfo, TFileSystemInfo> selector)
-      => startDirectoryInfo.EnumerateFileSystemInfos(default(Func<DirectoryInfo, string?>), int.MaxValue, traversalOptions, predicate, comparison, selector);
+    {
+      Argument.That.NotNull(startDirectoryInfo);
+      Argument.That.NotNull(selector);
+
+      return EnumerateFileSystemInfosCore(startDirectoryInfo, DefaultSearchPatternSelector, int.MaxValue, traversalOptions, predicate, comparison, selector);
+    }
 
     public static IEnumerable<TFileSystemInfo> EnumerateFileSystemInfos<TFileSystemInfo>(this DirectoryInfo startDirectoryInfo,
-      string? searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
       Predicate<FileSystemInfo>? predicate, Comparison<FileSystemInfo>? comparison, Func<FileSystemInfo, TFileSystemInfo> selector)
-      => startDirectoryInfo.EnumerateFileSystemInfos(searchPattern is not null ? _ => searchPattern : null, searchOption == SearchOption.TopDirectoryOnly ? 1 : int.MaxValue, traversalOptions, predicate, comparison, selector);
+    {
+      Argument.That.NotNull(startDirectoryInfo);
+      Argument.That.NotNull(selector);
+
+      return EnumerateFileSystemInfosCore(startDirectoryInfo, DefaultSearchPatternSelector, searchOption == SearchOption.TopDirectoryOnly ? 1 : int.MaxValue, traversalOptions, predicate, comparison, selector);
+    }
 
     public static IEnumerable<TFileSystemInfo> EnumerateFileSystemInfos<TFileSystemInfo>(this DirectoryInfo startDirectoryInfo,
-      string? searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
-      Predicate<FileSystemInfo>? predicate, Comparison<FileSystemInfo>? comparison, Func<FileSystemInfo, TFileSystemInfo> selector)
-      => startDirectoryInfo.EnumerateFileSystemInfos(searchPattern is not null ? _ => searchPattern : null, maxDepth, traversalOptions, predicate, comparison, selector);
-
-    public static IEnumerable<TFileSystemInfo> EnumerateFileSystemInfos<TFileSystemInfo>(this DirectoryInfo startDirectoryInfo,
-      Func<DirectoryInfo, string?>? searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
-      Predicate<FileSystemInfo>? predicate, Comparison<FileSystemInfo>? comparison, Func<FileSystemInfo, TFileSystemInfo> selector)
-      => startDirectoryInfo.EnumerateFileSystemInfos(searchPatternSelector, searchOption == SearchOption.TopDirectoryOnly ? 1 : int.MaxValue, traversalOptions, predicate, comparison, selector);
-
-    public static IEnumerable<TFileSystemInfo> EnumerateFileSystemInfos<TFileSystemInfo>(this DirectoryInfo startDirectoryInfo,
-      Func<DirectoryInfo, string?>? searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      int maxDepth, FileSystemTraversalOptions traversalOptions,
       Predicate<FileSystemInfo>? predicate, Comparison<FileSystemInfo>? comparison, Func<FileSystemInfo, TFileSystemInfo> selector)
     {
       Argument.That.NotNull(startDirectoryInfo);
       Argument.That.NonNegative(maxDepth);
       Argument.That.NotNull(selector);
 
-      return EnumerateFileSystemInfosCore(startDirectoryInfo, searchPatternSelector ?? (_ => DefaultSearchPattern), maxDepth, traversalOptions, predicate, comparison, selector);
+      return EnumerateFileSystemInfosCore(startDirectoryInfo, DefaultSearchPatternSelector, maxDepth, traversalOptions, predicate, comparison, selector);
+    }
+
+    public static IEnumerable<TFileSystemInfo> EnumerateFileSystemInfos<TFileSystemInfo>(this DirectoryInfo startDirectoryInfo,
+      string searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      Predicate<FileSystemInfo>? predicate, Comparison<FileSystemInfo>? comparison, Func<FileSystemInfo, TFileSystemInfo> selector)
+    {
+      Argument.That.NotNull(startDirectoryInfo);
+      Argument.That.NotNull(searchPattern);
+      Argument.That.NotNull(selector);
+
+      return EnumerateFileSystemInfosCore(startDirectoryInfo, _ => searchPattern, searchOption == SearchOption.TopDirectoryOnly ? 1 : int.MaxValue, traversalOptions, predicate, comparison, selector);
+    }
+
+    public static IEnumerable<TFileSystemInfo> EnumerateFileSystemInfos<TFileSystemInfo>(this DirectoryInfo startDirectoryInfo,
+      string searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Predicate<FileSystemInfo>? predicate, Comparison<FileSystemInfo>? comparison, Func<FileSystemInfo, TFileSystemInfo> selector)
+    {
+      Argument.That.NotNull(startDirectoryInfo);
+      Argument.That.NotNull(searchPattern);
+      Argument.That.NonNegative(maxDepth);
+      Argument.That.NotNull(selector);
+
+      return EnumerateFileSystemInfosCore(startDirectoryInfo, _ => searchPattern, maxDepth, traversalOptions, predicate, comparison, selector);
+    }
+
+    public static IEnumerable<TFileSystemInfo> EnumerateFileSystemInfos<TFileSystemInfo>(this DirectoryInfo startDirectoryInfo,
+      Func<DirectoryInfo, string?> searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      Predicate<FileSystemInfo>? predicate, Comparison<FileSystemInfo>? comparison, Func<FileSystemInfo, TFileSystemInfo> selector)
+    {
+      Argument.That.NotNull(startDirectoryInfo);
+      Argument.That.NotNull(searchPatternSelector);
+      Argument.That.NotNull(selector);
+
+      return EnumerateFileSystemInfosCore(startDirectoryInfo, searchPatternSelector, searchOption == SearchOption.TopDirectoryOnly ? 1 : int.MaxValue, traversalOptions, predicate, comparison, selector);
+    }
+
+    public static IEnumerable<TFileSystemInfo> EnumerateFileSystemInfos<TFileSystemInfo>(this DirectoryInfo startDirectoryInfo,
+      Func<DirectoryInfo, string?> searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Predicate<FileSystemInfo>? predicate, Comparison<FileSystemInfo>? comparison, Func<FileSystemInfo, TFileSystemInfo> selector)
+    {
+      Argument.That.NotNull(startDirectoryInfo);
+      Argument.That.NotNull(searchPatternSelector);
+      Argument.That.NonNegative(maxDepth);
+      Argument.That.NotNull(selector);
+
+      return EnumerateFileSystemInfosCore(startDirectoryInfo, searchPatternSelector, maxDepth, traversalOptions, predicate, comparison, selector);
     }
 
     public static IEnumerable<TFileSystemInfo> EnumerateFileSystemInfos<TFileSystemInfo>(this DirectoryInfo startDirectoryInfo,
@@ -864,22 +1050,32 @@ namespace PowerLib.System.IO
       => startDirectoryInfo.EnumerateFileSystemInfos(traversalOptions, predicate?.AsPredicate(), comparer?.AsComparison(), selector);
 
     public static IEnumerable<TFileSystemInfo> EnumerateFileSystemInfos<TFileSystemInfo>(this DirectoryInfo startDirectoryInfo,
-      string? searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      IPredicate<FileSystemInfo>? predicate, IComparer<FileSystemInfo>? comparer, Func<FileSystemInfo, TFileSystemInfo> selector)
+      => startDirectoryInfo.EnumerateFileSystemInfos(searchOption, traversalOptions, predicate?.AsPredicate(), comparer?.AsComparison(), selector);
+
+    public static IEnumerable<TFileSystemInfo> EnumerateFileSystemInfos<TFileSystemInfo>(this DirectoryInfo startDirectoryInfo,
+      int maxDepth, FileSystemTraversalOptions traversalOptions,
+      IPredicate<FileSystemInfo>? predicate, IComparer<FileSystemInfo>? comparer, Func<FileSystemInfo, TFileSystemInfo> selector)
+      => startDirectoryInfo.EnumerateFileSystemInfos(maxDepth, traversalOptions, predicate?.AsPredicate(), comparer?.AsComparison(), selector);
+
+    public static IEnumerable<TFileSystemInfo> EnumerateFileSystemInfos<TFileSystemInfo>(this DirectoryInfo startDirectoryInfo,
+      string searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
       IPredicate<FileSystemInfo>? predicate, IComparer<FileSystemInfo>? comparer, Func<FileSystemInfo, TFileSystemInfo> selector)
       => startDirectoryInfo.EnumerateFileSystemInfos(searchPattern, searchOption, traversalOptions, predicate?.AsPredicate(), comparer?.AsComparison(), selector);
 
     public static IEnumerable<TFileSystemInfo> EnumerateFileSystemInfos<TFileSystemInfo>(this DirectoryInfo startDirectoryInfo,
-      string? searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      string searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
       IPredicate<FileSystemInfo>? predicate, IComparer<FileSystemInfo>? comparer, Func<FileSystemInfo, TFileSystemInfo> selector)
       => startDirectoryInfo.EnumerateFileSystemInfos(searchPattern, maxDepth, traversalOptions, predicate?.AsPredicate(), comparer?.AsComparison(), selector);
 
     public static IEnumerable<TFileSystemInfo> EnumerateFileSystemInfos<TFileSystemInfo>(this DirectoryInfo startDirectoryInfo,
-      Func<DirectoryInfo, string?>? searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      Func<DirectoryInfo, string?> searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
       IPredicate<FileSystemInfo>? predicate, IComparer<FileSystemInfo>? comparer, Func<FileSystemInfo, TFileSystemInfo> selector)
       => startDirectoryInfo.EnumerateFileSystemInfos(searchPatternSelector, searchOption, traversalOptions, predicate?.AsPredicate(), comparer?.AsComparison(), selector);
 
     public static IEnumerable<TFileSystemInfo> EnumerateFileSystemInfos<TFileSystemInfo>(this DirectoryInfo startDirectoryInfo,
-      Func<DirectoryInfo, string?>? searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Func<DirectoryInfo, string?> searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
       IPredicate<FileSystemInfo>? predicate, IComparer<FileSystemInfo>? comparer, Func<FileSystemInfo, TFileSystemInfo> selector)
       => startDirectoryInfo.EnumerateFileSystemInfos(searchPatternSelector, maxDepth, traversalOptions, predicate?.AsPredicate(), comparer?.AsComparison(), selector);
 
@@ -892,22 +1088,32 @@ namespace PowerLib.System.IO
       => startDirectoryInfo.EnumerateFileSystemInfos(traversalOptions, predicate, comparison, selector).ToArray();
 
     public static TFileSystemInfo[] GetFileSystemInfos<TFileSystemInfo>(this DirectoryInfo startDirectoryInfo,
-      string? searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      Predicate<FileSystemInfo>? predicate, Comparison<FileSystemInfo>? comparison, Func<FileSystemInfo, TFileSystemInfo> selector)
+      => startDirectoryInfo.EnumerateFileSystemInfos(searchOption, traversalOptions, predicate, comparison, selector).ToArray();
+
+    public static TFileSystemInfo[] GetFileSystemInfos<TFileSystemInfo>(this DirectoryInfo startDirectoryInfo,
+      int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Predicate<FileSystemInfo>? predicate, Comparison<FileSystemInfo>? comparison, Func<FileSystemInfo, TFileSystemInfo> selector)
+      => startDirectoryInfo.EnumerateFileSystemInfos(maxDepth, traversalOptions, predicate, comparison, selector).ToArray();
+
+    public static TFileSystemInfo[] GetFileSystemInfos<TFileSystemInfo>(this DirectoryInfo startDirectoryInfo,
+      string searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
       Predicate<FileSystemInfo>? predicate, Comparison<FileSystemInfo>? comparison, Func<FileSystemInfo, TFileSystemInfo> selector)
       => startDirectoryInfo.EnumerateFileSystemInfos(searchPattern, searchOption, traversalOptions, predicate, comparison, selector).ToArray();
 
     public static TFileSystemInfo[] GetFileSystemInfos<TFileSystemInfo>(this DirectoryInfo startDirectoryInfo,
-      string? searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      string searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
       Predicate<FileSystemInfo>? predicate, Comparison<FileSystemInfo>? comparison, Func<FileSystemInfo, TFileSystemInfo> selector)
       => startDirectoryInfo.EnumerateFileSystemInfos(searchPattern, maxDepth, traversalOptions, predicate, comparison, selector).ToArray();
 
     public static TFileSystemInfo[] GetFileSystemInfos<TFileSystemInfo>(this DirectoryInfo startDirectoryInfo,
-      Func<DirectoryInfo, string?>? searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      Func<DirectoryInfo, string?> searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
       Predicate<FileSystemInfo>? predicate, Comparison<FileSystemInfo>? comparison, Func<FileSystemInfo, TFileSystemInfo> selector)
       => startDirectoryInfo.EnumerateFileSystemInfos(searchPatternSelector, searchOption, traversalOptions, predicate, comparison, selector).ToArray();
 
     public static TFileSystemInfo[] GetFileSystemInfos<TFileSystemInfo>(this DirectoryInfo startDirectoryInfo,
-      Func<DirectoryInfo, string?>? searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Func<DirectoryInfo, string?> searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
       Predicate<FileSystemInfo>? predicate, Comparison<FileSystemInfo>? comparison, Func<FileSystemInfo, TFileSystemInfo> selector)
       => startDirectoryInfo.EnumerateFileSystemInfos(searchPatternSelector, maxDepth, traversalOptions, predicate, comparison, selector).ToArray();
 
@@ -917,22 +1123,32 @@ namespace PowerLib.System.IO
       => startDirectoryInfo.EnumerateFileSystemInfos(traversalOptions, predicate, comparer, selector).ToArray();
 
     public static TFileSystemInfo[] GetFileSystemInfos<TFileSystemInfo>(this DirectoryInfo startDirectoryInfo,
-      string? searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      IPredicate<FileSystemInfo>? predicate, IComparer<FileSystemInfo>? comparer, Func<FileSystemInfo, TFileSystemInfo> selector)
+      => startDirectoryInfo.EnumerateFileSystemInfos(searchOption, traversalOptions, predicate, comparer, selector).ToArray();
+
+    public static TFileSystemInfo[] GetFileSystemInfos<TFileSystemInfo>(this DirectoryInfo startDirectoryInfo,
+      int maxDepth, FileSystemTraversalOptions traversalOptions,
+      IPredicate<FileSystemInfo>? predicate, IComparer<FileSystemInfo>? comparer, Func<FileSystemInfo, TFileSystemInfo> selector)
+      => startDirectoryInfo.EnumerateFileSystemInfos(maxDepth, traversalOptions, predicate, comparer, selector).ToArray();
+
+    public static TFileSystemInfo[] GetFileSystemInfos<TFileSystemInfo>(this DirectoryInfo startDirectoryInfo,
+      string searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
       IPredicate<FileSystemInfo>? predicate, IComparer<FileSystemInfo>? comparer, Func<FileSystemInfo, TFileSystemInfo> selector)
       => startDirectoryInfo.EnumerateFileSystemInfos(searchPattern, searchOption, traversalOptions, predicate, comparer, selector).ToArray();
 
     public static TFileSystemInfo[] GetFileSystemInfos<TFileSystemInfo>(this DirectoryInfo startDirectoryInfo,
-      string? searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      string searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
       IPredicate<FileSystemInfo>? predicate, IComparer<FileSystemInfo>? comparer, Func<FileSystemInfo, TFileSystemInfo> selector)
       => startDirectoryInfo.EnumerateFileSystemInfos(searchPattern, maxDepth, traversalOptions, predicate, comparer, selector).ToArray();
 
     public static TFileSystemInfo[] GetFileSystemInfos<TFileSystemInfo>(this DirectoryInfo startDirectoryInfo,
-      Func<DirectoryInfo, string?>? searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      Func<DirectoryInfo, string?> searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
       IPredicate<FileSystemInfo>? predicate, IComparer<FileSystemInfo>? comparer, Func<FileSystemInfo, TFileSystemInfo> selector)
       => startDirectoryInfo.EnumerateFileSystemInfos(searchPatternSelector, searchOption, traversalOptions, predicate, comparer, selector).ToArray();
 
     public static TFileSystemInfo[] GetFileSystemInfos<TFileSystemInfo>(this DirectoryInfo startDirectoryInfo,
-      Func<DirectoryInfo, string?>? searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Func<DirectoryInfo, string?> searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
       IPredicate<FileSystemInfo>? predicate, IComparer<FileSystemInfo>? comparer, Func<FileSystemInfo, TFileSystemInfo> selector)
       => startDirectoryInfo.EnumerateFileSystemInfos(searchPatternSelector, maxDepth, traversalOptions, predicate, comparer, selector).ToArray();
 
@@ -942,31 +1158,71 @@ namespace PowerLib.System.IO
     public static IEnumerable<FileSystemInfo> EnumerateFileSystemInfosEx(this DirectoryInfo startDirectoryInfo,
       FileSystemTraversalOptions traversalOptions,
       Predicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Comparison<FileSystemInfo>? comparison)
-      => startDirectoryInfo.EnumerateFileSystemInfosEx(default(Func<IReadOnlyList<DirectoryInfo>, string?>), int.MaxValue, traversalOptions, predicate, comparison);
+    {
+      Argument.That.NotNull(startDirectoryInfo);
+
+      return EnumerateFileSystemInfosCore(startDirectoryInfo, DefaultSearchPatternSelector, int.MaxValue, traversalOptions, predicate, comparison);
+    }
 
     public static IEnumerable<FileSystemInfo> EnumerateFileSystemInfosEx(this DirectoryInfo startDirectoryInfo,
-      string? searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
       Predicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Comparison<FileSystemInfo>? comparison)
-      => startDirectoryInfo.EnumerateFileSystemInfosEx(searchPattern is not null ? _ => searchPattern : null, searchOption == SearchOption.TopDirectoryOnly ? 1 : int.MaxValue, traversalOptions, predicate, comparison);
+    {
+      Argument.That.NotNull(startDirectoryInfo);
+
+      return EnumerateFileSystemInfosCore(startDirectoryInfo, DefaultSearchPatternSelector, searchOption == SearchOption.TopDirectoryOnly ? 1 : int.MaxValue, traversalOptions, predicate, comparison);
+    }
 
     public static IEnumerable<FileSystemInfo> EnumerateFileSystemInfosEx(this DirectoryInfo startDirectoryInfo,
-      string? searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
-      Predicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Comparison<FileSystemInfo>? comparison)
-      => startDirectoryInfo.EnumerateFileSystemInfosEx(searchPattern is not null ? _ => searchPattern : null, maxDepth, traversalOptions, predicate, comparison);
-
-    public static IEnumerable<FileSystemInfo> EnumerateFileSystemInfosEx(this DirectoryInfo startDirectoryInfo,
-      Func<IReadOnlyList<DirectoryInfo>, string?>? searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
-      Predicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Comparison<FileSystemInfo>? comparison)
-      => startDirectoryInfo.EnumerateFileSystemInfosEx(searchPatternSelector, searchOption == SearchOption.TopDirectoryOnly ? 1 : int.MaxValue, traversalOptions, predicate, comparison);
-
-    public static IEnumerable<FileSystemInfo> EnumerateFileSystemInfosEx(this DirectoryInfo startDirectoryInfo,
-      Func<IReadOnlyList<DirectoryInfo>, string?>? searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      int maxDepth, FileSystemTraversalOptions traversalOptions,
       Predicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Comparison<FileSystemInfo>? comparison)
     {
       Argument.That.NotNull(startDirectoryInfo);
       Argument.That.NonNegative(maxDepth);
 
-      return EnumerateFileSystemInfosCore(startDirectoryInfo, searchPatternSelector ?? (_ => DefaultSearchPattern), maxDepth, traversalOptions, predicate, comparison);
+      return EnumerateFileSystemInfosCore(startDirectoryInfo, DefaultSearchPatternSelector, maxDepth, traversalOptions, predicate, comparison);
+    }
+
+    public static IEnumerable<FileSystemInfo> EnumerateFileSystemInfosEx(this DirectoryInfo startDirectoryInfo,
+      string searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      Predicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Comparison<FileSystemInfo>? comparison)
+    {
+      Argument.That.NotNull(startDirectoryInfo);
+      Argument.That.NotNull(searchPattern);
+
+      return EnumerateFileSystemInfosCore(startDirectoryInfo, _ => searchPattern, searchOption == SearchOption.TopDirectoryOnly ? 1 : int.MaxValue, traversalOptions, predicate, comparison);
+    }
+
+    public static IEnumerable<FileSystemInfo> EnumerateFileSystemInfosEx(this DirectoryInfo startDirectoryInfo,
+      string searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Predicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Comparison<FileSystemInfo>? comparison)
+    {
+      Argument.That.NotNull(startDirectoryInfo);
+      Argument.That.NotNull(searchPattern);
+      Argument.That.NonNegative(maxDepth);
+
+      return EnumerateFileSystemInfosCore(startDirectoryInfo, _ => searchPattern, maxDepth, traversalOptions, predicate, comparison);
+    }
+
+    public static IEnumerable<FileSystemInfo> EnumerateFileSystemInfosEx(this DirectoryInfo startDirectoryInfo,
+      Func<IReadOnlyList<DirectoryInfo>, string?> searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      Predicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Comparison<FileSystemInfo>? comparison)
+    {
+      Argument.That.NotNull(startDirectoryInfo);
+      Argument.That.NotNull(searchPatternSelector);
+
+      return EnumerateFileSystemInfosCore(startDirectoryInfo, searchPatternSelector, searchOption == SearchOption.TopDirectoryOnly ? 1 : int.MaxValue, traversalOptions, predicate, comparison);
+    }
+
+    public static IEnumerable<FileSystemInfo> EnumerateFileSystemInfosEx(this DirectoryInfo startDirectoryInfo,
+      Func<IReadOnlyList<DirectoryInfo>, string?> searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Predicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Comparison<FileSystemInfo>? comparison)
+    {
+      Argument.That.NotNull(startDirectoryInfo);
+      Argument.That.NotNull(searchPatternSelector);
+      Argument.That.NonNegative(maxDepth);
+
+      return EnumerateFileSystemInfosCore(startDirectoryInfo, searchPatternSelector, maxDepth, traversalOptions, predicate, comparison);
     }
 
     public static IEnumerable<FileSystemInfo> EnumerateFileSystemInfosEx(this DirectoryInfo startDirectoryInfo,
@@ -975,22 +1231,32 @@ namespace PowerLib.System.IO
       => startDirectoryInfo.EnumerateFileSystemInfosEx(traversalOptions, predicate?.AsPredicate(), comparer?.AsComparison());
 
     public static IEnumerable<FileSystemInfo> EnumerateFileSystemInfosEx(this DirectoryInfo startDirectoryInfo,
-      string? searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      IPredicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, IComparer<FileSystemInfo>? comparer)
+      => startDirectoryInfo.EnumerateFileSystemInfosEx(searchOption, traversalOptions, predicate?.AsPredicate(), comparer?.AsComparison());
+
+    public static IEnumerable<FileSystemInfo> EnumerateFileSystemInfosEx(this DirectoryInfo startDirectoryInfo,
+      int maxDepth, FileSystemTraversalOptions traversalOptions,
+      IPredicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, IComparer<FileSystemInfo>? comparer)
+      => startDirectoryInfo.EnumerateFileSystemInfosEx(maxDepth, traversalOptions, predicate?.AsPredicate(), comparer?.AsComparison());
+
+    public static IEnumerable<FileSystemInfo> EnumerateFileSystemInfosEx(this DirectoryInfo startDirectoryInfo,
+      string searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
       IPredicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, IComparer<FileSystemInfo>? comparer)
       => startDirectoryInfo.EnumerateFileSystemInfosEx(searchPattern, searchOption, traversalOptions, predicate?.AsPredicate(), comparer?.AsComparison());
 
     public static IEnumerable<FileSystemInfo> EnumerateFileSystemInfosEx(this DirectoryInfo startDirectoryInfo,
-      string? searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      string searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
       IPredicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, IComparer<FileSystemInfo>? comparer)
       => startDirectoryInfo.EnumerateFileSystemInfosEx(searchPattern, maxDepth, traversalOptions, predicate?.AsPredicate(), comparer?.AsComparison());
 
     public static IEnumerable<FileSystemInfo> EnumerateFileSystemInfosEx(this DirectoryInfo startDirectoryInfo,
-      Func<IReadOnlyList<DirectoryInfo>, string?>? searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      Func<IReadOnlyList<DirectoryInfo>, string?> searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
       IPredicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, IComparer<FileSystemInfo>? comparer)
       => startDirectoryInfo.EnumerateFileSystemInfosEx(searchPatternSelector, searchOption, traversalOptions, predicate?.AsPredicate(), comparer?.AsComparison());
 
     public static IEnumerable<FileSystemInfo> EnumerateFileSystemInfosEx(this DirectoryInfo startDirectoryInfo,
-      Func<IReadOnlyList<DirectoryInfo>, string?>? searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Func<IReadOnlyList<DirectoryInfo>, string?> searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
       IPredicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, IComparer<FileSystemInfo>? comparer)
       => startDirectoryInfo.EnumerateFileSystemInfosEx(searchPatternSelector, maxDepth, traversalOptions, predicate?.AsPredicate(), comparer?.AsComparison());
 
@@ -1003,22 +1269,32 @@ namespace PowerLib.System.IO
       => startDirectoryInfo.EnumerateFileSystemInfosEx(traversalOptions, predicate, comparison).ToArray();
 
     public static FileSystemInfo[] GetFileSystemInfosEx(this DirectoryInfo startDirectoryInfo,
-      string? searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      Predicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Comparison<FileSystemInfo>? comparison)
+      => startDirectoryInfo.EnumerateFileSystemInfosEx(searchOption, traversalOptions, predicate, comparison).ToArray();
+
+    public static FileSystemInfo[] GetFileSystemInfosEx(this DirectoryInfo startDirectoryInfo,
+      int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Predicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Comparison<FileSystemInfo>? comparison)
+      => startDirectoryInfo.EnumerateFileSystemInfosEx(maxDepth, traversalOptions, predicate, comparison).ToArray();
+
+    public static FileSystemInfo[] GetFileSystemInfosEx(this DirectoryInfo startDirectoryInfo,
+      string searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
       Predicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Comparison<FileSystemInfo>? comparison)
       => startDirectoryInfo.EnumerateFileSystemInfosEx(searchPattern, searchOption, traversalOptions, predicate, comparison).ToArray();
 
     public static FileSystemInfo[] GetFileSystemInfosEx(this DirectoryInfo startDirectoryInfo,
-      string? searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      string searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
       Predicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Comparison<FileSystemInfo>? comparison)
       => startDirectoryInfo.EnumerateFileSystemInfosEx(searchPattern, maxDepth, traversalOptions, predicate, comparison).ToArray();
 
     public static FileSystemInfo[] GetFileSystemInfosEx(this DirectoryInfo startDirectoryInfo,
-      Func<IReadOnlyList<DirectoryInfo>, string?>? searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      Func<IReadOnlyList<DirectoryInfo>, string?> searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
       Predicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Comparison<FileSystemInfo>? comparison)
       => startDirectoryInfo.EnumerateFileSystemInfosEx(searchPatternSelector, searchOption, traversalOptions, predicate, comparison).ToArray();
 
     public static FileSystemInfo[] GetFileSystemInfosEx(this DirectoryInfo startDirectoryInfo,
-      Func<IReadOnlyList<DirectoryInfo>, string?>? searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Func<IReadOnlyList<DirectoryInfo>, string?> searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
       Predicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Comparison<FileSystemInfo>? comparison)
       => startDirectoryInfo.EnumerateFileSystemInfosEx(searchPatternSelector, maxDepth, traversalOptions, predicate, comparison).ToArray();
 
@@ -1028,22 +1304,32 @@ namespace PowerLib.System.IO
       => startDirectoryInfo.EnumerateFileSystemInfosEx(traversalOptions, predicate, comparer).ToArray();
 
     public static FileSystemInfo[] GetFileSystemInfosEx(this DirectoryInfo startDirectoryInfo,
-      string? searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      IPredicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, IComparer<FileSystemInfo>? comparer)
+      => startDirectoryInfo.EnumerateFileSystemInfosEx(searchOption, traversalOptions, predicate, comparer).ToArray();
+
+    public static FileSystemInfo[] GetFileSystemInfosEx(this DirectoryInfo startDirectoryInfo,
+      int maxDepth, FileSystemTraversalOptions traversalOptions,
+      IPredicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, IComparer<FileSystemInfo>? comparer)
+      => startDirectoryInfo.EnumerateFileSystemInfosEx(maxDepth, traversalOptions, predicate, comparer).ToArray();
+
+    public static FileSystemInfo[] GetFileSystemInfosEx(this DirectoryInfo startDirectoryInfo,
+      string searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
       IPredicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, IComparer<FileSystemInfo>? comparer)
       => startDirectoryInfo.EnumerateFileSystemInfosEx(searchPattern, searchOption, traversalOptions, predicate, comparer).ToArray();
 
     public static FileSystemInfo[] GetFileSystemInfosEx(this DirectoryInfo startDirectoryInfo,
-      string? searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      string searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
       IPredicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, IComparer<FileSystemInfo>? comparer)
       => startDirectoryInfo.EnumerateFileSystemInfosEx(searchPattern, maxDepth, traversalOptions, predicate, comparer).ToArray();
 
     public static FileSystemInfo[] GetFileSystemInfosEx(this DirectoryInfo startDirectoryInfo,
-      Func<IReadOnlyList<DirectoryInfo>, string?>? searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      Func<IReadOnlyList<DirectoryInfo>, string?> searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
       IPredicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, IComparer<FileSystemInfo>? comparer)
       => startDirectoryInfo.EnumerateFileSystemInfosEx(searchPatternSelector, searchOption, traversalOptions, predicate, comparer).ToArray();
 
     public static FileSystemInfo[] GetFileSystemInfosEx(this DirectoryInfo startDirectoryInfo,
-      Func<IReadOnlyList<DirectoryInfo>, string?>? searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Func<IReadOnlyList<DirectoryInfo>, string?> searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
       IPredicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, IComparer<FileSystemInfo>? comparer)
       => startDirectoryInfo.EnumerateFileSystemInfosEx(searchPatternSelector, maxDepth, traversalOptions, predicate, comparer).ToArray();
 
@@ -1053,32 +1339,78 @@ namespace PowerLib.System.IO
     public static IEnumerable<TFileSystemInfo> EnumerateFileSystemInfosEx<TFileSystemInfo>(this DirectoryInfo startDirectoryInfo,
       FileSystemTraversalOptions traversalOptions,
       Predicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Comparison<FileSystemInfo>? comparison, Func<FileSystemInfo, IReadOnlyList<DirectoryInfo>, TFileSystemInfo> selector)
-      => startDirectoryInfo.EnumerateFileSystemInfosEx(default(Func<IReadOnlyList<DirectoryInfo>, string?>), int.MaxValue, traversalOptions, predicate, comparison, selector);
+    {
+      Argument.That.NotNull(startDirectoryInfo);
+      Argument.That.NotNull(selector);
+
+      return EnumerateFileSystemInfosCore(startDirectoryInfo, DefaultSearchPatternSelector, int.MaxValue, traversalOptions, predicate, comparison, selector);
+    }
 
     public static IEnumerable<TFileSystemInfo> EnumerateFileSystemInfosEx<TFileSystemInfo>(this DirectoryInfo startDirectoryInfo,
-      string? searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
       Predicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Comparison<FileSystemInfo>? comparison, Func<FileSystemInfo, IReadOnlyList<DirectoryInfo>, TFileSystemInfo> selector)
-      => startDirectoryInfo.EnumerateFileSystemInfosEx(searchPattern is not null ? _ => searchPattern : null, searchOption == SearchOption.TopDirectoryOnly ? 1 : int.MaxValue, traversalOptions, predicate, comparison, selector);
+    {
+      Argument.That.NotNull(startDirectoryInfo);
+      Argument.That.NotNull(selector);
+
+      return EnumerateFileSystemInfosCore(startDirectoryInfo, DefaultSearchPatternSelector, searchOption == SearchOption.TopDirectoryOnly ? 1 : int.MaxValue, traversalOptions, predicate, comparison, selector);
+    }
 
     public static IEnumerable<TFileSystemInfo> EnumerateFileSystemInfosEx<TFileSystemInfo>(this DirectoryInfo startDirectoryInfo,
-      string? searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
-      Predicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Comparison<FileSystemInfo>? comparison, Func<FileSystemInfo, IReadOnlyList<DirectoryInfo>, TFileSystemInfo> selector)
-      => startDirectoryInfo.EnumerateFileSystemInfosEx(searchPattern is not null ? _ => searchPattern : null, maxDepth, traversalOptions, predicate, comparison, selector);
-
-    public static IEnumerable<TFileSystemInfo> EnumerateFileSystemInfosEx<TFileSystemInfo>(this DirectoryInfo startDirectoryInfo,
-      Func<IReadOnlyList<DirectoryInfo>, string?>? searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
-      Predicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Comparison<FileSystemInfo>? comparison, Func<FileSystemInfo, IReadOnlyList<DirectoryInfo>, TFileSystemInfo> selector)
-      => startDirectoryInfo.EnumerateFileSystemInfosEx(searchPatternSelector, searchOption == SearchOption.TopDirectoryOnly ? 1 : int.MaxValue, traversalOptions, predicate, comparison, selector);
-
-    public static IEnumerable<TFileSystemInfo> EnumerateFileSystemInfosEx<TFileSystemInfo>(this DirectoryInfo startDirectoryInfo,
-      Func<IReadOnlyList<DirectoryInfo>, string?>? searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      int maxDepth, FileSystemTraversalOptions traversalOptions,
       Predicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Comparison<FileSystemInfo>? comparison, Func<FileSystemInfo, IReadOnlyList<DirectoryInfo>, TFileSystemInfo> selector)
     {
       Argument.That.NotNull(startDirectoryInfo);
       Argument.That.NonNegative(maxDepth);
       Argument.That.NotNull(selector);
 
-      return EnumerateFileSystemInfosCore(startDirectoryInfo, searchPatternSelector ?? (_ => DefaultSearchPattern), maxDepth, traversalOptions, predicate, comparison, selector);
+      return EnumerateFileSystemInfosCore(startDirectoryInfo, DefaultSearchPatternSelector, maxDepth, traversalOptions, predicate, comparison, selector);
+    }
+
+    public static IEnumerable<TFileSystemInfo> EnumerateFileSystemInfosEx<TFileSystemInfo>(this DirectoryInfo startDirectoryInfo,
+      string searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      Predicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Comparison<FileSystemInfo>? comparison, Func<FileSystemInfo, IReadOnlyList<DirectoryInfo>, TFileSystemInfo> selector)
+    {
+      Argument.That.NotNull(startDirectoryInfo);
+      Argument.That.NotNull(searchPattern);
+      Argument.That.NotNull(selector);
+
+      return EnumerateFileSystemInfosCore(startDirectoryInfo, _ => searchPattern, searchOption == SearchOption.TopDirectoryOnly ? 1 : int.MaxValue, traversalOptions, predicate, comparison, selector);
+    }
+
+    public static IEnumerable<TFileSystemInfo> EnumerateFileSystemInfosEx<TFileSystemInfo>(this DirectoryInfo startDirectoryInfo,
+      string searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Predicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Comparison<FileSystemInfo>? comparison, Func<FileSystemInfo, IReadOnlyList<DirectoryInfo>, TFileSystemInfo> selector)
+    {
+      Argument.That.NotNull(startDirectoryInfo);
+      Argument.That.NotNull(searchPattern);
+      Argument.That.NonNegative(maxDepth);
+      Argument.That.NotNull(selector);
+
+      return EnumerateFileSystemInfosCore(startDirectoryInfo, _ => searchPattern, maxDepth, traversalOptions, predicate, comparison, selector);
+    }
+
+    public static IEnumerable<TFileSystemInfo> EnumerateFileSystemInfosEx<TFileSystemInfo>(this DirectoryInfo startDirectoryInfo,
+      Func<IReadOnlyList<DirectoryInfo>, string?> searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      Predicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Comparison<FileSystemInfo>? comparison, Func<FileSystemInfo, IReadOnlyList<DirectoryInfo>, TFileSystemInfo> selector)
+    {
+      Argument.That.NotNull(startDirectoryInfo);
+      Argument.That.NotNull(searchPatternSelector);
+      Argument.That.NotNull(selector);
+
+      return EnumerateFileSystemInfosCore(startDirectoryInfo, searchPatternSelector, searchOption == SearchOption.TopDirectoryOnly ? 1 : int.MaxValue, traversalOptions, predicate, comparison, selector);
+    }
+
+    public static IEnumerable<TFileSystemInfo> EnumerateFileSystemInfosEx<TFileSystemInfo>(this DirectoryInfo startDirectoryInfo,
+      Func<IReadOnlyList<DirectoryInfo>, string?> searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Predicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Comparison<FileSystemInfo>? comparison, Func<FileSystemInfo, IReadOnlyList<DirectoryInfo>, TFileSystemInfo> selector)
+    {
+      Argument.That.NotNull(startDirectoryInfo);
+      Argument.That.NotNull(searchPatternSelector);
+      Argument.That.NonNegative(maxDepth);
+      Argument.That.NotNull(selector);
+
+      return EnumerateFileSystemInfosCore(startDirectoryInfo, searchPatternSelector, maxDepth, traversalOptions, predicate, comparison, selector);
     }
 
     public static IEnumerable<TFileSystemInfo> EnumerateFileSystemInfosEx<TFileSystemInfo>(this DirectoryInfo startDirectoryInfo,
@@ -1087,22 +1419,32 @@ namespace PowerLib.System.IO
       => startDirectoryInfo.EnumerateFileSystemInfosEx(traversalOptions, predicate?.AsPredicate(), comparer?.AsComparison(), selector);
 
     public static IEnumerable<TFileSystemInfo> EnumerateFileSystemInfosEx<TFileSystemInfo>(this DirectoryInfo startDirectoryInfo,
-      string? searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      IPredicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, IComparer<FileSystemInfo>? comparer, Func<FileSystemInfo, IReadOnlyList<DirectoryInfo>, TFileSystemInfo> selector)
+      => startDirectoryInfo.EnumerateFileSystemInfosEx(searchOption, traversalOptions, predicate?.AsPredicate(), comparer?.AsComparison(), selector);
+
+    public static IEnumerable<TFileSystemInfo> EnumerateFileSystemInfosEx<TFileSystemInfo>(this DirectoryInfo startDirectoryInfo,
+      int maxDepth, FileSystemTraversalOptions traversalOptions,
+      IPredicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, IComparer<FileSystemInfo>? comparer, Func<FileSystemInfo, IReadOnlyList<DirectoryInfo>, TFileSystemInfo> selector)
+      => startDirectoryInfo.EnumerateFileSystemInfosEx(maxDepth, traversalOptions, predicate?.AsPredicate(), comparer?.AsComparison(), selector);
+
+    public static IEnumerable<TFileSystemInfo> EnumerateFileSystemInfosEx<TFileSystemInfo>(this DirectoryInfo startDirectoryInfo,
+      string searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
       IPredicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, IComparer<FileSystemInfo>? comparer, Func<FileSystemInfo, IReadOnlyList<DirectoryInfo>, TFileSystemInfo> selector)
       => startDirectoryInfo.EnumerateFileSystemInfosEx(searchPattern, searchOption, traversalOptions, predicate?.AsPredicate(), comparer?.AsComparison(), selector);
 
     public static IEnumerable<TFileSystemInfo> EnumerateFileSystemInfosEx<TFileSystemInfo>(this DirectoryInfo startDirectoryInfo,
-      string? searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      string searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
       IPredicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, IComparer<FileSystemInfo>? comparer, Func<FileSystemInfo, IReadOnlyList<DirectoryInfo>, TFileSystemInfo> selector)
       => startDirectoryInfo.EnumerateFileSystemInfosEx(searchPattern, maxDepth, traversalOptions, predicate?.AsPredicate(), comparer?.AsComparison(), selector);
 
     public static IEnumerable<TFileSystemInfo> EnumerateFileSystemInfosEx<TFileSystemInfo>(this DirectoryInfo startDirectoryInfo,
-      Func<IReadOnlyList<DirectoryInfo>, string?>? searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      Func<IReadOnlyList<DirectoryInfo>, string?> searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
       IPredicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, IComparer<FileSystemInfo>? comparer, Func<FileSystemInfo, IReadOnlyList<DirectoryInfo>, TFileSystemInfo> selector)
       => startDirectoryInfo.EnumerateFileSystemInfosEx(searchPatternSelector, searchOption, traversalOptions, predicate?.AsPredicate(), comparer?.AsComparison(), selector);
 
     public static IEnumerable<TFileSystemInfo> EnumerateFileSystemInfosEx<TFileSystemInfo>(this DirectoryInfo startDirectoryInfo,
-      Func<IReadOnlyList<DirectoryInfo>, string?>? searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Func<IReadOnlyList<DirectoryInfo>, string?> searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
       IPredicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, IComparer<FileSystemInfo>? comparer, Func<FileSystemInfo, IReadOnlyList<DirectoryInfo>, TFileSystemInfo> selector)
       => startDirectoryInfo.EnumerateFileSystemInfosEx(searchPatternSelector, maxDepth, traversalOptions, predicate?.AsPredicate(), comparer?.AsComparison(), selector);
 
@@ -1115,22 +1457,32 @@ namespace PowerLib.System.IO
       => startDirectoryInfo.EnumerateFileSystemInfosEx(traversalOptions, predicate, comparison, selector).ToArray();
 
     public static TFileSystemInfo[] GetFileSystemInfosEx<TFileSystemInfo>(this DirectoryInfo startDirectoryInfo,
-      string? searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      Predicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Comparison<FileSystemInfo>? comparison, Func<FileSystemInfo, IReadOnlyList<DirectoryInfo>, TFileSystemInfo> selector)
+      => startDirectoryInfo.EnumerateFileSystemInfosEx(searchOption, traversalOptions, predicate, comparison, selector).ToArray();
+
+    public static TFileSystemInfo[] GetFileSystemInfosEx<TFileSystemInfo>(this DirectoryInfo startDirectoryInfo,
+      int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Predicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Comparison<FileSystemInfo>? comparison, Func<FileSystemInfo, IReadOnlyList<DirectoryInfo>, TFileSystemInfo> selector)
+      => startDirectoryInfo.EnumerateFileSystemInfosEx(maxDepth, traversalOptions, predicate, comparison, selector).ToArray();
+
+    public static TFileSystemInfo[] GetFileSystemInfosEx<TFileSystemInfo>(this DirectoryInfo startDirectoryInfo,
+      string searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
       Predicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Comparison<FileSystemInfo>? comparison, Func<FileSystemInfo, IReadOnlyList<DirectoryInfo>, TFileSystemInfo> selector)
       => startDirectoryInfo.EnumerateFileSystemInfosEx(searchPattern, searchOption, traversalOptions, predicate, comparison, selector).ToArray();
 
     public static TFileSystemInfo[] GetFileSystemInfosEx<TFileSystemInfo>(this DirectoryInfo startDirectoryInfo,
-      string? searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      string searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
       Predicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Comparison<FileSystemInfo>? comparison, Func<FileSystemInfo, IReadOnlyList<DirectoryInfo>, TFileSystemInfo> selector)
       => startDirectoryInfo.EnumerateFileSystemInfosEx(searchPattern, maxDepth, traversalOptions, predicate, comparison, selector).ToArray();
 
     public static TFileSystemInfo[] GetFileSystemInfosEx<TFileSystemInfo>(this DirectoryInfo startDirectoryInfo,
-      Func<IReadOnlyList<DirectoryInfo>, string?>? searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      Func<IReadOnlyList<DirectoryInfo>, string?> searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
       Predicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Comparison<FileSystemInfo>? comparison, Func<FileSystemInfo, IReadOnlyList<DirectoryInfo>, TFileSystemInfo> selector)
       => startDirectoryInfo.EnumerateFileSystemInfosEx(searchPatternSelector, searchOption, traversalOptions, predicate, comparison, selector).ToArray();
 
     public static TFileSystemInfo[] GetFileSystemInfosEx<TFileSystemInfo>(this DirectoryInfo startDirectoryInfo,
-      Func<IReadOnlyList<DirectoryInfo>, string?>? searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Func<IReadOnlyList<DirectoryInfo>, string?> searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
       Predicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Comparison<FileSystemInfo>? comparison, Func<FileSystemInfo, IReadOnlyList<DirectoryInfo>, TFileSystemInfo> selector)
       => startDirectoryInfo.EnumerateFileSystemInfosEx(searchPatternSelector, maxDepth, traversalOptions, predicate, comparison, selector).ToArray();
 
@@ -1140,22 +1492,32 @@ namespace PowerLib.System.IO
       => startDirectoryInfo.EnumerateFileSystemInfosEx(traversalOptions, predicate, comparer, selector).ToArray();
 
     public static TFileSystemInfo[] GetFileSystemInfosEx<TFileSystemInfo>(this DirectoryInfo startDirectoryInfo,
-      string? searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      IPredicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, IComparer<FileSystemInfo>? comparer, Func<FileSystemInfo, IReadOnlyList<DirectoryInfo>, TFileSystemInfo> selector)
+      => startDirectoryInfo.EnumerateFileSystemInfosEx(searchOption, traversalOptions, predicate, comparer, selector).ToArray();
+
+    public static TFileSystemInfo[] GetFileSystemInfosEx<TFileSystemInfo>(this DirectoryInfo startDirectoryInfo,
+      int maxDepth, FileSystemTraversalOptions traversalOptions,
+      IPredicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, IComparer<FileSystemInfo>? comparer, Func<FileSystemInfo, IReadOnlyList<DirectoryInfo>, TFileSystemInfo> selector)
+      => startDirectoryInfo.EnumerateFileSystemInfosEx(maxDepth, traversalOptions, predicate, comparer, selector).ToArray();
+
+    public static TFileSystemInfo[] GetFileSystemInfosEx<TFileSystemInfo>(this DirectoryInfo startDirectoryInfo,
+      string searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
       IPredicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, IComparer<FileSystemInfo>? comparer, Func<FileSystemInfo, IReadOnlyList<DirectoryInfo>, TFileSystemInfo> selector)
       => startDirectoryInfo.EnumerateFileSystemInfosEx(searchPattern, searchOption, traversalOptions, predicate, comparer, selector).ToArray();
 
     public static TFileSystemInfo[] GetFileSystemInfosEx<TFileSystemInfo>(this DirectoryInfo startDirectoryInfo,
-      string? searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      string searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
       IPredicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, IComparer<FileSystemInfo>? comparer, Func<FileSystemInfo, IReadOnlyList<DirectoryInfo>, TFileSystemInfo> selector)
       => startDirectoryInfo.EnumerateFileSystemInfosEx(searchPattern, maxDepth, traversalOptions, predicate, comparer, selector).ToArray();
 
     public static TFileSystemInfo[] GetFileSystemInfosEx<TFileSystemInfo>(this DirectoryInfo startDirectoryInfo,
-      Func<IReadOnlyList<DirectoryInfo>, string?>? searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      Func<IReadOnlyList<DirectoryInfo>, string?> searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
       IPredicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, IComparer<FileSystemInfo>? comparer, Func<FileSystemInfo, IReadOnlyList<DirectoryInfo>, TFileSystemInfo> selector)
       => startDirectoryInfo.EnumerateFileSystemInfosEx(searchPatternSelector, searchOption, traversalOptions, predicate, comparer, selector).ToArray();
 
     public static TFileSystemInfo[] GetFileSystemInfosEx<TFileSystemInfo>(this DirectoryInfo startDirectoryInfo,
-      Func<IReadOnlyList<DirectoryInfo>, string?>? searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Func<IReadOnlyList<DirectoryInfo>, string?> searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
       IPredicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, IComparer<FileSystemInfo>? comparer, Func<FileSystemInfo, IReadOnlyList<DirectoryInfo>, TFileSystemInfo> selector)
       => startDirectoryInfo.EnumerateFileSystemInfosEx(searchPatternSelector, maxDepth, traversalOptions, predicate, comparer, selector).ToArray();
 
@@ -1165,31 +1527,71 @@ namespace PowerLib.System.IO
     public static IEnumerable<DirectoryInfo> EnumerateDirectories(this DirectoryInfo startDirectoryInfo,
       FileSystemTraversalOptions traversalOptions,
       Predicate<DirectoryInfo>? predicate, Comparison<DirectoryInfo>? comparison)
-      => startDirectoryInfo.EnumerateDirectories(default(Func<DirectoryInfo, string?>), int.MaxValue, traversalOptions, predicate, comparison);
+    {
+      Argument.That.NotNull(startDirectoryInfo);
+
+      return EnumerateDirectoriesCore(startDirectoryInfo, DefaultSearchPatternSelector, int.MaxValue, traversalOptions, predicate, comparison);
+    }
 
     public static IEnumerable<DirectoryInfo> EnumerateDirectories(this DirectoryInfo startDirectoryInfo,
-      string? searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
       Predicate<DirectoryInfo>? predicate, Comparison<DirectoryInfo>? comparison)
-      => startDirectoryInfo.EnumerateDirectories(searchPattern is not null ? _ => searchPattern : null, searchOption == SearchOption.TopDirectoryOnly ? 1 : int.MaxValue, traversalOptions, predicate, comparison);
+    {
+      Argument.That.NotNull(startDirectoryInfo);
+
+      return EnumerateDirectoriesCore(startDirectoryInfo, DefaultSearchPatternSelector, searchOption == SearchOption.TopDirectoryOnly ? 1 : int.MaxValue, traversalOptions, predicate, comparison);
+    }
 
     public static IEnumerable<DirectoryInfo> EnumerateDirectories(this DirectoryInfo startDirectoryInfo,
-      string? searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
-      Predicate<DirectoryInfo>? predicate, Comparison<DirectoryInfo>? comparison)
-      => startDirectoryInfo.EnumerateDirectories(searchPattern is not null ? _ => searchPattern : null, maxDepth, traversalOptions, predicate, comparison);
-
-    public static IEnumerable<DirectoryInfo> EnumerateDirectories(this DirectoryInfo startDirectoryInfo,
-      Func<DirectoryInfo, string?>? searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
-      Predicate<DirectoryInfo>? predicate, Comparison<DirectoryInfo>? comparison)
-      => startDirectoryInfo.EnumerateDirectories(searchPatternSelector, searchOption == SearchOption.TopDirectoryOnly ? 1 : int.MaxValue, traversalOptions, predicate, comparison);
-
-    public static IEnumerable<DirectoryInfo> EnumerateDirectories(this DirectoryInfo startDirectoryInfo,
-      Func<DirectoryInfo, string?>? searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      int maxDepth, FileSystemTraversalOptions traversalOptions,
       Predicate<DirectoryInfo>? predicate, Comparison<DirectoryInfo>? comparison)
     {
       Argument.That.NotNull(startDirectoryInfo);
       Argument.That.NonNegative(maxDepth);
 
-      return EnumerateDirectoriesCore(startDirectoryInfo, searchPatternSelector ?? (_ => DefaultSearchPattern), maxDepth, traversalOptions, predicate, comparison);
+      return EnumerateDirectoriesCore(startDirectoryInfo, DefaultSearchPatternSelector, maxDepth, traversalOptions, predicate, comparison);
+    }
+
+    public static IEnumerable<DirectoryInfo> EnumerateDirectories(this DirectoryInfo startDirectoryInfo,
+      string searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      Predicate<DirectoryInfo>? predicate, Comparison<DirectoryInfo>? comparison)
+    {
+      Argument.That.NotNull(startDirectoryInfo);
+      Argument.That.NotNull(searchPattern);
+
+      return EnumerateDirectoriesCore(startDirectoryInfo, _ => searchPattern, searchOption == SearchOption.TopDirectoryOnly ? 1 : int.MaxValue, traversalOptions, predicate, comparison);
+    }
+
+    public static IEnumerable<DirectoryInfo> EnumerateDirectories(this DirectoryInfo startDirectoryInfo,
+      string searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Predicate<DirectoryInfo>? predicate, Comparison<DirectoryInfo>? comparison)
+    {
+      Argument.That.NotNull(startDirectoryInfo);
+      Argument.That.NotNull(searchPattern);
+      Argument.That.NonNegative(maxDepth);
+
+      return EnumerateDirectoriesCore(startDirectoryInfo, _ => searchPattern, maxDepth, traversalOptions, predicate, comparison);
+    }
+
+    public static IEnumerable<DirectoryInfo> EnumerateDirectories(this DirectoryInfo startDirectoryInfo,
+      Func<DirectoryInfo, string?> searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      Predicate<DirectoryInfo>? predicate, Comparison<DirectoryInfo>? comparison)
+    {
+      Argument.That.NotNull(startDirectoryInfo);
+      Argument.That.NotNull(searchPatternSelector);
+
+      return EnumerateDirectoriesCore(startDirectoryInfo, searchPatternSelector, searchOption == SearchOption.TopDirectoryOnly ? 1 : int.MaxValue, traversalOptions, predicate, comparison);
+    }
+
+    public static IEnumerable<DirectoryInfo> EnumerateDirectories(this DirectoryInfo startDirectoryInfo,
+      Func<DirectoryInfo, string?> searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Predicate<DirectoryInfo>? predicate, Comparison<DirectoryInfo>? comparison)
+    {
+      Argument.That.NotNull(startDirectoryInfo);
+      Argument.That.NotNull(searchPatternSelector);
+      Argument.That.NonNegative(maxDepth);
+
+      return EnumerateDirectoriesCore(startDirectoryInfo, searchPatternSelector, maxDepth, traversalOptions, predicate, comparison);
     }
 
     public static IEnumerable<DirectoryInfo> EnumerateDirectories(this DirectoryInfo startDirectoryInfo,
@@ -1198,22 +1600,32 @@ namespace PowerLib.System.IO
       => startDirectoryInfo.EnumerateDirectories(traversalOptions, predicate?.AsPredicate(), comparer?.AsComparison());
 
     public static IEnumerable<DirectoryInfo> EnumerateDirectories(this DirectoryInfo startDirectoryInfo,
-      string? searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      IPredicate<DirectoryInfo>? predicate, IComparer<DirectoryInfo>? comparer)
+      => startDirectoryInfo.EnumerateDirectories(searchOption, traversalOptions, predicate?.AsPredicate(), comparer?.AsComparison());
+
+    public static IEnumerable<DirectoryInfo> EnumerateDirectories(this DirectoryInfo startDirectoryInfo,
+      int maxDepth, FileSystemTraversalOptions traversalOptions,
+      IPredicate<DirectoryInfo>? predicate, IComparer<DirectoryInfo>? comparer)
+      => startDirectoryInfo.EnumerateDirectories(maxDepth, traversalOptions, predicate?.AsPredicate(), comparer?.AsComparison());
+
+    public static IEnumerable<DirectoryInfo> EnumerateDirectories(this DirectoryInfo startDirectoryInfo,
+      string searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
       IPredicate<DirectoryInfo>? predicate, IComparer<DirectoryInfo>? comparer)
       => startDirectoryInfo.EnumerateDirectories(searchPattern, searchOption, traversalOptions, predicate?.AsPredicate(), comparer?.AsComparison());
 
     public static IEnumerable<DirectoryInfo> EnumerateDirectories(this DirectoryInfo startDirectoryInfo,
-      string? searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      string searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
       IPredicate<DirectoryInfo>? predicate, IComparer<DirectoryInfo>? comparer)
       => startDirectoryInfo.EnumerateDirectories(searchPattern, maxDepth, traversalOptions, predicate?.AsPredicate(), comparer?.AsComparison());
 
     public static IEnumerable<DirectoryInfo> EnumerateDirectories(this DirectoryInfo startDirectoryInfo,
-      Func<DirectoryInfo, string?>? searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      Func<DirectoryInfo, string?> searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
       IPredicate<DirectoryInfo>? predicate, IComparer<DirectoryInfo>? comparer)
       => startDirectoryInfo.EnumerateDirectories(searchPatternSelector, searchOption, traversalOptions, predicate?.AsPredicate(), comparer?.AsComparison());
 
     public static IEnumerable<DirectoryInfo> EnumerateDirectories(this DirectoryInfo startDirectoryInfo,
-      Func<DirectoryInfo, string?>? searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Func<DirectoryInfo, string?> searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
       IPredicate<DirectoryInfo>? predicate, IComparer<DirectoryInfo>? comparer)
       => startDirectoryInfo.EnumerateDirectories(searchPatternSelector, maxDepth, traversalOptions, predicate?.AsPredicate(), comparer?.AsComparison());
 
@@ -1226,22 +1638,32 @@ namespace PowerLib.System.IO
       => startDirectoryInfo.EnumerateDirectories(traversalOptions, predicate, comparison).ToArray();
 
     public static DirectoryInfo[] GetDirectories(this DirectoryInfo startDirectoryInfo,
-      string? searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      Predicate<DirectoryInfo>? predicate, Comparison<DirectoryInfo>? comparison)
+      => startDirectoryInfo.EnumerateDirectories(searchOption, traversalOptions, predicate, comparison).ToArray();
+
+    public static DirectoryInfo[] GetDirectories(this DirectoryInfo startDirectoryInfo,
+      int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Predicate<DirectoryInfo>? predicate, Comparison<DirectoryInfo>? comparison)
+      => startDirectoryInfo.EnumerateDirectories(maxDepth, traversalOptions, predicate, comparison).ToArray();
+
+    public static DirectoryInfo[] GetDirectories(this DirectoryInfo startDirectoryInfo,
+      string searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
       Predicate<DirectoryInfo>? predicate, Comparison<DirectoryInfo>? comparison)
       => startDirectoryInfo.EnumerateDirectories(searchPattern, searchOption, traversalOptions, predicate, comparison).ToArray();
 
     public static DirectoryInfo[] GetDirectories(this DirectoryInfo startDirectoryInfo,
-      string? searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      string searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
       Predicate<DirectoryInfo>? predicate, Comparison<DirectoryInfo>? comparison)
       => startDirectoryInfo.EnumerateDirectories(searchPattern, maxDepth, traversalOptions, predicate, comparison).ToArray();
 
     public static DirectoryInfo[] GetDirectories(this DirectoryInfo startDirectoryInfo,
-      Func<DirectoryInfo, string?>? searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      Func<DirectoryInfo, string?> searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
       Predicate<DirectoryInfo>? predicate, Comparison<DirectoryInfo>? comparison)
       => startDirectoryInfo.EnumerateDirectories(searchPatternSelector, searchOption, traversalOptions, predicate, comparison).ToArray();
 
     public static DirectoryInfo[] GetDirectories(this DirectoryInfo startDirectoryInfo,
-      Func<DirectoryInfo, string?>? searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Func<DirectoryInfo, string?> searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
       Predicate<DirectoryInfo>? predicate, Comparison<DirectoryInfo>? comparison)
       => startDirectoryInfo.EnumerateDirectories(searchPatternSelector, maxDepth, traversalOptions, predicate, comparison).ToArray();
 
@@ -1251,22 +1673,32 @@ namespace PowerLib.System.IO
       => startDirectoryInfo.EnumerateDirectories(traversalOptions, predicate, comparer).ToArray();
 
     public static DirectoryInfo[] GetDirectories(this DirectoryInfo startDirectoryInfo,
-      string? searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      IPredicate<DirectoryInfo>? predicate, IComparer<DirectoryInfo>? comparer)
+      => startDirectoryInfo.EnumerateDirectories(searchOption, traversalOptions, predicate, comparer).ToArray();
+
+    public static DirectoryInfo[] GetDirectories(this DirectoryInfo startDirectoryInfo,
+      int maxDepth, FileSystemTraversalOptions traversalOptions,
+      IPredicate<DirectoryInfo>? predicate, IComparer<DirectoryInfo>? comparer)
+      => startDirectoryInfo.EnumerateDirectories(maxDepth, traversalOptions, predicate, comparer).ToArray();
+
+    public static DirectoryInfo[] GetDirectories(this DirectoryInfo startDirectoryInfo,
+      string searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
       IPredicate<DirectoryInfo>? predicate, IComparer<DirectoryInfo>? comparer)
       => startDirectoryInfo.EnumerateDirectories(searchPattern, searchOption, traversalOptions, predicate, comparer).ToArray();
 
     public static DirectoryInfo[] GetDirectories(this DirectoryInfo startDirectoryInfo,
-      string? searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      string searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
       IPredicate<DirectoryInfo>? predicate, IComparer<DirectoryInfo>? comparer)
       => startDirectoryInfo.EnumerateDirectories(searchPattern, maxDepth, traversalOptions, predicate, comparer).ToArray();
 
     public static DirectoryInfo[] GetDirectories(this DirectoryInfo startDirectoryInfo,
-      Func<DirectoryInfo, string?>? searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      Func<DirectoryInfo, string?> searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
       IPredicate<DirectoryInfo>? predicate, IComparer<DirectoryInfo>? comparer)
       => startDirectoryInfo.EnumerateDirectories(searchPatternSelector, searchOption, traversalOptions, predicate, comparer).ToArray();
 
     public static DirectoryInfo[] GetDirectories(this DirectoryInfo startDirectoryInfo,
-      Func<DirectoryInfo, string?>? searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Func<DirectoryInfo, string?> searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
       IPredicate<DirectoryInfo>? predicate, IComparer<DirectoryInfo>? comparer)
       => startDirectoryInfo.EnumerateDirectories(searchPatternSelector, maxDepth, traversalOptions, predicate, comparer).ToArray();
 
@@ -1276,32 +1708,78 @@ namespace PowerLib.System.IO
     public static IEnumerable<TDirectoryInfo> EnumerateDirectories<TDirectoryInfo>(this DirectoryInfo startDirectoryInfo,
       FileSystemTraversalOptions traversalOptions,
       Predicate<DirectoryInfo>? predicate, Comparison<DirectoryInfo>? comparison, Func<DirectoryInfo, TDirectoryInfo> selector)
-      => startDirectoryInfo.EnumerateDirectories(default(Func<DirectoryInfo, string?>), int.MaxValue, traversalOptions, predicate, comparison, selector);
+    {
+      Argument.That.NotNull(startDirectoryInfo);
+      Argument.That.NotNull(selector);
+
+      return EnumerateDirectoriesCore(startDirectoryInfo, DefaultSearchPatternSelector, int.MaxValue, traversalOptions, predicate, comparison, selector);
+    }
 
     public static IEnumerable<TDirectoryInfo> EnumerateDirectories<TDirectoryInfo>(this DirectoryInfo startDirectoryInfo,
-      string? searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
       Predicate<DirectoryInfo>? predicate, Comparison<DirectoryInfo>? comparison, Func<DirectoryInfo, TDirectoryInfo> selector)
-      => startDirectoryInfo.EnumerateDirectories(searchPattern is not null ? _ => searchPattern : null, searchOption == SearchOption.TopDirectoryOnly ? 1 : int.MaxValue, traversalOptions, predicate, comparison, selector);
+    {
+      Argument.That.NotNull(startDirectoryInfo);
+      Argument.That.NotNull(selector);
+
+      return EnumerateDirectoriesCore(startDirectoryInfo, DefaultSearchPatternSelector, searchOption == SearchOption.TopDirectoryOnly ? 1 : int.MaxValue, traversalOptions, predicate, comparison, selector);
+    }
 
     public static IEnumerable<TDirectoryInfo> EnumerateDirectories<TDirectoryInfo>(this DirectoryInfo startDirectoryInfo,
-      string? searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
-      Predicate<DirectoryInfo>? predicate, Comparison<DirectoryInfo>? comparison, Func<DirectoryInfo, TDirectoryInfo> selector)
-      => startDirectoryInfo.EnumerateDirectories(searchPattern is not null ? _ => searchPattern : null, maxDepth, traversalOptions, predicate, comparison, selector);
-
-    public static IEnumerable<TDirectoryInfo> EnumerateDirectories<TDirectoryInfo>(this DirectoryInfo startDirectoryInfo,
-      Func<DirectoryInfo, string?>? searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
-      Predicate<DirectoryInfo>? predicate, Comparison<DirectoryInfo>? comparison, Func<DirectoryInfo, TDirectoryInfo> selector)
-      => startDirectoryInfo.EnumerateDirectories(searchPatternSelector, searchOption == SearchOption.TopDirectoryOnly ? 1 : int.MaxValue, traversalOptions, predicate, comparison, selector);
-
-    public static IEnumerable<TDirectoryInfo> EnumerateDirectories<TDirectoryInfo>(this DirectoryInfo startDirectoryInfo,
-      Func<DirectoryInfo, string?>? searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      int maxDepth, FileSystemTraversalOptions traversalOptions,
       Predicate<DirectoryInfo>? predicate, Comparison<DirectoryInfo>? comparison, Func<DirectoryInfo, TDirectoryInfo> selector)
     {
       Argument.That.NotNull(startDirectoryInfo);
       Argument.That.NonNegative(maxDepth);
       Argument.That.NotNull(selector);
 
-      return EnumerateDirectoriesCore(startDirectoryInfo, searchPatternSelector ?? (_ => DefaultSearchPattern), maxDepth, traversalOptions, predicate, comparison, selector);
+      return EnumerateDirectoriesCore(startDirectoryInfo, DefaultSearchPatternSelector, maxDepth, traversalOptions, predicate, comparison, selector);
+    }
+
+    public static IEnumerable<TDirectoryInfo> EnumerateDirectories<TDirectoryInfo>(this DirectoryInfo startDirectoryInfo,
+      string searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      Predicate<DirectoryInfo>? predicate, Comparison<DirectoryInfo>? comparison, Func<DirectoryInfo, TDirectoryInfo> selector)
+    {
+      Argument.That.NotNull(startDirectoryInfo);
+      Argument.That.NotNull(searchPattern);
+      Argument.That.NotNull(selector);
+
+      return EnumerateDirectoriesCore(startDirectoryInfo, _ => searchPattern, searchOption == SearchOption.TopDirectoryOnly ? 1 : int.MaxValue, traversalOptions, predicate, comparison, selector);
+    }
+
+    public static IEnumerable<TDirectoryInfo> EnumerateDirectories<TDirectoryInfo>(this DirectoryInfo startDirectoryInfo,
+      string searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Predicate<DirectoryInfo>? predicate, Comparison<DirectoryInfo>? comparison, Func<DirectoryInfo, TDirectoryInfo> selector)
+    {
+      Argument.That.NotNull(startDirectoryInfo);
+      Argument.That.NotNull(searchPattern);
+      Argument.That.NonNegative(maxDepth);
+      Argument.That.NotNull(selector);
+
+      return EnumerateDirectoriesCore(startDirectoryInfo, _ => searchPattern, maxDepth, traversalOptions, predicate, comparison, selector);
+    }
+
+    public static IEnumerable<TDirectoryInfo> EnumerateDirectories<TDirectoryInfo>(this DirectoryInfo startDirectoryInfo,
+      Func<DirectoryInfo, string?> searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      Predicate<DirectoryInfo>? predicate, Comparison<DirectoryInfo>? comparison, Func<DirectoryInfo, TDirectoryInfo> selector)
+    {
+      Argument.That.NotNull(startDirectoryInfo);
+      Argument.That.NotNull(searchPatternSelector);
+      Argument.That.NotNull(selector);
+
+      return EnumerateDirectoriesCore(startDirectoryInfo, searchPatternSelector, searchOption == SearchOption.TopDirectoryOnly ? 1 : int.MaxValue, traversalOptions, predicate, comparison, selector);
+    }
+
+    public static IEnumerable<TDirectoryInfo> EnumerateDirectories<TDirectoryInfo>(this DirectoryInfo startDirectoryInfo,
+      Func<DirectoryInfo, string?> searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Predicate<DirectoryInfo>? predicate, Comparison<DirectoryInfo>? comparison, Func<DirectoryInfo, TDirectoryInfo> selector)
+    {
+      Argument.That.NotNull(startDirectoryInfo);
+      Argument.That.NotNull(searchPatternSelector);
+      Argument.That.NonNegative(maxDepth);
+      Argument.That.NotNull(selector);
+
+      return EnumerateDirectoriesCore(startDirectoryInfo, searchPatternSelector, maxDepth, traversalOptions, predicate, comparison, selector);
     }
 
     public static IEnumerable<TDirectoryInfo> EnumerateDirectories<TDirectoryInfo>(this DirectoryInfo startDirectoryInfo,
@@ -1310,22 +1788,32 @@ namespace PowerLib.System.IO
       => startDirectoryInfo.EnumerateDirectories(traversalOptions, predicate?.AsPredicate(), comparer?.AsComparison(), selector);
 
     public static IEnumerable<TDirectoryInfo> EnumerateDirectories<TDirectoryInfo>(this DirectoryInfo startDirectoryInfo,
-      string? searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      IPredicate<DirectoryInfo>? predicate, IComparer<DirectoryInfo>? comparer, Func<DirectoryInfo, TDirectoryInfo> selector)
+      => startDirectoryInfo.EnumerateDirectories(searchOption, traversalOptions, predicate?.AsPredicate(), comparer?.AsComparison(), selector);
+
+    public static IEnumerable<TDirectoryInfo> EnumerateDirectories<TDirectoryInfo>(this DirectoryInfo startDirectoryInfo,
+      int maxDepth, FileSystemTraversalOptions traversalOptions,
+      IPredicate<DirectoryInfo>? predicate, IComparer<DirectoryInfo>? comparer, Func<DirectoryInfo, TDirectoryInfo> selector)
+      => startDirectoryInfo.EnumerateDirectories(maxDepth, traversalOptions, predicate?.AsPredicate(), comparer?.AsComparison(), selector);
+
+    public static IEnumerable<TDirectoryInfo> EnumerateDirectories<TDirectoryInfo>(this DirectoryInfo startDirectoryInfo,
+      string searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
       IPredicate<DirectoryInfo>? predicate, IComparer<DirectoryInfo>? comparer, Func<DirectoryInfo, TDirectoryInfo> selector)
       => startDirectoryInfo.EnumerateDirectories(searchPattern, searchOption, traversalOptions, predicate?.AsPredicate(), comparer?.AsComparison(), selector);
 
     public static IEnumerable<TDirectoryInfo> EnumerateDirectories<TDirectoryInfo>(this DirectoryInfo startDirectoryInfo,
-      string? searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      string searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
       IPredicate<DirectoryInfo>? predicate, IComparer<DirectoryInfo>? comparer, Func<DirectoryInfo, TDirectoryInfo> selector)
       => startDirectoryInfo.EnumerateDirectories(searchPattern, maxDepth, traversalOptions, predicate?.AsPredicate(), comparer?.AsComparison(), selector);
 
     public static IEnumerable<TDirectoryInfo> EnumerateDirectories<TDirectoryInfo>(this DirectoryInfo startDirectoryInfo,
-      Func<DirectoryInfo, string?>? searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      Func<DirectoryInfo, string?> searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
       IPredicate<DirectoryInfo>? predicate, IComparer<DirectoryInfo>? comparer, Func<DirectoryInfo, TDirectoryInfo> selector)
       => startDirectoryInfo.EnumerateDirectories(searchPatternSelector, searchOption, traversalOptions, predicate?.AsPredicate(), comparer?.AsComparison(), selector);
 
     public static IEnumerable<TDirectoryInfo> EnumerateDirectories<TDirectoryInfo>(this DirectoryInfo startDirectoryInfo,
-      Func<DirectoryInfo, string?>? searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Func<DirectoryInfo, string?> searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
       IPredicate<DirectoryInfo>? predicate, IComparer<DirectoryInfo>? comparer, Func<DirectoryInfo, TDirectoryInfo> selector)
       => startDirectoryInfo.EnumerateDirectories(searchPatternSelector, maxDepth, traversalOptions, predicate?.AsPredicate(), comparer?.AsComparison(), selector);
 
@@ -1338,22 +1826,32 @@ namespace PowerLib.System.IO
       => startDirectoryInfo.EnumerateDirectories(traversalOptions, predicate, comparison, selector).ToArray();
 
     public static TDirectoryInfo[] GetDirectories<TDirectoryInfo>(this DirectoryInfo startDirectoryInfo,
-      string? searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
       Predicate<DirectoryInfo>? predicate, Comparison<DirectoryInfo>? comparison, Func<DirectoryInfo, TDirectoryInfo> selector)
-      => startDirectoryInfo.EnumerateDirectories(searchPattern is not null ? _ => searchPattern : null , searchOption, traversalOptions, predicate, comparison, selector).ToArray();
+      => startDirectoryInfo.EnumerateDirectories(searchOption, traversalOptions, predicate, comparison, selector).ToArray();
 
     public static TDirectoryInfo[] GetDirectories<TDirectoryInfo>(this DirectoryInfo startDirectoryInfo,
-      string? searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      int maxDepth, FileSystemTraversalOptions traversalOptions,
       Predicate<DirectoryInfo>? predicate, Comparison<DirectoryInfo>? comparison, Func<DirectoryInfo, TDirectoryInfo> selector)
-      => startDirectoryInfo.EnumerateDirectories(searchPattern is not null ? _ => searchPattern : null, maxDepth, traversalOptions, predicate, comparison, selector).ToArray();
+      => startDirectoryInfo.EnumerateDirectories(maxDepth, traversalOptions, predicate, comparison, selector).ToArray();
 
     public static TDirectoryInfo[] GetDirectories<TDirectoryInfo>(this DirectoryInfo startDirectoryInfo,
-      Func<DirectoryInfo, string?>? searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      string searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      Predicate<DirectoryInfo>? predicate, Comparison<DirectoryInfo>? comparison, Func<DirectoryInfo, TDirectoryInfo> selector)
+      => startDirectoryInfo.EnumerateDirectories(searchPattern, searchOption, traversalOptions, predicate, comparison, selector).ToArray();
+
+    public static TDirectoryInfo[] GetDirectories<TDirectoryInfo>(this DirectoryInfo startDirectoryInfo,
+      string searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Predicate<DirectoryInfo>? predicate, Comparison<DirectoryInfo>? comparison, Func<DirectoryInfo, TDirectoryInfo> selector)
+      => startDirectoryInfo.EnumerateDirectories(searchPattern, maxDepth, traversalOptions, predicate, comparison, selector).ToArray();
+
+    public static TDirectoryInfo[] GetDirectories<TDirectoryInfo>(this DirectoryInfo startDirectoryInfo,
+      Func<DirectoryInfo, string?> searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
       Predicate<DirectoryInfo>? predicate, Comparison<DirectoryInfo>? comparison, Func<DirectoryInfo, TDirectoryInfo> selector)
       => startDirectoryInfo.EnumerateDirectories(searchPatternSelector, searchOption, traversalOptions, predicate, comparison, selector).ToArray();
 
     public static TDirectoryInfo[] GetDirectories<TDirectoryInfo>(this DirectoryInfo startDirectoryInfo,
-      Func<DirectoryInfo, string?>? searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Func<DirectoryInfo, string?> searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
       Predicate<DirectoryInfo>? predicate, Comparison<DirectoryInfo>? comparison, Func<DirectoryInfo, TDirectoryInfo> selector)
       => startDirectoryInfo.EnumerateDirectories(searchPatternSelector, maxDepth, traversalOptions, predicate, comparison, selector).ToArray();
 
@@ -1363,22 +1861,32 @@ namespace PowerLib.System.IO
       => startDirectoryInfo.EnumerateDirectories(traversalOptions, predicate, comparer, selector).ToArray();
 
     public static TDirectoryInfo[] GetDirectories<TDirectoryInfo>(this DirectoryInfo startDirectoryInfo,
-      string? searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
       IPredicate<DirectoryInfo>? predicate, IComparer<DirectoryInfo>? comparer, Func<DirectoryInfo, TDirectoryInfo> selector)
-      => startDirectoryInfo.EnumerateDirectories(searchPattern is not null ? _ => searchPattern : null, searchOption, traversalOptions, predicate, comparer, selector).ToArray();
+      => startDirectoryInfo.EnumerateDirectories(searchOption, traversalOptions, predicate, comparer, selector).ToArray();
 
     public static TDirectoryInfo[] GetDirectories<TDirectoryInfo>(this DirectoryInfo startDirectoryInfo,
-      string? searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      int maxDepth, FileSystemTraversalOptions traversalOptions,
       IPredicate<DirectoryInfo>? predicate, IComparer<DirectoryInfo>? comparer, Func<DirectoryInfo, TDirectoryInfo> selector)
-      => startDirectoryInfo.EnumerateDirectories(searchPattern is not null ? _ => searchPattern : null, maxDepth, traversalOptions, predicate, comparer, selector).ToArray();
+      => startDirectoryInfo.EnumerateDirectories(maxDepth, traversalOptions, predicate, comparer, selector).ToArray();
 
     public static TDirectoryInfo[] GetDirectories<TDirectoryInfo>(this DirectoryInfo startDirectoryInfo,
-      Func<DirectoryInfo, string?>? searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      string searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      IPredicate<DirectoryInfo>? predicate, IComparer<DirectoryInfo>? comparer, Func<DirectoryInfo, TDirectoryInfo> selector)
+      => startDirectoryInfo.EnumerateDirectories(searchPattern, searchOption, traversalOptions, predicate, comparer, selector).ToArray();
+
+    public static TDirectoryInfo[] GetDirectories<TDirectoryInfo>(this DirectoryInfo startDirectoryInfo,
+      string searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      IPredicate<DirectoryInfo>? predicate, IComparer<DirectoryInfo>? comparer, Func<DirectoryInfo, TDirectoryInfo> selector)
+      => startDirectoryInfo.EnumerateDirectories(searchPattern, maxDepth, traversalOptions, predicate, comparer, selector).ToArray();
+
+    public static TDirectoryInfo[] GetDirectories<TDirectoryInfo>(this DirectoryInfo startDirectoryInfo,
+      Func<DirectoryInfo, string?> searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
       IPredicate<DirectoryInfo>? predicate, IComparer<DirectoryInfo>? comparer, Func<DirectoryInfo, TDirectoryInfo> selector)
       => startDirectoryInfo.EnumerateDirectories(searchPatternSelector, searchOption, traversalOptions, predicate, comparer, selector).ToArray();
 
     public static TDirectoryInfo[] GetDirectories<TDirectoryInfo>(this DirectoryInfo startDirectoryInfo,
-      Func<DirectoryInfo, string?>? searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Func<DirectoryInfo, string?> searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
       IPredicate<DirectoryInfo>? predicate, IComparer<DirectoryInfo>? comparer, Func<DirectoryInfo, TDirectoryInfo> selector)
       => startDirectoryInfo.EnumerateDirectories(searchPatternSelector, maxDepth, traversalOptions, predicate, comparer, selector).ToArray();
 
@@ -1388,31 +1896,71 @@ namespace PowerLib.System.IO
     public static IEnumerable<DirectoryInfo> EnumerateDirectoriesEx(this DirectoryInfo startDirectoryInfo,
       FileSystemTraversalOptions traversalOptions,
       Predicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Comparison<DirectoryInfo>? comparison)
-      => startDirectoryInfo.EnumerateDirectoriesEx(default(Func<IReadOnlyList<DirectoryInfo>, string?>), int.MaxValue, traversalOptions, predicate, comparison);
+    {
+      Argument.That.NotNull(startDirectoryInfo);
+
+      return EnumerateDirectoriesCore(startDirectoryInfo, DefaultSearchPatternSelector, int.MaxValue, traversalOptions, predicate, comparison);
+    }
 
     public static IEnumerable<DirectoryInfo> EnumerateDirectoriesEx(this DirectoryInfo startDirectoryInfo,
-      string? searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
       Predicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Comparison<DirectoryInfo>? comparison)
-      => startDirectoryInfo.EnumerateDirectoriesEx(searchPattern is not null ? _ => searchPattern : null, searchOption == SearchOption.TopDirectoryOnly ? 1 : int.MaxValue, traversalOptions, predicate, comparison);
+    {
+      Argument.That.NotNull(startDirectoryInfo);
+
+      return EnumerateDirectoriesCore(startDirectoryInfo, DefaultSearchPatternSelector, searchOption == SearchOption.TopDirectoryOnly ? 1 : int.MaxValue, traversalOptions, predicate, comparison);
+    }
 
     public static IEnumerable<DirectoryInfo> EnumerateDirectoriesEx(this DirectoryInfo startDirectoryInfo,
-      string? searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
-      Predicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Comparison<DirectoryInfo>? comparison)
-      => startDirectoryInfo.EnumerateDirectoriesEx(searchPattern is not null ? _ => searchPattern : null, maxDepth, traversalOptions, predicate, comparison);
-
-    public static IEnumerable<DirectoryInfo> EnumerateDirectoriesEx(this DirectoryInfo startDirectoryInfo,
-      Func<IReadOnlyList<DirectoryInfo>, string?>? searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
-      Predicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Comparison<DirectoryInfo>? comparison)
-      => startDirectoryInfo.EnumerateDirectoriesEx(searchPatternSelector, searchOption == SearchOption.TopDirectoryOnly ? 1 : int.MaxValue, traversalOptions, predicate, comparison);
-
-    public static IEnumerable<DirectoryInfo> EnumerateDirectoriesEx(this DirectoryInfo startDirectoryInfo,
-      Func<IReadOnlyList<DirectoryInfo>, string?>? searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      int maxDepth, FileSystemTraversalOptions traversalOptions,
       Predicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Comparison<DirectoryInfo>? comparison)
     {
       Argument.That.NotNull(startDirectoryInfo);
       Argument.That.NonNegative(maxDepth);
 
-      return EnumerateDirectoriesCore(startDirectoryInfo, searchPatternSelector ?? (_ => DefaultSearchPattern), maxDepth, traversalOptions, predicate, comparison);
+      return EnumerateDirectoriesCore(startDirectoryInfo, DefaultSearchPatternSelector, maxDepth, traversalOptions, predicate, comparison);
+    }
+
+    public static IEnumerable<DirectoryInfo> EnumerateDirectoriesEx(this DirectoryInfo startDirectoryInfo,
+      string searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      Predicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Comparison<DirectoryInfo>? comparison)
+    {
+      Argument.That.NotNull(startDirectoryInfo);
+      Argument.That.NotNull(searchPattern);
+
+      return EnumerateDirectoriesCore(startDirectoryInfo, _ => searchPattern, searchOption == SearchOption.TopDirectoryOnly ? 1 : int.MaxValue, traversalOptions, predicate, comparison);
+    }
+
+    public static IEnumerable<DirectoryInfo> EnumerateDirectoriesEx(this DirectoryInfo startDirectoryInfo,
+      string searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Predicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Comparison<DirectoryInfo>? comparison)
+    {
+      Argument.That.NotNull(startDirectoryInfo);
+      Argument.That.NotNull(searchPattern);
+      Argument.That.NonNegative(maxDepth);
+
+      return EnumerateDirectoriesCore(startDirectoryInfo, _ => searchPattern, maxDepth, traversalOptions, predicate, comparison);
+    }
+
+    public static IEnumerable<DirectoryInfo> EnumerateDirectoriesEx(this DirectoryInfo startDirectoryInfo,
+      Func<IReadOnlyList<DirectoryInfo>, string?> searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      Predicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Comparison<DirectoryInfo>? comparison)
+    {
+      Argument.That.NotNull(startDirectoryInfo);
+      Argument.That.NotNull(searchPatternSelector);
+
+      return EnumerateDirectoriesCore(startDirectoryInfo, searchPatternSelector, searchOption == SearchOption.TopDirectoryOnly ? 1 : int.MaxValue, traversalOptions, predicate, comparison);
+    }
+
+    public static IEnumerable<DirectoryInfo> EnumerateDirectoriesEx(this DirectoryInfo startDirectoryInfo,
+      Func<IReadOnlyList<DirectoryInfo>, string?> searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Predicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Comparison<DirectoryInfo>? comparison)
+    {
+      Argument.That.NotNull(startDirectoryInfo);
+      Argument.That.NotNull(searchPatternSelector);
+      Argument.That.NonNegative(maxDepth);
+
+      return EnumerateDirectoriesCore(startDirectoryInfo, searchPatternSelector, maxDepth, traversalOptions, predicate, comparison);
     }
 
     public static IEnumerable<DirectoryInfo> EnumerateDirectoriesEx(this DirectoryInfo startDirectoryInfo,
@@ -1421,22 +1969,32 @@ namespace PowerLib.System.IO
       => startDirectoryInfo.EnumerateDirectoriesEx(traversalOptions, predicate?.AsPredicate(), comparer?.AsComparison());
 
     public static IEnumerable<DirectoryInfo> EnumerateDirectoriesEx(this DirectoryInfo startDirectoryInfo,
-      string? searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      IPredicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, IComparer<DirectoryInfo>? comparer)
+      => startDirectoryInfo.EnumerateDirectoriesEx(searchOption, traversalOptions, predicate?.AsPredicate(), comparer?.AsComparison());
+
+    public static IEnumerable<DirectoryInfo> EnumerateDirectoriesEx(this DirectoryInfo startDirectoryInfo,
+      int maxDepth, FileSystemTraversalOptions traversalOptions,
+      IPredicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, IComparer<DirectoryInfo>? comparer)
+      => startDirectoryInfo.EnumerateDirectoriesEx(maxDepth, traversalOptions, predicate?.AsPredicate(), comparer?.AsComparison());
+
+    public static IEnumerable<DirectoryInfo> EnumerateDirectoriesEx(this DirectoryInfo startDirectoryInfo,
+      string searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
       IPredicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, IComparer<DirectoryInfo>? comparer)
       => startDirectoryInfo.EnumerateDirectoriesEx(searchPattern, searchOption, traversalOptions, predicate?.AsPredicate(), comparer?.AsComparison());
 
     public static IEnumerable<DirectoryInfo> EnumerateDirectoriesEx(this DirectoryInfo startDirectoryInfo,
-      string? searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      string searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
       IPredicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, IComparer<DirectoryInfo>? comparer)
       => startDirectoryInfo.EnumerateDirectoriesEx(searchPattern, maxDepth, traversalOptions, predicate?.AsPredicate(), comparer?.AsComparison());
 
     public static IEnumerable<DirectoryInfo> EnumerateDirectoriesEx(this DirectoryInfo startDirectoryInfo,
-      Func<IReadOnlyList<DirectoryInfo>, string?>? searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      Func<IReadOnlyList<DirectoryInfo>, string?> searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
       IPredicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, IComparer<DirectoryInfo>? comparer)
       => startDirectoryInfo.EnumerateDirectoriesEx(searchPatternSelector, searchOption, traversalOptions, predicate?.AsPredicate(), comparer?.AsComparison());
 
     public static IEnumerable<DirectoryInfo> EnumerateDirectoriesEx(this DirectoryInfo startDirectoryInfo,
-      Func<IReadOnlyList<DirectoryInfo>, string?>? searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Func<IReadOnlyList<DirectoryInfo>, string?> searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
       IPredicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, IComparer<DirectoryInfo>? comparer)
       => startDirectoryInfo.EnumerateDirectoriesEx(searchPatternSelector, maxDepth, traversalOptions, predicate?.AsPredicate(), comparer?.AsComparison());
 
@@ -1449,22 +2007,32 @@ namespace PowerLib.System.IO
       => startDirectoryInfo.EnumerateDirectoriesEx(traversalOptions, predicate, comparison).ToArray();
 
     public static DirectoryInfo[] GetDirectoriesEx(this DirectoryInfo startDirectoryInfo,
-      string? searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      Predicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Comparison<DirectoryInfo>? comparison)
+      => startDirectoryInfo.EnumerateDirectoriesEx(searchOption, traversalOptions, predicate, comparison).ToArray();
+
+    public static DirectoryInfo[] GetDirectoriesEx(this DirectoryInfo startDirectoryInfo,
+      int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Predicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Comparison<DirectoryInfo>? comparison)
+      => startDirectoryInfo.EnumerateDirectoriesEx(maxDepth, traversalOptions, predicate, comparison).ToArray();
+
+    public static DirectoryInfo[] GetDirectoriesEx(this DirectoryInfo startDirectoryInfo,
+      string searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
       Predicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Comparison<DirectoryInfo>? comparison)
       => startDirectoryInfo.EnumerateDirectoriesEx(searchPattern, searchOption, traversalOptions, predicate, comparison).ToArray();
 
     public static DirectoryInfo[] GetDirectoriesEx(this DirectoryInfo startDirectoryInfo,
-      string? searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      string searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
       Predicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Comparison<DirectoryInfo>? comparison)
       => startDirectoryInfo.EnumerateDirectoriesEx(searchPattern, maxDepth, traversalOptions, predicate, comparison).ToArray();
 
     public static DirectoryInfo[] GetDirectoriesEx(this DirectoryInfo startDirectoryInfo,
-      Func<IReadOnlyList<DirectoryInfo>, string?>? searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      Func<IReadOnlyList<DirectoryInfo>, string?> searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
       Predicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Comparison<DirectoryInfo>? comparison)
       => startDirectoryInfo.EnumerateDirectoriesEx(searchPatternSelector, searchOption, traversalOptions, predicate, comparison).ToArray();
 
     public static DirectoryInfo[] GetDirectoriesEx(this DirectoryInfo startDirectoryInfo,
-      Func<IReadOnlyList<DirectoryInfo>, string?>? searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Func<IReadOnlyList<DirectoryInfo>, string?> searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
       Predicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Comparison<DirectoryInfo>? comparison)
       => startDirectoryInfo.EnumerateDirectoriesEx(searchPatternSelector, maxDepth, traversalOptions, predicate, comparison).ToArray();
 
@@ -1474,22 +2042,32 @@ namespace PowerLib.System.IO
       => startDirectoryInfo.EnumerateDirectoriesEx(traversalOptions, predicate?.AsPredicate(), comparer?.AsComparison()).ToArray();
 
     public static DirectoryInfo[] GetDirectoriesEx(this DirectoryInfo startDirectoryInfo,
-      string? searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      IPredicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, IComparer<DirectoryInfo>? comparer)
+      => startDirectoryInfo.EnumerateDirectoriesEx(searchOption, traversalOptions, predicate?.AsPredicate(), comparer?.AsComparison()).ToArray();
+
+    public static DirectoryInfo[] GetDirectoriesEx(this DirectoryInfo startDirectoryInfo,
+      int maxDepth, FileSystemTraversalOptions traversalOptions,
+      IPredicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, IComparer<DirectoryInfo>? comparer)
+      => startDirectoryInfo.EnumerateDirectoriesEx(maxDepth, traversalOptions, predicate?.AsPredicate(), comparer?.AsComparison()).ToArray();
+
+    public static DirectoryInfo[] GetDirectoriesEx(this DirectoryInfo startDirectoryInfo,
+      string searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
       IPredicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, IComparer<DirectoryInfo>? comparer)
       => startDirectoryInfo.EnumerateDirectoriesEx(searchPattern, searchOption, traversalOptions, predicate?.AsPredicate(), comparer?.AsComparison()).ToArray();
 
     public static DirectoryInfo[] GetDirectoriesEx(this DirectoryInfo startDirectoryInfo,
-      string? searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      string searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
       IPredicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, IComparer<DirectoryInfo>? comparer)
       => startDirectoryInfo.EnumerateDirectoriesEx(searchPattern, maxDepth, traversalOptions, predicate?.AsPredicate(), comparer?.AsComparison()).ToArray();
 
     public static DirectoryInfo[] GetDirectoriesEx(this DirectoryInfo startDirectoryInfo,
-      Func<IReadOnlyList<DirectoryInfo>, string?>? searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      Func<IReadOnlyList<DirectoryInfo>, string?> searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
       IPredicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, IComparer<DirectoryInfo>? comparer)
       => startDirectoryInfo.EnumerateDirectoriesEx(searchPatternSelector, searchOption, traversalOptions, predicate?.AsPredicate(), comparer?.AsComparison()).ToArray();
 
     public static DirectoryInfo[] GetDirectoriesEx(this DirectoryInfo startDirectoryInfo,
-      Func<IReadOnlyList<DirectoryInfo>, string?>? searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Func<IReadOnlyList<DirectoryInfo>, string?> searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
       IPredicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, IComparer<DirectoryInfo>? comparer)
       => startDirectoryInfo.EnumerateDirectoriesEx(searchPatternSelector, maxDepth, traversalOptions, predicate?.AsPredicate(), comparer?.AsComparison()).ToArray();
 
@@ -1499,32 +2077,78 @@ namespace PowerLib.System.IO
     public static IEnumerable<TDirectoryInfo> EnumerateDirectoriesEx<TDirectoryInfo>(this DirectoryInfo startDirectoryInfo,
       FileSystemTraversalOptions traversalOptions,
       Predicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Comparison<DirectoryInfo>? comparison, Func<DirectoryInfo, IReadOnlyList<DirectoryInfo>, TDirectoryInfo> selector)
-      => startDirectoryInfo.EnumerateDirectoriesEx(default(Func<IReadOnlyList<DirectoryInfo>, string?>), int.MaxValue, traversalOptions, predicate, comparison, selector);
+    {
+      Argument.That.NotNull(startDirectoryInfo);
+      Argument.That.NotNull(selector);
+
+      return EnumerateDirectoriesCore(startDirectoryInfo, DefaultSearchPatternSelector, int.MaxValue, traversalOptions, predicate, comparison, selector);
+    }
 
     public static IEnumerable<TDirectoryInfo> EnumerateDirectoriesEx<TDirectoryInfo>(this DirectoryInfo startDirectoryInfo,
-      string? searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
       Predicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Comparison<DirectoryInfo>? comparison, Func<DirectoryInfo, IReadOnlyList<DirectoryInfo>, TDirectoryInfo> selector)
-      => startDirectoryInfo.EnumerateDirectoriesEx(searchPattern is not null ? _ => searchPattern : null, searchOption == SearchOption.TopDirectoryOnly ? 1 : int.MaxValue, traversalOptions, predicate, comparison, selector);
+    {
+      Argument.That.NotNull(startDirectoryInfo);
+      Argument.That.NotNull(selector);
+
+      return EnumerateDirectoriesCore(startDirectoryInfo, DefaultSearchPatternSelector, searchOption == SearchOption.TopDirectoryOnly ? 1 : int.MaxValue, traversalOptions, predicate, comparison, selector);
+    }
 
     public static IEnumerable<TDirectoryInfo> EnumerateDirectoriesEx<TDirectoryInfo>(this DirectoryInfo startDirectoryInfo,
-      string? searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
-      Predicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Comparison<DirectoryInfo>? comparison, Func<DirectoryInfo, IReadOnlyList<DirectoryInfo>, TDirectoryInfo> selector)
-      => startDirectoryInfo.EnumerateDirectoriesEx(searchPattern is not null ? _ => searchPattern : null, maxDepth, traversalOptions, predicate, comparison, selector);
-
-    public static IEnumerable<TDirectoryInfo> EnumerateDirectoriesEx<TDirectoryInfo>(this DirectoryInfo startDirectoryInfo,
-      Func<IReadOnlyList<DirectoryInfo>, string?>? searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
-      Predicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Comparison<DirectoryInfo>? comparison, Func<DirectoryInfo, IReadOnlyList<DirectoryInfo>, TDirectoryInfo> selector)
-      => startDirectoryInfo.EnumerateDirectoriesEx(searchPatternSelector, searchOption == SearchOption.TopDirectoryOnly ? 1 : int.MaxValue, traversalOptions, predicate, comparison, selector);
-
-    public static IEnumerable<TDirectoryInfo> EnumerateDirectoriesEx<TDirectoryInfo>(this DirectoryInfo startDirectoryInfo,
-      Func<IReadOnlyList<DirectoryInfo>, string?>? searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      int maxDepth, FileSystemTraversalOptions traversalOptions,
       Predicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Comparison<DirectoryInfo>? comparison, Func<DirectoryInfo, IReadOnlyList<DirectoryInfo>, TDirectoryInfo> selector)
     {
       Argument.That.NotNull(startDirectoryInfo);
       Argument.That.NonNegative(maxDepth);
       Argument.That.NotNull(selector);
 
-      return EnumerateDirectoriesCore(startDirectoryInfo, searchPatternSelector ?? (_ => DefaultSearchPattern), maxDepth, traversalOptions, predicate, comparison, selector);
+      return EnumerateDirectoriesCore(startDirectoryInfo, DefaultSearchPatternSelector, maxDepth, traversalOptions, predicate, comparison, selector);
+    }
+
+    public static IEnumerable<TDirectoryInfo> EnumerateDirectoriesEx<TDirectoryInfo>(this DirectoryInfo startDirectoryInfo,
+      string searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      Predicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Comparison<DirectoryInfo>? comparison, Func<DirectoryInfo, IReadOnlyList<DirectoryInfo>, TDirectoryInfo> selector)
+    {
+      Argument.That.NotNull(startDirectoryInfo);
+      Argument.That.NotNull(searchPattern);
+      Argument.That.NotNull(selector);
+
+      return EnumerateDirectoriesCore(startDirectoryInfo, _ => searchPattern, searchOption == SearchOption.TopDirectoryOnly ? 1 : int.MaxValue, traversalOptions, predicate, comparison, selector);
+    }
+
+    public static IEnumerable<TDirectoryInfo> EnumerateDirectoriesEx<TDirectoryInfo>(this DirectoryInfo startDirectoryInfo,
+      string searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Predicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Comparison<DirectoryInfo>? comparison, Func<DirectoryInfo, IReadOnlyList<DirectoryInfo>, TDirectoryInfo> selector)
+    {
+      Argument.That.NotNull(startDirectoryInfo);
+      Argument.That.NotNull(searchPattern);
+      Argument.That.NonNegative(maxDepth);
+      Argument.That.NotNull(selector);
+
+      return EnumerateDirectoriesCore(startDirectoryInfo, _ => searchPattern, maxDepth, traversalOptions, predicate, comparison, selector);
+    }
+
+    public static IEnumerable<TDirectoryInfo> EnumerateDirectoriesEx<TDirectoryInfo>(this DirectoryInfo startDirectoryInfo,
+      Func<IReadOnlyList<DirectoryInfo>, string?> searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      Predicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Comparison<DirectoryInfo>? comparison, Func<DirectoryInfo, IReadOnlyList<DirectoryInfo>, TDirectoryInfo> selector)
+    {
+      Argument.That.NotNull(startDirectoryInfo);
+      Argument.That.NotNull(searchPatternSelector);
+      Argument.That.NotNull(selector);
+
+      return EnumerateDirectoriesCore(startDirectoryInfo, searchPatternSelector, searchOption == SearchOption.TopDirectoryOnly ? 1 : int.MaxValue, traversalOptions, predicate, comparison, selector);
+    }
+
+    public static IEnumerable<TDirectoryInfo> EnumerateDirectoriesEx<TDirectoryInfo>(this DirectoryInfo startDirectoryInfo,
+      Func<IReadOnlyList<DirectoryInfo>, string?> searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Predicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Comparison<DirectoryInfo>? comparison, Func<DirectoryInfo, IReadOnlyList<DirectoryInfo>, TDirectoryInfo> selector)
+    {
+      Argument.That.NotNull(startDirectoryInfo);
+      Argument.That.NotNull(searchPatternSelector);
+      Argument.That.NonNegative(maxDepth);
+      Argument.That.NotNull(selector);
+
+      return EnumerateDirectoriesCore(startDirectoryInfo, searchPatternSelector, maxDepth, traversalOptions, predicate, comparison, selector);
     }
 
     public static IEnumerable<TDirectoryInfo> EnumerateDirectoriesEx<TDirectoryInfo>(this DirectoryInfo startDirectoryInfo,
@@ -1533,22 +2157,32 @@ namespace PowerLib.System.IO
       => startDirectoryInfo.EnumerateDirectoriesEx(traversalOptions, predicate?.AsPredicate(), comparer?.AsComparison(), selector);
 
     public static IEnumerable<TDirectoryInfo> EnumerateDirectoriesEx<TDirectoryInfo>(this DirectoryInfo startDirectoryInfo,
-      string? searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      IPredicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, IComparer<DirectoryInfo>? comparer, Func<DirectoryInfo, IReadOnlyList<DirectoryInfo>, TDirectoryInfo> selector)
+      => startDirectoryInfo.EnumerateDirectoriesEx(searchOption, traversalOptions, predicate?.AsPredicate(), comparer?.AsComparison(), selector);
+
+    public static IEnumerable<TDirectoryInfo> EnumerateDirectoriesEx<TDirectoryInfo>(this DirectoryInfo startDirectoryInfo,
+      int maxDepth, FileSystemTraversalOptions traversalOptions,
+      IPredicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, IComparer<DirectoryInfo>? comparer, Func<DirectoryInfo, IReadOnlyList<DirectoryInfo>, TDirectoryInfo> selector)
+      => startDirectoryInfo.EnumerateDirectoriesEx(maxDepth, traversalOptions, predicate?.AsPredicate(), comparer?.AsComparison(), selector);
+
+    public static IEnumerable<TDirectoryInfo> EnumerateDirectoriesEx<TDirectoryInfo>(this DirectoryInfo startDirectoryInfo,
+      string searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
       IPredicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, IComparer<DirectoryInfo>? comparer, Func<DirectoryInfo, IReadOnlyList<DirectoryInfo>, TDirectoryInfo> selector)
       => startDirectoryInfo.EnumerateDirectoriesEx(searchPattern, searchOption, traversalOptions, predicate?.AsPredicate(), comparer?.AsComparison(), selector);
 
     public static IEnumerable<TDirectoryInfo> EnumerateDirectoriesEx<TDirectoryInfo>(this DirectoryInfo startDirectoryInfo,
-      string? searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      string searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
       IPredicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, IComparer<DirectoryInfo>? comparer, Func<DirectoryInfo, IReadOnlyList<DirectoryInfo>, TDirectoryInfo> selector)
       => startDirectoryInfo.EnumerateDirectoriesEx(searchPattern, maxDepth, traversalOptions, predicate?.AsPredicate(), comparer?.AsComparison(), selector);
 
     public static IEnumerable<TDirectoryInfo> EnumerateDirectoriesEx<TDirectoryInfo>(this DirectoryInfo startDirectoryInfo,
-      Func<IReadOnlyList<DirectoryInfo>, string?>? searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      Func<IReadOnlyList<DirectoryInfo>, string?> searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
       IPredicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, IComparer<DirectoryInfo>? comparer, Func<DirectoryInfo, IReadOnlyList<DirectoryInfo>, TDirectoryInfo> selector)
       => startDirectoryInfo.EnumerateDirectoriesEx(searchPatternSelector, searchOption, traversalOptions, predicate?.AsPredicate(), comparer?.AsComparison(), selector);
 
     public static IEnumerable<TDirectoryInfo> EnumerateDirectoriesEx<TDirectoryInfo>(this DirectoryInfo startDirectoryInfo,
-      Func<IReadOnlyList<DirectoryInfo>, string?>? searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Func<IReadOnlyList<DirectoryInfo>, string?> searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
       IPredicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, IComparer<DirectoryInfo>? comparer, Func<DirectoryInfo, IReadOnlyList<DirectoryInfo>, TDirectoryInfo> selector)
       => startDirectoryInfo.EnumerateDirectoriesEx(searchPatternSelector, maxDepth, traversalOptions, predicate?.AsPredicate(), comparer?.AsComparison(), selector);
 
@@ -1561,22 +2195,32 @@ namespace PowerLib.System.IO
       => startDirectoryInfo.EnumerateDirectoriesEx(traversalOptions, predicate, comparison, selector).ToArray();
 
     public static TDirectoryInfo[] GetDirectoriesEx<TDirectoryInfo>(this DirectoryInfo startDirectoryInfo,
-      string? searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      Predicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Comparison<DirectoryInfo>? comparison, Func<DirectoryInfo, IReadOnlyList<DirectoryInfo>, TDirectoryInfo> selector)
+      => startDirectoryInfo.EnumerateDirectoriesEx(searchOption, traversalOptions, predicate, comparison, selector).ToArray();
+
+    public static TDirectoryInfo[] GetDirectoriesEx<TDirectoryInfo>(this DirectoryInfo startDirectoryInfo,
+      int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Predicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Comparison<DirectoryInfo>? comparison, Func<DirectoryInfo, IReadOnlyList<DirectoryInfo>, TDirectoryInfo> selector)
+      => startDirectoryInfo.EnumerateDirectoriesEx(maxDepth, traversalOptions, predicate, comparison, selector).ToArray();
+
+    public static TDirectoryInfo[] GetDirectoriesEx<TDirectoryInfo>(this DirectoryInfo startDirectoryInfo,
+      string searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
       Predicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Comparison<DirectoryInfo>? comparison, Func<DirectoryInfo, IReadOnlyList<DirectoryInfo>, TDirectoryInfo> selector)
       => startDirectoryInfo.EnumerateDirectoriesEx(searchPattern, searchOption, traversalOptions, predicate, comparison, selector).ToArray();
 
     public static TDirectoryInfo[] GetDirectoriesEx<TDirectoryInfo>(this DirectoryInfo startDirectoryInfo,
-      string? searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      string searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
       Predicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Comparison<DirectoryInfo>? comparison, Func<DirectoryInfo, IReadOnlyList<DirectoryInfo>, TDirectoryInfo> selector)
       => startDirectoryInfo.EnumerateDirectoriesEx(searchPattern, maxDepth, traversalOptions, predicate, comparison, selector).ToArray();
 
     public static TDirectoryInfo[] GetDirectoriesEx<TDirectoryInfo>(this DirectoryInfo startDirectoryInfo,
-      Func<IReadOnlyList<DirectoryInfo>, string?>? searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      Func<IReadOnlyList<DirectoryInfo>, string?> searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
       Predicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Comparison<DirectoryInfo>? comparison, Func<DirectoryInfo, IReadOnlyList<DirectoryInfo>, TDirectoryInfo> selector)
       => startDirectoryInfo.EnumerateDirectoriesEx(searchPatternSelector, searchOption, traversalOptions, predicate, comparison, selector).ToArray();
 
     public static TDirectoryInfo[] GetDirectoriesEx<TDirectoryInfo>(this DirectoryInfo startDirectoryInfo,
-      Func<IReadOnlyList<DirectoryInfo>, string?>? searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Func<IReadOnlyList<DirectoryInfo>, string?> searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
       Predicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Comparison<DirectoryInfo>? comparison, Func<DirectoryInfo, IReadOnlyList<DirectoryInfo>, TDirectoryInfo> selector)
       => startDirectoryInfo.EnumerateDirectoriesEx(searchPatternSelector, maxDepth, traversalOptions, predicate, comparison, selector).ToArray();
 
@@ -1586,22 +2230,32 @@ namespace PowerLib.System.IO
       => startDirectoryInfo.EnumerateDirectoriesEx(traversalOptions, predicate, comparer, selector).ToArray();
 
     public static TDirectoryInfo[] GetDirectoriesEx<TDirectoryInfo>(this DirectoryInfo startDirectoryInfo,
-      string? searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      IPredicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, IComparer<DirectoryInfo>? comparer, Func<DirectoryInfo, IReadOnlyList<DirectoryInfo>, TDirectoryInfo> selector)
+      => startDirectoryInfo.EnumerateDirectoriesEx(searchOption, traversalOptions, predicate, comparer, selector).ToArray();
+
+    public static TDirectoryInfo[] GetDirectoriesEx<TDirectoryInfo>(this DirectoryInfo startDirectoryInfo,
+      int maxDepth, FileSystemTraversalOptions traversalOptions,
+      IPredicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, IComparer<DirectoryInfo>? comparer, Func<DirectoryInfo, IReadOnlyList<DirectoryInfo>, TDirectoryInfo> selector)
+      => startDirectoryInfo.EnumerateDirectoriesEx(maxDepth, traversalOptions, predicate, comparer, selector).ToArray();
+
+    public static TDirectoryInfo[] GetDirectoriesEx<TDirectoryInfo>(this DirectoryInfo startDirectoryInfo,
+      string searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
       IPredicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, IComparer<DirectoryInfo>? comparer, Func<DirectoryInfo, IReadOnlyList<DirectoryInfo>, TDirectoryInfo> selector)
       => startDirectoryInfo.EnumerateDirectoriesEx(searchPattern, searchOption, traversalOptions, predicate, comparer, selector).ToArray();
 
     public static TDirectoryInfo[] GetDirectoriesEx<TDirectoryInfo>(this DirectoryInfo startDirectoryInfo,
-      string? searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      string searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
       IPredicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, IComparer<DirectoryInfo>? comparer, Func<DirectoryInfo, IReadOnlyList<DirectoryInfo>, TDirectoryInfo> selector)
       => startDirectoryInfo.EnumerateDirectoriesEx(searchPattern, maxDepth, traversalOptions, predicate, comparer, selector).ToArray();
 
     public static TDirectoryInfo[] GetDirectoriesEx<TDirectoryInfo>(this DirectoryInfo startDirectoryInfo,
-      Func<IReadOnlyList<DirectoryInfo>, string?>? searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      Func<IReadOnlyList<DirectoryInfo>, string?> searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
       IPredicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, IComparer<DirectoryInfo>? comparer, Func<DirectoryInfo, IReadOnlyList<DirectoryInfo>, TDirectoryInfo> selector)
       => startDirectoryInfo.EnumerateDirectoriesEx(searchPatternSelector, searchOption, traversalOptions, predicate, comparer, selector).ToArray();
 
     public static TDirectoryInfo[] GetDirectoriesEx<TDirectoryInfo>(this DirectoryInfo startDirectoryInfo,
-      Func<IReadOnlyList<DirectoryInfo>, string?>? searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Func<IReadOnlyList<DirectoryInfo>, string?> searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
       IPredicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, IComparer<DirectoryInfo>? comparer, Func<DirectoryInfo, IReadOnlyList<DirectoryInfo>, TDirectoryInfo> selector)
       => startDirectoryInfo.EnumerateDirectoriesEx(searchPatternSelector, maxDepth, traversalOptions, predicate, comparer, selector).ToArray();
 
@@ -1611,31 +2265,71 @@ namespace PowerLib.System.IO
     public static IEnumerable<FileInfo> EnumerateFiles(this DirectoryInfo startDirectoryInfo,
       FileSystemTraversalOptions traversalOptions,
       Predicate<FileInfo>? filePredicate, Predicate<DirectoryInfo>? directoryPredicate, Comparison<FileSystemInfo>? comparison)
-      => startDirectoryInfo.EnumerateFiles(default(Func<DirectoryInfo, string?>), int.MaxValue, traversalOptions, filePredicate, directoryPredicate, comparison);
+    {
+      Argument.That.NotNull(startDirectoryInfo);
+
+      return EnumerateFilesCore(startDirectoryInfo, DefaultSearchPatternSelector, int.MaxValue, traversalOptions, filePredicate, directoryPredicate, comparison);
+    }
 
     public static IEnumerable<FileInfo> EnumerateFiles(this DirectoryInfo startDirectoryInfo,
-      string? searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
       Predicate<FileInfo>? filePredicate, Predicate<DirectoryInfo>? directoryPredicate, Comparison<FileSystemInfo>? comparison)
-      => startDirectoryInfo.EnumerateFiles(searchPattern is not null ? _ => searchPattern : null, searchOption == SearchOption.TopDirectoryOnly ? 1 : int.MaxValue, traversalOptions, filePredicate, directoryPredicate, comparison);
+    {
+      Argument.That.NotNull(startDirectoryInfo);
+
+      return EnumerateFilesCore(startDirectoryInfo, DefaultSearchPatternSelector, searchOption == SearchOption.TopDirectoryOnly ? 1 : int.MaxValue, traversalOptions, filePredicate, directoryPredicate, comparison);
+    }
 
     public static IEnumerable<FileInfo> EnumerateFiles(this DirectoryInfo startDirectoryInfo,
-      string? searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
-      Predicate<FileInfo>? filePredicate, Predicate<DirectoryInfo>? directoryPredicate, Comparison<FileSystemInfo>? comparison)
-      => startDirectoryInfo.EnumerateFiles(searchPattern is not null ? _ => searchPattern : null, maxDepth, traversalOptions, filePredicate, directoryPredicate, comparison);
-
-    public static IEnumerable<FileInfo> EnumerateFiles(this DirectoryInfo startDirectoryInfo,
-      Func<DirectoryInfo, string?>? searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
-      Predicate<FileInfo>? filePredicate, Predicate<DirectoryInfo>? directoryPredicate, Comparison<FileSystemInfo>? comparison)
-      => startDirectoryInfo.EnumerateFiles(searchPatternSelector, searchOption == SearchOption.TopDirectoryOnly ? 1 : int.MaxValue, traversalOptions, filePredicate, directoryPredicate, comparison);
-
-    public static IEnumerable<FileInfo> EnumerateFiles(this DirectoryInfo startDirectoryInfo,
-      Func<DirectoryInfo, string?>? searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      int maxDepth, FileSystemTraversalOptions traversalOptions,
       Predicate<FileInfo>? filePredicate, Predicate<DirectoryInfo>? directoryPredicate, Comparison<FileSystemInfo>? comparison)
     {
       Argument.That.NotNull(startDirectoryInfo);
       Argument.That.NonNegative(maxDepth);
 
-      return EnumerateFilesCore(startDirectoryInfo, searchPatternSelector ?? (_ => DefaultSearchPattern), maxDepth, traversalOptions, filePredicate, directoryPredicate, comparison);
+      return EnumerateFilesCore(startDirectoryInfo, DefaultSearchPatternSelector, maxDepth, traversalOptions, filePredicate, directoryPredicate, comparison);
+    }
+
+    public static IEnumerable<FileInfo> EnumerateFiles(this DirectoryInfo startDirectoryInfo,
+      string searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      Predicate<FileInfo>? filePredicate, Predicate<DirectoryInfo>? directoryPredicate, Comparison<FileSystemInfo>? comparison)
+    {
+      Argument.That.NotNull(startDirectoryInfo);
+      Argument.That.NotNull(searchPattern);
+
+      return EnumerateFilesCore(startDirectoryInfo, _ => searchPattern, searchOption == SearchOption.TopDirectoryOnly ? 1 : int.MaxValue, traversalOptions, filePredicate, directoryPredicate, comparison);
+    }
+
+    public static IEnumerable<FileInfo> EnumerateFiles(this DirectoryInfo startDirectoryInfo,
+      string searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Predicate<FileInfo>? filePredicate, Predicate<DirectoryInfo>? directoryPredicate, Comparison<FileSystemInfo>? comparison)
+    {
+      Argument.That.NotNull(startDirectoryInfo);
+      Argument.That.NotNull(searchPattern);
+      Argument.That.NonNegative(maxDepth);
+
+      return EnumerateFilesCore(startDirectoryInfo, _ => searchPattern, maxDepth, traversalOptions, filePredicate, directoryPredicate, comparison);
+    }
+
+    public static IEnumerable<FileInfo> EnumerateFiles(this DirectoryInfo startDirectoryInfo,
+      Func<DirectoryInfo, string?> searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      Predicate<FileInfo>? filePredicate, Predicate<DirectoryInfo>? directoryPredicate, Comparison<FileSystemInfo>? comparison)
+    {
+      Argument.That.NotNull(startDirectoryInfo);
+      Argument.That.NotNull(searchPatternSelector);
+
+      return EnumerateFilesCore(startDirectoryInfo, searchPatternSelector, searchOption == SearchOption.TopDirectoryOnly ? 1 : int.MaxValue, traversalOptions, filePredicate, directoryPredicate, comparison);
+    }
+
+    public static IEnumerable<FileInfo> EnumerateFiles(this DirectoryInfo startDirectoryInfo,
+      Func<DirectoryInfo, string?> searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Predicate<FileInfo>? filePredicate, Predicate<DirectoryInfo>? directoryPredicate, Comparison<FileSystemInfo>? comparison)
+    {
+      Argument.That.NotNull(startDirectoryInfo);
+      Argument.That.NotNull(searchPatternSelector);
+      Argument.That.NonNegative(maxDepth);
+
+      return EnumerateFilesCore(startDirectoryInfo, searchPatternSelector, maxDepth, traversalOptions, filePredicate, directoryPredicate, comparison);
     }
 
     public static IEnumerable<FileInfo> EnumerateFiles(this DirectoryInfo startDirectoryInfo,
@@ -1644,22 +2338,32 @@ namespace PowerLib.System.IO
       => startDirectoryInfo.EnumerateFiles(traversalOptions, filePredicate?.AsPredicate(), directoryPredicate?.AsPredicate(), comparer?.AsComparison());
 
     public static IEnumerable<FileInfo> EnumerateFiles(this DirectoryInfo startDirectoryInfo,
-      string? searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      IPredicate<FileInfo>? filePredicate, IPredicate<DirectoryInfo>? directoryPredicate, IComparer<FileSystemInfo>? comparer)
+      => startDirectoryInfo.EnumerateFiles(searchOption, traversalOptions, filePredicate?.AsPredicate(), directoryPredicate?.AsPredicate(), comparer?.AsComparison());
+
+    public static IEnumerable<FileInfo> EnumerateFiles(this DirectoryInfo startDirectoryInfo,
+      int maxDepth, FileSystemTraversalOptions traversalOptions,
+      IPredicate<FileInfo>? filePredicate, IPredicate<DirectoryInfo>? directoryPredicate, IComparer<FileSystemInfo>? comparer)
+      => startDirectoryInfo.EnumerateFiles(maxDepth, traversalOptions, filePredicate?.AsPredicate(), directoryPredicate?.AsPredicate(), comparer?.AsComparison());
+
+    public static IEnumerable<FileInfo> EnumerateFiles(this DirectoryInfo startDirectoryInfo,
+      string searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
       IPredicate<FileInfo>? filePredicate, IPredicate<DirectoryInfo>? directoryPredicate, IComparer<FileSystemInfo>? comparer)
       => startDirectoryInfo.EnumerateFiles(searchPattern, searchOption, traversalOptions, filePredicate?.AsPredicate(), directoryPredicate?.AsPredicate(), comparer?.AsComparison());
 
     public static IEnumerable<FileInfo> EnumerateFiles(this DirectoryInfo startDirectoryInfo,
-      string? searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      string searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
       IPredicate<FileInfo>? filePredicate, IPredicate<DirectoryInfo>? directoryPredicate, IComparer<FileSystemInfo>? comparer)
       => startDirectoryInfo.EnumerateFiles(searchPattern, maxDepth, traversalOptions, filePredicate?.AsPredicate(), directoryPredicate?.AsPredicate(), comparer?.AsComparison());
 
     public static IEnumerable<FileInfo> EnumerateFiles(this DirectoryInfo startDirectoryInfo,
-      Func<DirectoryInfo, string?>? searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      Func<DirectoryInfo, string?> searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
       IPredicate<FileInfo>? filePredicate, IPredicate<DirectoryInfo>? directoryPredicate, IComparer<FileSystemInfo>? comparer)
       => startDirectoryInfo.EnumerateFiles(searchPatternSelector, searchOption, traversalOptions, filePredicate?.AsPredicate(), directoryPredicate?.AsPredicate(), comparer?.AsComparison());
 
     public static IEnumerable<FileInfo> EnumerateFiles(this DirectoryInfo startDirectoryInfo,
-      Func<DirectoryInfo, string?>? searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Func<DirectoryInfo, string?> searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
       IPredicate<FileInfo>? filePredicate, IPredicate<DirectoryInfo>? directoryPredicate, IComparer<FileSystemInfo>? comparer)
       => startDirectoryInfo.EnumerateFiles(searchPatternSelector, maxDepth, traversalOptions, filePredicate?.AsPredicate(), directoryPredicate?.AsPredicate(), comparer?.AsComparison());
 
@@ -1672,22 +2376,32 @@ namespace PowerLib.System.IO
       => startDirectoryInfo.EnumerateFiles(traversalOptions, filePredicate, directoryPredicate, comparison).ToArray();
 
     public static FileInfo[] GetFiles(this DirectoryInfo startDirectoryInfo,
-      string? searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      Predicate<FileInfo>? filePredicate, Predicate<DirectoryInfo>? directoryPredicate, Comparison<FileSystemInfo>? comparison)
+      => startDirectoryInfo.EnumerateFiles(searchOption, traversalOptions, filePredicate, directoryPredicate, comparison).ToArray();
+
+    public static FileInfo[] GetFiles(this DirectoryInfo startDirectoryInfo,
+      int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Predicate<FileInfo>? filePredicate, Predicate<DirectoryInfo>? directoryPredicate, Comparison<FileSystemInfo>? comparison)
+      => startDirectoryInfo.EnumerateFiles(maxDepth, traversalOptions, filePredicate, directoryPredicate, comparison).ToArray();
+
+    public static FileInfo[] GetFiles(this DirectoryInfo startDirectoryInfo,
+      string searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
       Predicate<FileInfo>? filePredicate, Predicate<DirectoryInfo>? directoryPredicate, Comparison<FileSystemInfo>? comparison)
       => startDirectoryInfo.EnumerateFiles(searchPattern, searchOption, traversalOptions, filePredicate, directoryPredicate, comparison).ToArray();
 
     public static FileInfo[] GetFiles(this DirectoryInfo startDirectoryInfo,
-      string? searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      string searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
       Predicate<FileInfo>? filePredicate, Predicate<DirectoryInfo>? directoryPredicate, Comparison<FileSystemInfo>? comparison)
       => startDirectoryInfo.EnumerateFiles(searchPattern, maxDepth, traversalOptions, filePredicate, directoryPredicate, comparison).ToArray();
 
     public static FileInfo[] GetFiles(this DirectoryInfo startDirectoryInfo,
-      Func<DirectoryInfo, string?>? searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      Func<DirectoryInfo, string?> searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
       Predicate<FileInfo>? filePredicate, Predicate<DirectoryInfo>? directoryPredicate, Comparison<FileSystemInfo>? comparison)
       => startDirectoryInfo.EnumerateFiles(searchPatternSelector, searchOption, traversalOptions, filePredicate, directoryPredicate, comparison).ToArray();
 
     public static FileInfo[] GetFiles(this DirectoryInfo startDirectoryInfo,
-      Func<DirectoryInfo, string?>? searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Func<DirectoryInfo, string?> searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
       Predicate<FileInfo>? filePredicate, Predicate<DirectoryInfo>? directoryPredicate, Comparison<FileSystemInfo>? comparison)
       => startDirectoryInfo.EnumerateFiles(searchPatternSelector, maxDepth, traversalOptions, filePredicate, directoryPredicate, comparison).ToArray();
 
@@ -1697,22 +2411,32 @@ namespace PowerLib.System.IO
       => startDirectoryInfo.EnumerateFiles(traversalOptions, filePredicate, directoryPredicate, comparer).ToArray();
 
     public static FileInfo[] GetFiles(this DirectoryInfo startDirectoryInfo,
-      string? searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
       IPredicate<FileInfo>? filePredicate, IPredicate<DirectoryInfo>? directoryPredicate, IComparer<FileSystemInfo>? comparer)
-    => startDirectoryInfo.EnumerateFiles(searchPattern, searchOption, traversalOptions, filePredicate, directoryPredicate, comparer).ToArray();
+      => startDirectoryInfo.EnumerateFiles(searchOption, traversalOptions, filePredicate, directoryPredicate, comparer).ToArray();
 
     public static FileInfo[] GetFiles(this DirectoryInfo startDirectoryInfo,
-      string? searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      int maxDepth, FileSystemTraversalOptions traversalOptions,
+      IPredicate<FileInfo>? filePredicate, IPredicate<DirectoryInfo>? directoryPredicate, IComparer<FileSystemInfo>? comparer)
+      => startDirectoryInfo.EnumerateFiles(maxDepth, traversalOptions, filePredicate, directoryPredicate, comparer).ToArray();
+
+    public static FileInfo[] GetFiles(this DirectoryInfo startDirectoryInfo,
+      string searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      IPredicate<FileInfo>? filePredicate, IPredicate<DirectoryInfo>? directoryPredicate, IComparer<FileSystemInfo>? comparer)
+      => startDirectoryInfo.EnumerateFiles(searchPattern, searchOption, traversalOptions, filePredicate, directoryPredicate, comparer).ToArray();
+
+    public static FileInfo[] GetFiles(this DirectoryInfo startDirectoryInfo,
+      string searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
       IPredicate<FileInfo>? filePredicate, IPredicate<DirectoryInfo>? directoryPredicate, IComparer<FileSystemInfo>? comparer)
       => startDirectoryInfo.EnumerateFiles(searchPattern, maxDepth, traversalOptions, filePredicate, directoryPredicate, comparer).ToArray();
 
     public static FileInfo[] GetFiles(this DirectoryInfo startDirectoryInfo,
-      Func<DirectoryInfo, string?>? searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      Func<DirectoryInfo, string?> searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
       IPredicate<FileInfo>? filePredicate, IPredicate<DirectoryInfo>? directoryPredicate, IComparer<FileSystemInfo>? comparer)
       => startDirectoryInfo.EnumerateFiles(searchPatternSelector, searchOption, traversalOptions, filePredicate, directoryPredicate, comparer).ToArray();
 
     public static FileInfo[] GetFiles(this DirectoryInfo startDirectoryInfo,
-      Func<DirectoryInfo, string?>? searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Func<DirectoryInfo, string?> searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
       IPredicate<FileInfo>? filePredicate, IPredicate<DirectoryInfo>? directoryPredicate, IComparer<FileSystemInfo>? comparer)
       => startDirectoryInfo.EnumerateFiles(searchPatternSelector, maxDepth, traversalOptions, filePredicate, directoryPredicate, comparer).ToArray();
 
@@ -1723,28 +2447,26 @@ namespace PowerLib.System.IO
       FileSystemTraversalOptions traversalOptions,
       Predicate<FileInfo>? filePredicate, Predicate<DirectoryInfo>? directoryPredicate, Comparison<FileSystemInfo>? comparison,
       Func<FileInfo, TFileInfo> selector)
-      => startDirectoryInfo.EnumerateFiles(default(Func<DirectoryInfo, string?>), int.MaxValue, traversalOptions, filePredicate, directoryPredicate, comparison, selector);
+    {
+      Argument.That.NotNull(startDirectoryInfo);
+      Argument.That.NotNull(selector);
+
+      return EnumerateFilesCore(startDirectoryInfo, DefaultSearchPatternSelector, int.MaxValue, traversalOptions, filePredicate, directoryPredicate, comparison, selector);
+    }
 
     public static IEnumerable<TFileInfo> EnumerateFiles<TFileInfo>(this DirectoryInfo startDirectoryInfo,
-      string? searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
       Predicate<FileInfo>? filePredicate, Predicate<DirectoryInfo>? directoryPredicate, Comparison<FileSystemInfo>? comparison,
       Func<FileInfo, TFileInfo> selector)
-      => startDirectoryInfo.EnumerateFiles(searchPattern is not null ? _ => searchPattern : null, searchOption == SearchOption.TopDirectoryOnly ? 1 : int.MaxValue, traversalOptions, filePredicate, directoryPredicate, comparison, selector);
+    {
+      Argument.That.NotNull(startDirectoryInfo);
+      Argument.That.NotNull(selector);
+
+      return EnumerateFilesCore(startDirectoryInfo, DefaultSearchPatternSelector, searchOption == SearchOption.TopDirectoryOnly ? 1 : int.MaxValue, traversalOptions, filePredicate, directoryPredicate, comparison, selector);
+    }
 
     public static IEnumerable<TFileInfo> EnumerateFiles<TFileInfo>(this DirectoryInfo startDirectoryInfo,
-      string? searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
-      Predicate<FileInfo>? filePredicate, Predicate<DirectoryInfo>? directoryPredicate, Comparison<FileSystemInfo>? comparison,
-      Func<FileInfo, TFileInfo> selector)
-      => startDirectoryInfo.EnumerateFiles(searchPattern is not null ? _ => searchPattern : null, maxDepth, traversalOptions, filePredicate, directoryPredicate, comparison, selector);
-
-    public static IEnumerable<TFileInfo> EnumerateFiles<TFileInfo>(this DirectoryInfo startDirectoryInfo,
-      Func<DirectoryInfo, string?>? searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
-      Predicate<FileInfo>? filePredicate, Predicate<DirectoryInfo>? directoryPredicate, Comparison<FileSystemInfo>? comparison,
-      Func<FileInfo, TFileInfo> selector)
-      => startDirectoryInfo.EnumerateFiles(searchPatternSelector, searchOption == SearchOption.TopDirectoryOnly ? 1 : int.MaxValue, traversalOptions, filePredicate, directoryPredicate, comparison, selector);
-
-    public static IEnumerable<TFileInfo> EnumerateFiles<TFileInfo>(this DirectoryInfo startDirectoryInfo,
-      Func<DirectoryInfo, string?>? searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      int maxDepth, FileSystemTraversalOptions traversalOptions,
       Predicate<FileInfo>? filePredicate, Predicate<DirectoryInfo>? directoryPredicate, Comparison<FileSystemInfo>? comparison,
       Func<FileInfo, TFileInfo> selector)
     {
@@ -1752,7 +2474,57 @@ namespace PowerLib.System.IO
       Argument.That.NonNegative(maxDepth);
       Argument.That.NotNull(selector);
 
-      return EnumerateFilesCore(startDirectoryInfo, searchPatternSelector ?? (_ => DefaultSearchPattern), maxDepth, traversalOptions, filePredicate, directoryPredicate, comparison, selector);
+      return EnumerateFilesCore(startDirectoryInfo, DefaultSearchPatternSelector, maxDepth, traversalOptions, filePredicate, directoryPredicate, comparison, selector);
+    }
+
+    public static IEnumerable<TFileInfo> EnumerateFiles<TFileInfo>(this DirectoryInfo startDirectoryInfo,
+      string searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      Predicate<FileInfo>? filePredicate, Predicate<DirectoryInfo>? directoryPredicate, Comparison<FileSystemInfo>? comparison,
+      Func<FileInfo, TFileInfo> selector)
+    {
+      Argument.That.NotNull(startDirectoryInfo);
+      Argument.That.NotNull(searchPattern);
+      Argument.That.NotNull(selector);
+
+      return EnumerateFilesCore(startDirectoryInfo, _ => searchPattern, searchOption == SearchOption.TopDirectoryOnly ? 1 : int.MaxValue, traversalOptions, filePredicate, directoryPredicate, comparison, selector);
+    }
+
+    public static IEnumerable<TFileInfo> EnumerateFiles<TFileInfo>(this DirectoryInfo startDirectoryInfo,
+      string searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Predicate<FileInfo>? filePredicate, Predicate<DirectoryInfo>? directoryPredicate, Comparison<FileSystemInfo>? comparison,
+      Func<FileInfo, TFileInfo> selector)
+    {
+      Argument.That.NotNull(startDirectoryInfo);
+      Argument.That.NotNull(searchPattern);
+      Argument.That.NonNegative(maxDepth);
+      Argument.That.NotNull(selector);
+
+      return EnumerateFilesCore(startDirectoryInfo, _ => searchPattern, maxDepth, traversalOptions, filePredicate, directoryPredicate, comparison, selector);
+    }
+
+    public static IEnumerable<TFileInfo> EnumerateFiles<TFileInfo>(this DirectoryInfo startDirectoryInfo,
+      Func<DirectoryInfo, string?> searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      Predicate<FileInfo>? filePredicate, Predicate<DirectoryInfo>? directoryPredicate, Comparison<FileSystemInfo>? comparison,
+      Func<FileInfo, TFileInfo> selector)
+    {
+      Argument.That.NotNull(startDirectoryInfo);
+      Argument.That.NotNull(searchPatternSelector);
+      Argument.That.NotNull(selector);
+
+      return EnumerateFilesCore(startDirectoryInfo, searchPatternSelector, searchOption == SearchOption.TopDirectoryOnly ? 1 : int.MaxValue, traversalOptions, filePredicate, directoryPredicate, comparison, selector);
+    }
+
+    public static IEnumerable<TFileInfo> EnumerateFiles<TFileInfo>(this DirectoryInfo startDirectoryInfo,
+      Func<DirectoryInfo, string?> searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Predicate<FileInfo>? filePredicate, Predicate<DirectoryInfo>? directoryPredicate, Comparison<FileSystemInfo>? comparison,
+      Func<FileInfo, TFileInfo> selector)
+    {
+      Argument.That.NotNull(startDirectoryInfo);
+      Argument.That.NotNull(searchPatternSelector);
+      Argument.That.NonNegative(maxDepth);
+      Argument.That.NotNull(selector);
+
+      return EnumerateFilesCore(startDirectoryInfo, searchPatternSelector, maxDepth, traversalOptions, filePredicate, directoryPredicate, comparison, selector);
     }
 
     public static IEnumerable<TFileInfo> EnumerateFiles<TFileInfo>(this DirectoryInfo startDirectoryInfo,
@@ -1762,25 +2534,37 @@ namespace PowerLib.System.IO
       => startDirectoryInfo.EnumerateFiles(traversalOptions, filePredicate?.AsPredicate(), directoryPredicate?.AsPredicate(), comparer?.AsComparison(), selector);
 
     public static IEnumerable<TFileInfo> EnumerateFiles<TFileInfo>(this DirectoryInfo startDirectoryInfo,
-      string? searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      IPredicate<FileInfo>? filePredicate, IPredicate<DirectoryInfo>? directoryPredicate, IComparer<FileSystemInfo>? comparer,
+      Func<FileInfo, TFileInfo> selector)
+      => startDirectoryInfo.EnumerateFiles(searchOption, traversalOptions, filePredicate?.AsPredicate(), directoryPredicate?.AsPredicate(), comparer?.AsComparison(), selector);
+
+    public static IEnumerable<TFileInfo> EnumerateFiles<TFileInfo>(this DirectoryInfo startDirectoryInfo,
+      int maxDepth, FileSystemTraversalOptions traversalOptions,
+      IPredicate<FileInfo>? filePredicate, IPredicate<DirectoryInfo>? directoryPredicate, IComparer<FileSystemInfo>? comparer,
+      Func<FileInfo, TFileInfo> selector)
+      => startDirectoryInfo.EnumerateFiles(maxDepth, traversalOptions, filePredicate?.AsPredicate(), directoryPredicate?.AsPredicate(), comparer?.AsComparison(), selector);
+
+    public static IEnumerable<TFileInfo> EnumerateFiles<TFileInfo>(this DirectoryInfo startDirectoryInfo,
+      string searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
       IPredicate<FileInfo>? filePredicate, IPredicate<DirectoryInfo>? directoryPredicate, IComparer<FileSystemInfo>? comparer,
       Func<FileInfo, TFileInfo> selector)
       => startDirectoryInfo.EnumerateFiles(searchPattern, searchOption, traversalOptions, filePredicate?.AsPredicate(), directoryPredicate?.AsPredicate(), comparer?.AsComparison(), selector);
 
     public static IEnumerable<TFileInfo> EnumerateFiles<TFileInfo>(this DirectoryInfo startDirectoryInfo,
-      string? searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      string searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
       IPredicate<FileInfo>? filePredicate, IPredicate<DirectoryInfo>? directoryPredicate, IComparer<FileSystemInfo>? comparer,
       Func<FileInfo, TFileInfo> selector)
       => startDirectoryInfo.EnumerateFiles(searchPattern, maxDepth, traversalOptions, filePredicate?.AsPredicate(), directoryPredicate?.AsPredicate(), comparer?.AsComparison(), selector);
 
     public static IEnumerable<TFileInfo> EnumerateFiles<TFileInfo>(this DirectoryInfo startDirectoryInfo,
-      Func<DirectoryInfo, string?>? searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      Func<DirectoryInfo, string?> searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
       IPredicate<FileInfo>? filePredicate, IPredicate<DirectoryInfo>? directoryPredicate, IComparer<FileSystemInfo>? comparer,
       Func<FileInfo, TFileInfo> selector)
       => startDirectoryInfo.EnumerateFiles(searchPatternSelector, searchOption, traversalOptions, filePredicate?.AsPredicate(), directoryPredicate?.AsPredicate(), comparer?.AsComparison(), selector);
 
     public static IEnumerable<TFileInfo> EnumerateFiles<TFileInfo>(this DirectoryInfo startDirectoryInfo,
-      Func<DirectoryInfo, string?>? searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Func<DirectoryInfo, string?> searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
       IPredicate<FileInfo>? filePredicate, IPredicate<DirectoryInfo>? directoryPredicate, IComparer<FileSystemInfo>? comparer,
       Func<FileInfo, TFileInfo> selector)
       => startDirectoryInfo.EnumerateFiles(searchPatternSelector, maxDepth, traversalOptions, filePredicate?.AsPredicate(), directoryPredicate?.AsPredicate(), comparer?.AsComparison(), selector);
@@ -1795,25 +2579,37 @@ namespace PowerLib.System.IO
       => startDirectoryInfo.EnumerateFiles(traversalOptions, filePredicate, directoryPredicate, comparison, selector).ToArray();
 
     public static TFileInfo[] GetFiles<TFileInfo>(this DirectoryInfo startDirectoryInfo,
-      string? searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      Predicate<FileInfo>? filePredicate, Predicate<DirectoryInfo>? directoryPredicate, Comparison<FileSystemInfo>? comparison,
+      Func<FileInfo, TFileInfo> selector)
+      => startDirectoryInfo.EnumerateFiles(searchOption, traversalOptions, filePredicate, directoryPredicate, comparison, selector).ToArray();
+
+    public static TFileInfo[] GetFiles<TFileInfo>(this DirectoryInfo startDirectoryInfo,
+      int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Predicate<FileInfo>? filePredicate, Predicate<DirectoryInfo>? directoryPredicate, Comparison<FileSystemInfo>? comparison,
+      Func<FileInfo, TFileInfo> selector)
+      => startDirectoryInfo.EnumerateFiles(maxDepth, traversalOptions, filePredicate, directoryPredicate, comparison, selector).ToArray();
+
+    public static TFileInfo[] GetFiles<TFileInfo>(this DirectoryInfo startDirectoryInfo,
+      string searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
       Predicate<FileInfo>? filePredicate, Predicate<DirectoryInfo>? directoryPredicate, Comparison<FileSystemInfo>? comparison,
       Func<FileInfo, TFileInfo> selector)
       => startDirectoryInfo.EnumerateFiles(searchPattern, searchOption, traversalOptions, filePredicate, directoryPredicate, comparison, selector).ToArray();
 
     public static TFileInfo[] GetFiles<TFileInfo>(this DirectoryInfo startDirectoryInfo,
-      string? searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      string searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
       Predicate<FileInfo>? filePredicate, Predicate<DirectoryInfo>? directoryPredicate, Comparison<FileSystemInfo>? comparison,
       Func<FileInfo, TFileInfo> selector)
       => startDirectoryInfo.EnumerateFiles(searchPattern, maxDepth, traversalOptions, filePredicate, directoryPredicate, comparison, selector).ToArray();
 
     public static TFileInfo[] GetFiles<TFileInfo>(this DirectoryInfo startDirectoryInfo,
-      Func<DirectoryInfo, string?>? searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      Func<DirectoryInfo, string?> searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
       Predicate<FileInfo>? filePredicate, Predicate<DirectoryInfo>? directoryPredicate, Comparison<FileSystemInfo>? comparison,
       Func<FileInfo, TFileInfo> selector)
       => startDirectoryInfo.EnumerateFiles(searchPatternSelector, searchOption, traversalOptions, filePredicate, directoryPredicate, comparison, selector).ToArray();
 
     public static TFileInfo[] GetFiles<TFileInfo>(this DirectoryInfo startDirectoryInfo,
-      Func<DirectoryInfo, string?>? searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Func<DirectoryInfo, string?> searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
       Predicate<FileInfo>? filePredicate, Predicate<DirectoryInfo>? directoryPredicate, Comparison<FileSystemInfo>? comparison,
       Func<FileInfo, TFileInfo> selector)
       => startDirectoryInfo.EnumerateFiles(searchPatternSelector, maxDepth, traversalOptions, filePredicate, directoryPredicate, comparison, selector).ToArray();
@@ -1825,25 +2621,37 @@ namespace PowerLib.System.IO
       => startDirectoryInfo.EnumerateFiles(traversalOptions, filePredicate, directoryPredicate, comparer, selector).ToArray();
 
     public static TFileInfo[] GetFiles<TFileInfo>(this DirectoryInfo startDirectoryInfo,
-      string? searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      IPredicate<FileInfo>? filePredicate, IPredicate<DirectoryInfo>? directoryPredicate, IComparer<FileSystemInfo>? comparer,
+      Func<FileInfo, TFileInfo> selector)
+      => startDirectoryInfo.EnumerateFiles(searchOption, traversalOptions, filePredicate, directoryPredicate, comparer, selector).ToArray();
+
+    public static TFileInfo[] GetFiles<TFileInfo>(this DirectoryInfo startDirectoryInfo,
+      int maxDepth, FileSystemTraversalOptions traversalOptions,
+      IPredicate<FileInfo>? filePredicate, IPredicate<DirectoryInfo>? directoryPredicate, IComparer<FileSystemInfo>? comparer,
+      Func<FileInfo, TFileInfo> selector)
+      => startDirectoryInfo.EnumerateFiles(maxDepth, traversalOptions, filePredicate, directoryPredicate, comparer, selector).ToArray();
+
+    public static TFileInfo[] GetFiles<TFileInfo>(this DirectoryInfo startDirectoryInfo,
+      string searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
       IPredicate<FileInfo>? filePredicate, IPredicate<DirectoryInfo>? directoryPredicate, IComparer<FileSystemInfo>? comparer,
       Func<FileInfo, TFileInfo> selector)
       => startDirectoryInfo.EnumerateFiles(searchPattern, searchOption, traversalOptions, filePredicate, directoryPredicate, comparer, selector).ToArray();
 
     public static TFileInfo[] GetFiles<TFileInfo>(this DirectoryInfo startDirectoryInfo,
-      string? searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      string searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
       IPredicate<FileInfo>? filePredicate, IPredicate<DirectoryInfo>? directoryPredicate, IComparer<FileSystemInfo>? comparer,
       Func<FileInfo, TFileInfo> selector)
       => startDirectoryInfo.EnumerateFiles(searchPattern, maxDepth, traversalOptions, filePredicate, directoryPredicate, comparer, selector).ToArray();
 
     public static TFileInfo[] GetFiles<TFileInfo>(this DirectoryInfo startDirectoryInfo,
-      Func<DirectoryInfo, string?>? searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      Func<DirectoryInfo, string?> searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
       IPredicate<FileInfo>? filePredicate, IPredicate<DirectoryInfo>? directoryPredicate, IComparer<FileSystemInfo>? comparer,
       Func<FileInfo, TFileInfo> selector)
       => startDirectoryInfo.EnumerateFiles(searchPatternSelector, searchOption, traversalOptions, filePredicate, directoryPredicate, comparer, selector).ToArray();
 
     public static TFileInfo[] GetFiles<TFileInfo>(this DirectoryInfo startDirectoryInfo,
-      Func<DirectoryInfo, string?>? searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Func<DirectoryInfo, string?> searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
       IPredicate<FileInfo>? filePredicate, IPredicate<DirectoryInfo>? directoryPredicate, IComparer<FileSystemInfo>? comparer,
       Func<FileInfo, TFileInfo> selector)
       => startDirectoryInfo.EnumerateFiles(searchPatternSelector, maxDepth, traversalOptions, filePredicate, directoryPredicate, comparer, selector).ToArray();
@@ -1854,31 +2662,71 @@ namespace PowerLib.System.IO
     public static IEnumerable<FileInfo> EnumerateFilesEx(this DirectoryInfo startDirectoryInfo,
       FileSystemTraversalOptions traversalOptions,
       Predicate<(FileInfo fileInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? filePredicate, Predicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? directoryPredicate, Comparison<FileSystemInfo>? comparison)
-      => startDirectoryInfo.EnumerateFilesEx(default(Func<IReadOnlyList<DirectoryInfo>, string?>), int.MaxValue, traversalOptions, filePredicate, directoryPredicate, comparison);
+    {
+      Argument.That.NotNull(startDirectoryInfo);
+
+      return EnumerateFilesCore(startDirectoryInfo, DefaultSearchPatternSelector, int.MaxValue, traversalOptions, filePredicate, directoryPredicate, comparison);
+    }
 
     public static IEnumerable<FileInfo> EnumerateFilesEx(this DirectoryInfo startDirectoryInfo,
-      string? searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
       Predicate<(FileInfo fileInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? filePredicate, Predicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? directoryPredicate, Comparison<FileSystemInfo>? comparison)
-      => startDirectoryInfo.EnumerateFilesEx(searchPattern is not null ? _ => searchPattern : null, searchOption == SearchOption.TopDirectoryOnly ? 1 : int.MaxValue, traversalOptions, filePredicate, directoryPredicate, comparison);
+    {
+      Argument.That.NotNull(startDirectoryInfo);
+
+      return EnumerateFilesCore(startDirectoryInfo, DefaultSearchPatternSelector, searchOption == SearchOption.TopDirectoryOnly ? 1 : int.MaxValue, traversalOptions, filePredicate, directoryPredicate, comparison);
+    }
 
     public static IEnumerable<FileInfo> EnumerateFilesEx(this DirectoryInfo startDirectoryInfo,
-      string? searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
-      Predicate<(FileInfo fileInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? filePredicate, Predicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? directoryPredicate, Comparison<FileSystemInfo>? comparison)
-      => startDirectoryInfo.EnumerateFilesEx(searchPattern is not null ? _ => searchPattern : null, maxDepth, traversalOptions, filePredicate, directoryPredicate, comparison);
-
-    public static IEnumerable<FileInfo> EnumerateFilesEx(this DirectoryInfo startDirectoryInfo,
-      Func<IReadOnlyList<DirectoryInfo>, string?>? searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
-      Predicate<(FileInfo fileInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? filePredicate, Predicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? directoryPredicate, Comparison<FileSystemInfo>? comparison)
-      => startDirectoryInfo.EnumerateFilesEx(searchPatternSelector, searchOption == SearchOption.TopDirectoryOnly ? 1 : int.MaxValue, traversalOptions, filePredicate, directoryPredicate, comparison);
-
-    public static IEnumerable<FileInfo> EnumerateFilesEx(this DirectoryInfo startDirectoryInfo,
-      Func<IReadOnlyList<DirectoryInfo>, string?>? searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      int maxDepth, FileSystemTraversalOptions traversalOptions,
       Predicate<(FileInfo fileInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? filePredicate, Predicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? directoryPredicate, Comparison<FileSystemInfo>? comparison)
     {
       Argument.That.NotNull(startDirectoryInfo);
       Argument.That.NonNegative(maxDepth);
 
-      return EnumerateFilesCore(startDirectoryInfo, searchPatternSelector ?? (_ => DefaultSearchPattern), maxDepth, traversalOptions, filePredicate, directoryPredicate, comparison);
+      return EnumerateFilesCore(startDirectoryInfo, DefaultSearchPatternSelector, maxDepth, traversalOptions, filePredicate, directoryPredicate, comparison);
+    }
+
+    public static IEnumerable<FileInfo> EnumerateFilesEx(this DirectoryInfo startDirectoryInfo,
+      string searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      Predicate<(FileInfo fileInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? filePredicate, Predicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? directoryPredicate, Comparison<FileSystemInfo>? comparison)
+    {
+      Argument.That.NotNull(startDirectoryInfo);
+      Argument.That.NotNull(searchPattern);
+
+      return EnumerateFilesCore(startDirectoryInfo, _ => searchPattern, searchOption == SearchOption.TopDirectoryOnly ? 1 : int.MaxValue, traversalOptions, filePredicate, directoryPredicate, comparison);
+    }
+
+    public static IEnumerable<FileInfo> EnumerateFilesEx(this DirectoryInfo startDirectoryInfo,
+      string searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Predicate<(FileInfo fileInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? filePredicate, Predicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? directoryPredicate, Comparison<FileSystemInfo>? comparison)
+    {
+      Argument.That.NotNull(startDirectoryInfo);
+      Argument.That.NotNull(searchPattern);
+      Argument.That.NonNegative(maxDepth);
+
+      return EnumerateFilesCore(startDirectoryInfo, _ => searchPattern, maxDepth, traversalOptions, filePredicate, directoryPredicate, comparison);
+    }
+
+    public static IEnumerable<FileInfo> EnumerateFilesEx(this DirectoryInfo startDirectoryInfo,
+      Func<IReadOnlyList<DirectoryInfo>, string?> searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      Predicate<(FileInfo fileInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? filePredicate, Predicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? directoryPredicate, Comparison<FileSystemInfo>? comparison)
+    {
+      Argument.That.NotNull(startDirectoryInfo);
+      Argument.That.NotNull(searchPatternSelector);
+
+      return EnumerateFilesCore(startDirectoryInfo, searchPatternSelector, searchOption == SearchOption.TopDirectoryOnly ? 1 : int.MaxValue, traversalOptions, filePredicate, directoryPredicate, comparison);
+    }
+
+    public static IEnumerable<FileInfo> EnumerateFilesEx(this DirectoryInfo startDirectoryInfo,
+      Func<IReadOnlyList<DirectoryInfo>, string?> searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Predicate<(FileInfo fileInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? filePredicate, Predicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? directoryPredicate, Comparison<FileSystemInfo>? comparison)
+    {
+      Argument.That.NotNull(startDirectoryInfo);
+      Argument.That.NotNull(searchPatternSelector);
+      Argument.That.NonNegative(maxDepth);
+
+      return EnumerateFilesCore(startDirectoryInfo, searchPatternSelector, maxDepth, traversalOptions, filePredicate, directoryPredicate, comparison);
     }
 
     public static IEnumerable<FileInfo> EnumerateFilesEx(this DirectoryInfo startDirectoryInfo,
@@ -1887,22 +2735,22 @@ namespace PowerLib.System.IO
       => startDirectoryInfo.EnumerateFilesEx(traversalOptions, filePredicate?.AsPredicate(), directoryPredicate?.AsPredicate(), comparer?.AsComparison());
 
     public static IEnumerable<FileInfo> EnumerateFilesEx(this DirectoryInfo startDirectoryInfo,
-      string? searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      string searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
       IPredicate<(FileInfo fileInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? filePredicate, IPredicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? directoryPredicate, IComparer<FileSystemInfo>? comparer)
       => startDirectoryInfo.EnumerateFilesEx(searchPattern, searchOption, traversalOptions, filePredicate?.AsPredicate(), directoryPredicate?.AsPredicate(), comparer?.AsComparison());
 
     public static IEnumerable<FileInfo> EnumerateFilesEx(this DirectoryInfo startDirectoryInfo,
-      string? searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      string searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
       IPredicate<(FileInfo fileInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? filePredicate, IPredicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? directoryPredicate, IComparer<FileSystemInfo>? comparer)
       => startDirectoryInfo.EnumerateFilesEx(searchPattern, maxDepth, traversalOptions, filePredicate?.AsPredicate(), directoryPredicate?.AsPredicate(), comparer?.AsComparison());
 
     public static IEnumerable<FileInfo> EnumerateFilesEx(this DirectoryInfo startDirectoryInfo,
-      Func<IReadOnlyList<DirectoryInfo>, string?>? searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      Func<IReadOnlyList<DirectoryInfo>, string?> searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
       IPredicate<(FileInfo fileInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? filePredicate, IPredicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? directoryPredicate, IComparer<FileSystemInfo>? comparer)
       => startDirectoryInfo.EnumerateFilesEx(searchPatternSelector, searchOption, traversalOptions, filePredicate?.AsPredicate(), directoryPredicate?.AsPredicate(), comparer?.AsComparison());
 
     public static IEnumerable<FileInfo> EnumerateFilesEx(this DirectoryInfo startDirectoryInfo,
-      Func<IReadOnlyList<DirectoryInfo>, string?>? searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Func<IReadOnlyList<DirectoryInfo>, string?> searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
       IPredicate<(FileInfo fileInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? filePredicate, IPredicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? directoryPredicate, IComparer<FileSystemInfo>? comparer)
       => startDirectoryInfo.EnumerateFilesEx(searchPatternSelector, maxDepth, traversalOptions, filePredicate?.AsPredicate(), directoryPredicate?.AsPredicate(), comparer?.AsComparison());
 
@@ -1915,22 +2763,32 @@ namespace PowerLib.System.IO
       => startDirectoryInfo.EnumerateFilesEx(traversalOptions, filePredicate, directoryPredicate, comparison).ToArray();
 
     public static FileInfo[] GetFilesEx(this DirectoryInfo startDirectoryInfo,
-      string? searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      Predicate<(FileInfo fileInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? filePredicate, Predicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? directoryPredicate, Comparison<FileSystemInfo>? comparison)
+      => startDirectoryInfo.EnumerateFilesEx(searchOption, traversalOptions, filePredicate, directoryPredicate, comparison).ToArray();
+
+    public static FileInfo[] GetFilesEx(this DirectoryInfo startDirectoryInfo,
+      int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Predicate<(FileInfo fileInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? filePredicate, Predicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? directoryPredicate, Comparison<FileSystemInfo>? comparison)
+      => startDirectoryInfo.EnumerateFilesEx(maxDepth, traversalOptions, filePredicate, directoryPredicate, comparison).ToArray();
+
+    public static FileInfo[] GetFilesEx(this DirectoryInfo startDirectoryInfo,
+      string searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
       Predicate<(FileInfo fileInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? filePredicate, Predicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? directoryPredicate, Comparison<FileSystemInfo>? comparison)
       => startDirectoryInfo.EnumerateFilesEx(searchPattern, searchOption, traversalOptions, filePredicate, directoryPredicate, comparison).ToArray();
 
     public static FileInfo[] GetFilesEx(this DirectoryInfo startDirectoryInfo,
-      string? searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      string searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
       Predicate<(FileInfo fileInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? filePredicate, Predicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? directoryPredicate, Comparison<FileSystemInfo>? comparison)
       => startDirectoryInfo.EnumerateFilesEx(searchPattern, maxDepth, traversalOptions, filePredicate, directoryPredicate, comparison).ToArray();
 
     public static FileInfo[] GetFilesEx(this DirectoryInfo startDirectoryInfo,
-      Func<IReadOnlyList<DirectoryInfo>, string?>? searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      Func<IReadOnlyList<DirectoryInfo>, string?> searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
       Predicate<(FileInfo fileInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? filePredicate, Predicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? directoryPredicate, Comparison<FileSystemInfo>? comparison)
       => startDirectoryInfo.EnumerateFilesEx(searchPatternSelector, searchOption, traversalOptions, filePredicate, directoryPredicate, comparison).ToArray();
 
     public static FileInfo[] GetFilesEx(this DirectoryInfo startDirectoryInfo,
-      Func<IReadOnlyList<DirectoryInfo>, string?>? searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Func<IReadOnlyList<DirectoryInfo>, string?> searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
       Predicate<(FileInfo fileInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? filePredicate, Predicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? directoryPredicate, Comparison<FileSystemInfo>? comparison)
       => startDirectoryInfo.EnumerateFilesEx(searchPatternSelector, maxDepth, traversalOptions, filePredicate, directoryPredicate, comparison).ToArray();
 
@@ -1940,22 +2798,32 @@ namespace PowerLib.System.IO
       => startDirectoryInfo.EnumerateFilesEx(traversalOptions, filePredicate?.AsPredicate(), directoryPredicate?.AsPredicate(), comparer?.AsComparison()).ToArray();
 
     public static FileInfo[] GetFilesEx(this DirectoryInfo startDirectoryInfo,
-      string? searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      IPredicate<(FileInfo fileInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? filePredicate, IPredicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? directoryPredicate, IComparer<FileSystemInfo>? comparer)
+      => startDirectoryInfo.EnumerateFilesEx(searchOption, traversalOptions, filePredicate?.AsPredicate(), directoryPredicate?.AsPredicate(), comparer?.AsComparison()).ToArray();
+
+    public static FileInfo[] GetFilesEx(this DirectoryInfo startDirectoryInfo,
+      int maxDepth, FileSystemTraversalOptions traversalOptions,
+      IPredicate<(FileInfo fileInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? filePredicate, IPredicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? directoryPredicate, IComparer<FileSystemInfo>? comparer)
+      => startDirectoryInfo.EnumerateFilesEx(maxDepth, traversalOptions, filePredicate?.AsPredicate(), directoryPredicate?.AsPredicate(), comparer?.AsComparison()).ToArray();
+
+    public static FileInfo[] GetFilesEx(this DirectoryInfo startDirectoryInfo,
+      string searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
       IPredicate<(FileInfo fileInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? filePredicate, IPredicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? directoryPredicate, IComparer<FileSystemInfo>? comparer)
       => startDirectoryInfo.EnumerateFilesEx(searchPattern, searchOption, traversalOptions, filePredicate?.AsPredicate(), directoryPredicate?.AsPredicate(), comparer?.AsComparison()).ToArray();
 
     public static FileInfo[] GetFilesEx(this DirectoryInfo startDirectoryInfo,
-      string? searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      string searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
       IPredicate<(FileInfo fileInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? filePredicate, IPredicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? directoryPredicate, IComparer<FileSystemInfo>? comparer)
       => startDirectoryInfo.EnumerateFilesEx(searchPattern, maxDepth, traversalOptions, filePredicate?.AsPredicate(), directoryPredicate?.AsPredicate(), comparer?.AsComparison()).ToArray();
 
     public static FileInfo[] GetFilesEx(this DirectoryInfo startDirectoryInfo,
-      Func<IReadOnlyList<DirectoryInfo>, string?>? searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      Func<IReadOnlyList<DirectoryInfo>, string?> searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
       IPredicate<(FileInfo fileInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? filePredicate, IPredicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? directoryPredicate, IComparer<FileSystemInfo>? comparer)
       => startDirectoryInfo.EnumerateFilesEx(searchPatternSelector, searchOption, traversalOptions, filePredicate?.AsPredicate(), directoryPredicate?.AsPredicate(), comparer?.AsComparison()).ToArray();
 
     public static FileInfo[] GetFilesEx(this DirectoryInfo startDirectoryInfo,
-      Func<IReadOnlyList<DirectoryInfo>, string?>? searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Func<IReadOnlyList<DirectoryInfo>, string?> searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
       IPredicate<(FileInfo fileInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? filePredicate, IPredicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? directoryPredicate, IComparer<FileSystemInfo>? comparer)
       => startDirectoryInfo.EnumerateFilesEx(searchPatternSelector, maxDepth, traversalOptions, filePredicate?.AsPredicate(), directoryPredicate?.AsPredicate(), comparer?.AsComparison()).ToArray();
 
@@ -1966,28 +2834,26 @@ namespace PowerLib.System.IO
       FileSystemTraversalOptions traversalOptions,
       Predicate<(FileInfo fileInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? filePredicate, Predicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? directoryPredicate, Comparison<FileSystemInfo>? comparison,
       Func<FileInfo, IReadOnlyList<DirectoryInfo>, TFileInfo> selector)
-      => startDirectoryInfo.EnumerateFilesEx(default(Func<IReadOnlyList<DirectoryInfo>, string?>), int.MaxValue, traversalOptions, filePredicate, directoryPredicate, comparison, selector);
+    {
+      Argument.That.NotNull(startDirectoryInfo);
+      Argument.That.NotNull(selector);
+
+      return EnumerateFilesCore(startDirectoryInfo, DefaultSearchPatternSelector, int.MaxValue, traversalOptions, filePredicate, directoryPredicate, comparison, selector);
+    }
 
     public static IEnumerable<TFileInfo> EnumerateFilesEx<TFileInfo>(this DirectoryInfo startDirectoryInfo,
-      string? searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
       Predicate<(FileInfo fileInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? filePredicate, Predicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? directoryPredicate, Comparison<FileSystemInfo>? comparison,
       Func<FileInfo, IReadOnlyList<DirectoryInfo>, TFileInfo> selector)
-      => startDirectoryInfo.EnumerateFilesEx(searchPattern is not null ? _ => searchPattern : null, searchOption == SearchOption.TopDirectoryOnly ? 1 : int.MaxValue, traversalOptions, filePredicate, directoryPredicate, comparison, selector);
+    {
+      Argument.That.NotNull(startDirectoryInfo);
+      Argument.That.NotNull(selector);
+
+      return EnumerateFilesCore(startDirectoryInfo, DefaultSearchPatternSelector, searchOption == SearchOption.TopDirectoryOnly ? 1 : int.MaxValue, traversalOptions, filePredicate, directoryPredicate, comparison, selector);
+    }
 
     public static IEnumerable<TFileInfo> EnumerateFilesEx<TFileInfo>(this DirectoryInfo startDirectoryInfo,
-      string? searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
-      Predicate<(FileInfo fileInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? filePredicate, Predicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? directoryPredicate, Comparison<FileSystemInfo>? comparison,
-      Func<FileInfo, IReadOnlyList<DirectoryInfo>, TFileInfo> selector)
-      => startDirectoryInfo.EnumerateFilesEx(searchPattern is not null ? _ => searchPattern : null, maxDepth, traversalOptions, filePredicate, directoryPredicate, comparison, selector);
-
-    public static IEnumerable<TFileInfo> EnumerateFilesEx<TFileInfo>(this DirectoryInfo startDirectoryInfo,
-      Func<IReadOnlyList<DirectoryInfo>, string?>? searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
-      Predicate<(FileInfo fileInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? filePredicate, Predicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? directoryPredicate, Comparison<FileSystemInfo>? comparison,
-      Func<FileInfo, IReadOnlyList<DirectoryInfo>, TFileInfo> selector)
-      => startDirectoryInfo.EnumerateFilesEx(searchPatternSelector, searchOption == SearchOption.TopDirectoryOnly ? 1 : int.MaxValue, traversalOptions, filePredicate, directoryPredicate, comparison, selector);
-
-    public static IEnumerable<TFileInfo> EnumerateFilesEx<TFileInfo>(this DirectoryInfo startDirectoryInfo,
-      Func<IReadOnlyList<DirectoryInfo>, string?>? searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      int maxDepth, FileSystemTraversalOptions traversalOptions,
       Predicate<(FileInfo fileInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? filePredicate, Predicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? directoryPredicate, Comparison<FileSystemInfo>? comparison,
       Func<FileInfo, IReadOnlyList<DirectoryInfo>, TFileInfo> selector)
     {
@@ -1995,7 +2861,57 @@ namespace PowerLib.System.IO
       Argument.That.NonNegative(maxDepth);
       Argument.That.NotNull(selector);
 
-      return EnumerateFilesCore(startDirectoryInfo, searchPatternSelector ?? (_ => DefaultSearchPattern), maxDepth, traversalOptions, filePredicate, directoryPredicate, comparison, selector);
+      return EnumerateFilesCore(startDirectoryInfo, DefaultSearchPatternSelector, maxDepth, traversalOptions, filePredicate, directoryPredicate, comparison, selector);
+    }
+
+    public static IEnumerable<TFileInfo> EnumerateFilesEx<TFileInfo>(this DirectoryInfo startDirectoryInfo,
+      string searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      Predicate<(FileInfo fileInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? filePredicate, Predicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? directoryPredicate, Comparison<FileSystemInfo>? comparison,
+      Func<FileInfo, IReadOnlyList<DirectoryInfo>, TFileInfo> selector)
+    {
+      Argument.That.NotNull(startDirectoryInfo);
+      Argument.That.NotNull(searchPattern);
+      Argument.That.NotNull(selector);
+
+      return EnumerateFilesCore(startDirectoryInfo, _ => searchPattern, searchOption == SearchOption.TopDirectoryOnly ? 1 : int.MaxValue, traversalOptions, filePredicate, directoryPredicate, comparison, selector);
+    }
+
+    public static IEnumerable<TFileInfo> EnumerateFilesEx<TFileInfo>(this DirectoryInfo startDirectoryInfo,
+      string searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Predicate<(FileInfo fileInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? filePredicate, Predicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? directoryPredicate, Comparison<FileSystemInfo>? comparison,
+      Func<FileInfo, IReadOnlyList<DirectoryInfo>, TFileInfo> selector)
+    {
+      Argument.That.NotNull(startDirectoryInfo);
+      Argument.That.NotNull(searchPattern);
+      Argument.That.NonNegative(maxDepth);
+      Argument.That.NotNull(selector);
+
+      return EnumerateFilesCore(startDirectoryInfo, _ => searchPattern, maxDepth, traversalOptions, filePredicate, directoryPredicate, comparison, selector);
+    }
+
+    public static IEnumerable<TFileInfo> EnumerateFilesEx<TFileInfo>(this DirectoryInfo startDirectoryInfo,
+      Func<IReadOnlyList<DirectoryInfo>, string?> searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      Predicate<(FileInfo fileInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? filePredicate, Predicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? directoryPredicate, Comparison<FileSystemInfo>? comparison,
+      Func<FileInfo, IReadOnlyList<DirectoryInfo>, TFileInfo> selector)
+    {
+      Argument.That.NotNull(startDirectoryInfo);
+      Argument.That.NotNull(searchPatternSelector);
+      Argument.That.NotNull(selector);
+
+      return EnumerateFilesCore(startDirectoryInfo, searchPatternSelector, searchOption == SearchOption.TopDirectoryOnly ? 1 : int.MaxValue, traversalOptions, filePredicate, directoryPredicate, comparison, selector);
+    }
+
+    public static IEnumerable<TFileInfo> EnumerateFilesEx<TFileInfo>(this DirectoryInfo startDirectoryInfo,
+      Func<IReadOnlyList<DirectoryInfo>, string?> searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Predicate<(FileInfo fileInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? filePredicate, Predicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? directoryPredicate, Comparison<FileSystemInfo>? comparison,
+      Func<FileInfo, IReadOnlyList<DirectoryInfo>, TFileInfo> selector)
+    {
+      Argument.That.NotNull(startDirectoryInfo);
+      Argument.That.NotNull(searchPatternSelector);
+      Argument.That.NonNegative(maxDepth);
+      Argument.That.NotNull(selector);
+
+      return EnumerateFilesCore(startDirectoryInfo, searchPatternSelector, maxDepth, traversalOptions, filePredicate, directoryPredicate, comparison, selector);
     }
 
     public static IEnumerable<TFileInfo> EnumerateFilesEx<TFileInfo>(this DirectoryInfo startDirectoryInfo,
@@ -2005,25 +2921,37 @@ namespace PowerLib.System.IO
       => startDirectoryInfo.EnumerateFilesEx(traversalOptions, filePredicate?.AsPredicate(), directoryPredicate?.AsPredicate(), comparer?.AsComparison(), selector);
 
     public static IEnumerable<TFileInfo> EnumerateFilesEx<TFileInfo>(this DirectoryInfo startDirectoryInfo,
-      string? searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      IPredicate<(FileInfo fileInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? filePredicate, IPredicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? directoryPredicate, IComparer<FileSystemInfo>? comparer,
+      Func<FileInfo, IReadOnlyList<DirectoryInfo>, TFileInfo> selector)
+      => startDirectoryInfo.EnumerateFilesEx(searchOption, traversalOptions, filePredicate?.AsPredicate(), directoryPredicate?.AsPredicate(), comparer?.AsComparison(), selector);
+
+    public static IEnumerable<TFileInfo> EnumerateFilesEx<TFileInfo>(this DirectoryInfo startDirectoryInfo,
+      int maxDepth, FileSystemTraversalOptions traversalOptions,
+      IPredicate<(FileInfo fileInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? filePredicate, IPredicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? directoryPredicate, IComparer<FileSystemInfo>? comparer,
+      Func<FileInfo, IReadOnlyList<DirectoryInfo>, TFileInfo> selector)
+      => startDirectoryInfo.EnumerateFilesEx(maxDepth, traversalOptions, filePredicate?.AsPredicate(), directoryPredicate?.AsPredicate(), comparer?.AsComparison(), selector);
+
+    public static IEnumerable<TFileInfo> EnumerateFilesEx<TFileInfo>(this DirectoryInfo startDirectoryInfo,
+      string searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
       IPredicate<(FileInfo fileInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? filePredicate, IPredicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? directoryPredicate, IComparer<FileSystemInfo>? comparer,
       Func<FileInfo, IReadOnlyList<DirectoryInfo>, TFileInfo> selector)
       => startDirectoryInfo.EnumerateFilesEx(searchPattern, searchOption, traversalOptions, filePredicate?.AsPredicate(), directoryPredicate?.AsPredicate(), comparer?.AsComparison(), selector);
 
     public static IEnumerable<TFileInfo> EnumerateFilesEx<TFileInfo>(this DirectoryInfo startDirectoryInfo,
-      string? searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      string searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
       IPredicate<(FileInfo fileInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? filePredicate, IPredicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? directoryPredicate, IComparer<FileSystemInfo>? comparer,
       Func<FileInfo, IReadOnlyList<DirectoryInfo>, TFileInfo> selector)
       => startDirectoryInfo.EnumerateFilesEx(searchPattern, maxDepth, traversalOptions, filePredicate?.AsPredicate(), directoryPredicate?.AsPredicate(), comparer?.AsComparison(), selector);
 
     public static IEnumerable<TFileInfo> EnumerateFilesEx<TFileInfo>(this DirectoryInfo startDirectoryInfo,
-      Func<IReadOnlyList<DirectoryInfo>, string?>? searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      Func<IReadOnlyList<DirectoryInfo>, string?> searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
       IPredicate<(FileInfo fileInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? filePredicate, IPredicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? directoryPredicate, IComparer<FileSystemInfo>? comparer,
       Func<FileInfo, IReadOnlyList<DirectoryInfo>, TFileInfo> selector)
       => startDirectoryInfo.EnumerateFilesEx(searchPatternSelector, searchOption, traversalOptions, filePredicate?.AsPredicate(), directoryPredicate?.AsPredicate(), comparer?.AsComparison(), selector);
 
     public static IEnumerable<TFileInfo> EnumerateFilesEx<TFileInfo>(this DirectoryInfo startDirectoryInfo,
-      Func<IReadOnlyList<DirectoryInfo>, string?>? searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Func<IReadOnlyList<DirectoryInfo>, string?> searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
       IPredicate<(FileInfo fileInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? filePredicate, IPredicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? directoryPredicate, IComparer<FileSystemInfo>? comparer,
       Func<FileInfo, IReadOnlyList<DirectoryInfo>, TFileInfo> selector)
       => startDirectoryInfo.EnumerateFilesEx(searchPatternSelector, maxDepth, traversalOptions, filePredicate?.AsPredicate(), directoryPredicate?.AsPredicate(), comparer?.AsComparison(), selector);
@@ -2038,25 +2966,37 @@ namespace PowerLib.System.IO
       => startDirectoryInfo.EnumerateFilesEx(traversalOptions, filePredicate, directoryPredicate, comparison, selector).ToArray();
 
     public static TFileInfo[] GetFilesEx<TFileInfo>(this DirectoryInfo startDirectoryInfo,
-      string? searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      Predicate<(FileInfo fileInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? filePredicate, Predicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? directoryPredicate, Comparison<FileSystemInfo>? comparison,
+      Func<FileInfo, IReadOnlyList<DirectoryInfo>, TFileInfo> selector)
+      => startDirectoryInfo.EnumerateFilesEx(searchOption, traversalOptions, filePredicate, directoryPredicate, comparison, selector).ToArray();
+
+    public static TFileInfo[] GetFilesEx<TFileInfo>(this DirectoryInfo startDirectoryInfo,
+      int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Predicate<(FileInfo fileInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? filePredicate, Predicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? directoryPredicate, Comparison<FileSystemInfo>? comparison,
+      Func<FileInfo, IReadOnlyList<DirectoryInfo>, TFileInfo> selector)
+      => startDirectoryInfo.EnumerateFilesEx(maxDepth, traversalOptions, filePredicate, directoryPredicate, comparison, selector).ToArray();
+
+    public static TFileInfo[] GetFilesEx<TFileInfo>(this DirectoryInfo startDirectoryInfo,
+      string searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
       Predicate<(FileInfo fileInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? filePredicate, Predicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? directoryPredicate, Comparison<FileSystemInfo>? comparison,
       Func<FileInfo, IReadOnlyList<DirectoryInfo>, TFileInfo> selector)
       => startDirectoryInfo.EnumerateFilesEx(searchPattern, searchOption, traversalOptions, filePredicate, directoryPredicate, comparison, selector).ToArray();
 
     public static TFileInfo[] GetFilesEx<TFileInfo>(this DirectoryInfo startDirectoryInfo,
-      string? searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      string searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
       Predicate<(FileInfo fileInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? filePredicate, Predicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? directoryPredicate, Comparison<FileSystemInfo>? comparison,
       Func<FileInfo, IReadOnlyList<DirectoryInfo>, TFileInfo> selector)
       => startDirectoryInfo.EnumerateFilesEx(searchPattern, maxDepth, traversalOptions, filePredicate, directoryPredicate, comparison, selector).ToArray();
 
     public static TFileInfo[] GetFilesEx<TFileInfo>(this DirectoryInfo startDirectoryInfo,
-      Func<IReadOnlyList<DirectoryInfo>, string?>? searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      Func<IReadOnlyList<DirectoryInfo>, string?> searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
       Predicate<(FileInfo fileInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? filePredicate, Predicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? directoryPredicate, Comparison<FileSystemInfo>? comparison,
       Func<FileInfo, IReadOnlyList<DirectoryInfo>, TFileInfo> selector)
       => startDirectoryInfo.EnumerateFilesEx(searchPatternSelector, searchOption, traversalOptions, filePredicate, directoryPredicate, comparison, selector).ToArray();
 
     public static TFileInfo[] GetFilesEx<TFileInfo>(this DirectoryInfo startDirectoryInfo,
-      Func<IReadOnlyList<DirectoryInfo>, string?>? searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Func<IReadOnlyList<DirectoryInfo>, string?> searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
       Predicate<(FileInfo fileInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? filePredicate, Predicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? directoryPredicate, Comparison<FileSystemInfo>? comparison,
       Func<FileInfo, IReadOnlyList<DirectoryInfo>, TFileInfo> selector)
       => startDirectoryInfo.EnumerateFilesEx(searchPatternSelector, maxDepth, traversalOptions, filePredicate, directoryPredicate, comparison, selector).ToArray();
@@ -2068,25 +3008,37 @@ namespace PowerLib.System.IO
       => startDirectoryInfo.EnumerateFilesEx(traversalOptions, filePredicate, directoryPredicate, comparer, selector).ToArray();
 
     public static TFileInfo[] GetFilesEx<TFileInfo>(this DirectoryInfo startDirectoryInfo,
-      string? searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      IPredicate<(FileInfo fileInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? filePredicate, IPredicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? directoryPredicate, IComparer<FileSystemInfo>? comparer,
+      Func<FileInfo, IReadOnlyList<DirectoryInfo>, TFileInfo> selector)
+      => startDirectoryInfo.EnumerateFilesEx(searchOption, traversalOptions, filePredicate, directoryPredicate, comparer, selector).ToArray();
+
+    public static TFileInfo[] GetFilesEx<TFileInfo>(this DirectoryInfo startDirectoryInfo,
+      int maxDepth, FileSystemTraversalOptions traversalOptions,
+      IPredicate<(FileInfo fileInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? filePredicate, IPredicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? directoryPredicate, IComparer<FileSystemInfo>? comparer,
+      Func<FileInfo, IReadOnlyList<DirectoryInfo>, TFileInfo> selector)
+      => startDirectoryInfo.EnumerateFilesEx(maxDepth, traversalOptions, filePredicate, directoryPredicate, comparer, selector).ToArray();
+
+    public static TFileInfo[] GetFilesEx<TFileInfo>(this DirectoryInfo startDirectoryInfo,
+      string searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
       IPredicate<(FileInfo fileInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? filePredicate, IPredicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? directoryPredicate, IComparer<FileSystemInfo>? comparer,
       Func<FileInfo, IReadOnlyList<DirectoryInfo>, TFileInfo> selector)
       => startDirectoryInfo.EnumerateFilesEx(searchPattern, searchOption, traversalOptions, filePredicate, directoryPredicate, comparer, selector).ToArray();
 
     public static TFileInfo[] GetFilesEx<TFileInfo>(this DirectoryInfo startDirectoryInfo,
-      string? searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      string searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
       IPredicate<(FileInfo fileInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? filePredicate, IPredicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? directoryPredicate, IComparer<FileSystemInfo>? comparer,
       Func<FileInfo, IReadOnlyList<DirectoryInfo>, TFileInfo> selector)
       => startDirectoryInfo.EnumerateFilesEx(searchPattern, maxDepth, traversalOptions, filePredicate, directoryPredicate, comparer, selector).ToArray();
 
     public static TFileInfo[] GetFilesEx<TFileInfo>(this DirectoryInfo startDirectoryInfo,
-      Func<IReadOnlyList<DirectoryInfo>, string?>? searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      Func<IReadOnlyList<DirectoryInfo>, string?> searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
       IPredicate<(FileInfo fileInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? filePredicate, IPredicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? directoryPredicate, IComparer<FileSystemInfo>? comparer,
       Func<FileInfo, IReadOnlyList<DirectoryInfo>, TFileInfo> selector)
       => startDirectoryInfo.EnumerateFilesEx(searchPatternSelector, searchOption, traversalOptions, filePredicate, directoryPredicate, comparer, selector).ToArray();
 
     public static TFileInfo[] GetFilesEx<TFileInfo>(this DirectoryInfo startDirectoryInfo,
-      Func<IReadOnlyList<DirectoryInfo>, string?>? searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Func<IReadOnlyList<DirectoryInfo>, string?> searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
       IPredicate<(FileInfo, IReadOnlyList<DirectoryInfo>)>? filePredicate, IPredicate<(DirectoryInfo directoryInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? directoryPredicate, IComparer<FileSystemInfo>? comparer,
       Func<FileInfo, IReadOnlyList<DirectoryInfo>, TFileInfo> selector)
       => startDirectoryInfo.EnumerateFilesEx(searchPatternSelector, maxDepth, traversalOptions, filePredicate, directoryPredicate, comparer, selector).ToArray();
@@ -2097,35 +3049,78 @@ namespace PowerLib.System.IO
     public static int Copy(this DirectoryInfo sourceDirectoryInfo,
       FileSystemTraversalOptions traversalOptions,
       Predicate<FileSystemInfo>? predicate, Func<FileSystemInfo, TryOut<CopyOptions>> copying)
-      => sourceDirectoryInfo.Copy(default(Func<DirectoryInfo, string?>), int.MaxValue, traversalOptions, predicate, copying);
+    {
+      Argument.That.NotNull(sourceDirectoryInfo);
+      Argument.That.NotNull(copying);
+
+      return CopyCore(sourceDirectoryInfo, DefaultSearchPatternSelector, int.MaxValue, traversalOptions, predicate, copying);
+    }
 
     public static int Copy(this DirectoryInfo sourceDirectoryInfo,
-      string? searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
       Predicate<FileSystemInfo>? predicate, Func<FileSystemInfo, TryOut<CopyOptions>> copying)
-      => sourceDirectoryInfo.Copy(searchPattern is not null ? _ => searchPattern : null, searchOption == SearchOption.TopDirectoryOnly ? 1 : int.MaxValue, traversalOptions, predicate, copying);
+    {
+      Argument.That.NotNull(sourceDirectoryInfo);
+      Argument.That.NotNull(copying);
+
+      return CopyCore(sourceDirectoryInfo, DefaultSearchPatternSelector, searchOption == SearchOption.TopDirectoryOnly ? 1 : int.MaxValue, traversalOptions, predicate, copying);
+    }
 
     public static int Copy(this DirectoryInfo sourceDirectoryInfo,
-      string? searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
-      Predicate<FileSystemInfo>? predicate, Func<FileSystemInfo, TryOut<CopyOptions>> copying)
-      => sourceDirectoryInfo.Copy(searchPattern is not null ? _ => searchPattern : null, maxDepth, traversalOptions, predicate, copying);
-
-    public static int Copy(this DirectoryInfo sourceDirectoryInfo,
-      Func<DirectoryInfo, string?>? searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
-      Predicate<FileSystemInfo>? predicate, Func<FileSystemInfo, TryOut<CopyOptions>> copying)
-      => sourceDirectoryInfo.Copy(searchPatternSelector, searchOption == SearchOption.TopDirectoryOnly ? 1 : int.MaxValue, traversalOptions, predicate, copying);
-
-    public static int Copy(this DirectoryInfo sourceDirectoryInfo,
-      Func<DirectoryInfo, string?>? searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      int maxDepth, FileSystemTraversalOptions traversalOptions,
       Predicate<FileSystemInfo>? predicate, Func<FileSystemInfo, TryOut<CopyOptions>> copying)
     {
       Argument.That.NotNull(sourceDirectoryInfo);
       Argument.That.NonNegative(maxDepth);
       Argument.That.NotNull(copying);
 
-      return ProcessFileSystemInfoCore(sourceDirectoryInfo, traversalOptions.IsFlagsSet(FileSystemTraversalOptions.Refresh),
-        directoryInfo => EnumerateFileSystemInfosCore(directoryInfo, searchPatternSelector ?? (_ => DefaultSearchPattern), maxDepth, traversalOptions, predicate,
-          new SelectComparer<FileSystemInfo, bool>(fileSystemInfo => fileSystemInfo is FileInfo).Compare),
-        fileSystemInfo => CopyCore(fileSystemInfo, copying));
+      return CopyCore(sourceDirectoryInfo, DefaultSearchPatternSelector, maxDepth, traversalOptions, predicate, copying);
+    }
+
+    public static int Copy(this DirectoryInfo sourceDirectoryInfo,
+      string searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      Predicate<FileSystemInfo>? predicate, Func<FileSystemInfo, TryOut<CopyOptions>> copying)
+    {
+      Argument.That.NotNull(sourceDirectoryInfo);
+      Argument.That.NotNull(searchPattern);
+      Argument.That.NotNull(copying);
+
+      return CopyCore(sourceDirectoryInfo, _ => searchPattern, searchOption == SearchOption.TopDirectoryOnly ? 1 : int.MaxValue, traversalOptions, predicate, copying);
+    }
+
+    public static int Copy(this DirectoryInfo sourceDirectoryInfo,
+      string searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Predicate<FileSystemInfo>? predicate, Func<FileSystemInfo, TryOut<CopyOptions>> copying)
+    {
+      Argument.That.NotNull(sourceDirectoryInfo);
+      Argument.That.NotNull(searchPattern);
+      Argument.That.NonNegative(maxDepth);
+      Argument.That.NotNull(copying);
+
+      return CopyCore(sourceDirectoryInfo, _ => searchPattern, maxDepth, traversalOptions, predicate, copying);
+    }
+
+    public static int Copy(this DirectoryInfo sourceDirectoryInfo,
+      Func<DirectoryInfo, string?> searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      Predicate<FileSystemInfo>? predicate, Func<FileSystemInfo, TryOut<CopyOptions>> copying)
+    {
+      Argument.That.NotNull(sourceDirectoryInfo);
+      Argument.That.NotNull(searchPatternSelector);
+      Argument.That.NotNull(copying);
+
+      return CopyCore(sourceDirectoryInfo, searchPatternSelector, searchOption == SearchOption.TopDirectoryOnly ? 1 : int.MaxValue, traversalOptions, predicate, copying);
+    }
+
+    public static int Copy(this DirectoryInfo sourceDirectoryInfo,
+      Func<DirectoryInfo, string?> searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Predicate<FileSystemInfo>? predicate, Func<FileSystemInfo, TryOut<CopyOptions>> copying)
+    {
+      Argument.That.NotNull(sourceDirectoryInfo);
+      Argument.That.NotNull(searchPatternSelector);
+      Argument.That.NonNegative(maxDepth);
+      Argument.That.NotNull(copying);
+
+      return CopyCore(sourceDirectoryInfo, searchPatternSelector, maxDepth, traversalOptions, predicate, copying);
     }
 
     public static int Copy(this DirectoryInfo sourceDirectoryInfo,
@@ -2134,22 +3129,32 @@ namespace PowerLib.System.IO
       => sourceDirectoryInfo.Copy(traversalOptions, predicate?.AsPredicate(), copying);
 
     public static int Copy(this DirectoryInfo sourceDirectoryInfo,
-      string? searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      IPredicate<FileSystemInfo>? predicate, Func<FileSystemInfo, TryOut<CopyOptions>> copying)
+      => sourceDirectoryInfo.Copy(searchOption, traversalOptions, predicate?.AsPredicate(), copying);
+
+    public static int Copy(this DirectoryInfo sourceDirectoryInfo,
+      int maxDepth, FileSystemTraversalOptions traversalOptions,
+      IPredicate<FileSystemInfo>? predicate, Func<FileSystemInfo, TryOut<CopyOptions>> copying)
+      => sourceDirectoryInfo.Copy(maxDepth, traversalOptions, predicate?.AsPredicate(), copying);
+
+    public static int Copy(this DirectoryInfo sourceDirectoryInfo,
+      string searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
       IPredicate<FileSystemInfo>? predicate, Func<FileSystemInfo, TryOut<CopyOptions>> copying)
       => sourceDirectoryInfo.Copy(searchPattern, searchOption, traversalOptions, predicate?.AsPredicate(), copying);
 
     public static int Copy(this DirectoryInfo sourceDirectoryInfo,
-      string? searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      string searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
       IPredicate<FileSystemInfo>? predicate, Func<FileSystemInfo, TryOut<CopyOptions>> copying)
       => sourceDirectoryInfo.Copy(searchPattern, maxDepth, traversalOptions, predicate?.AsPredicate(), copying);
 
     public static int Copy(this DirectoryInfo sourceDirectoryInfo,
-      Func<DirectoryInfo, string?>? searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      Func<DirectoryInfo, string?> searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
       IPredicate<FileSystemInfo>? predicate, Func<FileSystemInfo, TryOut<CopyOptions>> copying)
       => sourceDirectoryInfo.Copy(searchPatternSelector, searchOption, traversalOptions, predicate?.AsPredicate(), copying);
 
     public static int Copy(this DirectoryInfo sourceDirectoryInfo,
-      Func<DirectoryInfo, string?>? searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Func<DirectoryInfo, string?> searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
       IPredicate<FileSystemInfo>? predicate, Func<FileSystemInfo, TryOut<CopyOptions>> copying)
       => sourceDirectoryInfo.Copy(searchPatternSelector, maxDepth, traversalOptions, predicate?.AsPredicate(), copying);
 
@@ -2159,35 +3164,78 @@ namespace PowerLib.System.IO
     public static int CopyEx(this DirectoryInfo sourceDirectoryInfo,
       FileSystemTraversalOptions traversalOptions,
       Predicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Func<FileSystemInfo, TryOut<CopyOptions>> copying)
-      => sourceDirectoryInfo.CopyEx(default(Func<IReadOnlyList<DirectoryInfo>, string?>), int.MaxValue, traversalOptions, predicate, copying);
+    {
+      Argument.That.NotNull(sourceDirectoryInfo);
+      Argument.That.NotNull(copying);
+
+      return CopyCore(sourceDirectoryInfo, DefaultSearchPatternSelector, int.MaxValue, traversalOptions, predicate, copying);
+    }
 
     public static int CopyEx(this DirectoryInfo sourceDirectoryInfo,
-      string? searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
       Predicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Func<FileSystemInfo, TryOut<CopyOptions>> copying)
-      => sourceDirectoryInfo.CopyEx(searchPattern is not null ? _ => searchPattern : null, searchOption == SearchOption.TopDirectoryOnly ? 1 : int.MaxValue, traversalOptions, predicate, copying);
+    {
+      Argument.That.NotNull(sourceDirectoryInfo);
+      Argument.That.NotNull(copying);
+
+      return CopyCore(sourceDirectoryInfo, DefaultSearchPatternSelector, searchOption == SearchOption.TopDirectoryOnly ? 1 : int.MaxValue, traversalOptions, predicate, copying);
+    }
 
     public static int CopyEx(this DirectoryInfo sourceDirectoryInfo,
-      string? searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
-      Predicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Func<FileSystemInfo, TryOut<CopyOptions>> copying)
-      => sourceDirectoryInfo.CopyEx(searchPattern is not null ? _ => searchPattern : null, maxDepth, traversalOptions, predicate, copying);
-
-    public static int CopyEx(this DirectoryInfo sourceDirectoryInfo,
-      Func<IReadOnlyList<DirectoryInfo>, string?>? searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
-      Predicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Func<FileSystemInfo, TryOut<CopyOptions>> copying)
-      => sourceDirectoryInfo.CopyEx(searchPatternSelector, searchOption == SearchOption.TopDirectoryOnly ? 1 : int.MaxValue, traversalOptions, predicate, copying);
-
-    public static int CopyEx(this DirectoryInfo sourceDirectoryInfo,
-      Func<IReadOnlyList<DirectoryInfo>, string?>? searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      int maxDepth, FileSystemTraversalOptions traversalOptions,
       Predicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Func<FileSystemInfo, TryOut<CopyOptions>> copying)
     {
       Argument.That.NotNull(sourceDirectoryInfo);
       Argument.That.NonNegative(maxDepth);
       Argument.That.NotNull(copying);
 
-      return ProcessFileSystemInfoCore(sourceDirectoryInfo, traversalOptions.IsFlagsSet(FileSystemTraversalOptions.Refresh),
-        directoryInfo => EnumerateFileSystemInfosCore(directoryInfo, searchPatternSelector ?? (_ => DefaultSearchPattern), maxDepth, traversalOptions, predicate,
-          new SelectComparer<FileSystemInfo, bool>(fileSystemInfo => fileSystemInfo is FileInfo).Compare),
-        fileSystemInfo => CopyCore(fileSystemInfo, copying));
+      return CopyCore(sourceDirectoryInfo, DefaultSearchPatternSelector, maxDepth, traversalOptions, predicate, copying);
+    }
+
+    public static int CopyEx(this DirectoryInfo sourceDirectoryInfo,
+      string searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      Predicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Func<FileSystemInfo, TryOut<CopyOptions>> copying)
+    {
+      Argument.That.NotNull(sourceDirectoryInfo);
+      Argument.That.NotNull(searchPattern);
+      Argument.That.NotNull(copying);
+
+      return CopyCore(sourceDirectoryInfo, _ => searchPattern, searchOption == SearchOption.TopDirectoryOnly ? 1 : int.MaxValue, traversalOptions, predicate, copying);
+    }
+
+    public static int CopyEx(this DirectoryInfo sourceDirectoryInfo,
+      string searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Predicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Func<FileSystemInfo, TryOut<CopyOptions>> copying)
+    {
+      Argument.That.NotNull(sourceDirectoryInfo);
+      Argument.That.NotNull(searchPattern);
+      Argument.That.NonNegative(maxDepth);
+      Argument.That.NotNull(copying);
+
+      return CopyCore(sourceDirectoryInfo, _ => searchPattern, maxDepth, traversalOptions, predicate, copying);
+    }
+
+    public static int CopyEx(this DirectoryInfo sourceDirectoryInfo,
+      Func<IReadOnlyList<DirectoryInfo>, string?> searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      Predicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Func<FileSystemInfo, TryOut<CopyOptions>> copying)
+    {
+      Argument.That.NotNull(sourceDirectoryInfo);
+      Argument.That.NotNull(searchPatternSelector);
+      Argument.That.NotNull(copying);
+
+      return CopyCore(sourceDirectoryInfo, searchPatternSelector, searchOption == SearchOption.TopDirectoryOnly ? 1 : int.MaxValue, traversalOptions, predicate, copying);
+    }
+
+    public static int CopyEx(this DirectoryInfo sourceDirectoryInfo,
+      Func<IReadOnlyList<DirectoryInfo>, string?> searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Predicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Func<FileSystemInfo, TryOut<CopyOptions>> copying)
+    {
+      Argument.That.NotNull(sourceDirectoryInfo);
+      Argument.That.NotNull(searchPatternSelector);
+      Argument.That.NonNegative(maxDepth);
+      Argument.That.NotNull(copying);
+
+      return CopyCore(sourceDirectoryInfo, searchPatternSelector, maxDepth, traversalOptions, predicate, copying);
     }
 
     public static int CopyEx(this DirectoryInfo sourceDirectoryInfo,
@@ -2196,22 +3244,32 @@ namespace PowerLib.System.IO
       => sourceDirectoryInfo.CopyEx(traversalOptions, predicate?.AsPredicate(), copying);
 
     public static int CopyEx(this DirectoryInfo sourceDirectoryInfo,
-      string? searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      IPredicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Func<FileSystemInfo, TryOut<CopyOptions>> copying)
+      => sourceDirectoryInfo.CopyEx(searchOption, traversalOptions, predicate?.AsPredicate(), copying);
+
+    public static int CopyEx(this DirectoryInfo sourceDirectoryInfo,
+      int maxDepth, FileSystemTraversalOptions traversalOptions,
+      IPredicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Func<FileSystemInfo, TryOut<CopyOptions>> copying)
+      => sourceDirectoryInfo.CopyEx(maxDepth, traversalOptions, predicate?.AsPredicate(), copying);
+
+    public static int CopyEx(this DirectoryInfo sourceDirectoryInfo,
+      string searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
       IPredicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Func<FileSystemInfo, TryOut<CopyOptions>> copying)
       => sourceDirectoryInfo.CopyEx(searchPattern, searchOption, traversalOptions, predicate?.AsPredicate(), copying);
 
     public static int CopyEx(this DirectoryInfo sourceDirectoryInfo,
-      string? searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      string searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
       IPredicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Func<FileSystemInfo, TryOut<CopyOptions>> copying)
       => sourceDirectoryInfo.CopyEx(searchPattern, maxDepth, traversalOptions, predicate?.AsPredicate(), copying);
 
     public static int CopyEx(this DirectoryInfo sourceDirectoryInfo,
-      Func<IReadOnlyList<DirectoryInfo>, string?>? searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      Func<IReadOnlyList<DirectoryInfo>, string?> searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
       IPredicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Func<FileSystemInfo, TryOut<CopyOptions>> copying)
       => sourceDirectoryInfo.CopyEx(searchPatternSelector, searchOption, traversalOptions, predicate?.AsPredicate(), copying);
 
     public static int CopyEx(this DirectoryInfo sourceDirectoryInfo,
-      Func<IReadOnlyList<DirectoryInfo>, string?>? searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Func<IReadOnlyList<DirectoryInfo>, string?> searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
       IPredicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Func<FileSystemInfo, TryOut<CopyOptions>> copying)
       => sourceDirectoryInfo.CopyEx(searchPatternSelector, maxDepth, traversalOptions, predicate?.AsPredicate(), copying);
 
@@ -2221,35 +3279,78 @@ namespace PowerLib.System.IO
     public static int Move(this DirectoryInfo sourceDirectoryInfo,
       FileSystemTraversalOptions traversalOptions,
       Predicate<FileSystemInfo>? predicate, Func<FileSystemInfo, TryOut<MoveOptions>> moving)
-      => sourceDirectoryInfo.Move(default(Func<DirectoryInfo, string?>), int.MaxValue, traversalOptions, predicate, moving);
+    {
+      Argument.That.NotNull(sourceDirectoryInfo);
+      Argument.That.NotNull(moving);
+
+      return MoveCore(sourceDirectoryInfo, DefaultSearchPatternSelector, int.MaxValue, traversalOptions, predicate, moving);
+    }
 
     public static int Move(this DirectoryInfo sourceDirectoryInfo,
-      string? searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
       Predicate<FileSystemInfo>? predicate, Func<FileSystemInfo, TryOut<MoveOptions>> moving)
-      => sourceDirectoryInfo.Move(searchPattern is not null ? _ => searchPattern : null, searchOption == SearchOption.TopDirectoryOnly ? 1 : int.MaxValue, traversalOptions, predicate, moving);
+    {
+      Argument.That.NotNull(sourceDirectoryInfo);
+      Argument.That.NotNull(moving);
+
+      return MoveCore(sourceDirectoryInfo, DefaultSearchPatternSelector, searchOption == SearchOption.TopDirectoryOnly ? 1 : int.MaxValue, traversalOptions, predicate, moving);
+    }
 
     public static int Move(this DirectoryInfo sourceDirectoryInfo,
-      string? searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
-      Predicate<FileSystemInfo>? predicate, Func<FileSystemInfo, TryOut<MoveOptions>> moving)
-      => sourceDirectoryInfo.Move(searchPattern is not null ? _ => searchPattern : null, maxDepth, traversalOptions, predicate, moving);
-
-    public static int Move(this DirectoryInfo sourceDirectoryInfo,
-      Func<DirectoryInfo, string?>? searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
-      Predicate<FileSystemInfo>? predicate, Func<FileSystemInfo, TryOut<MoveOptions>> moving)
-      => sourceDirectoryInfo.Move(searchPatternSelector, searchOption == SearchOption.TopDirectoryOnly ? 1 : int.MaxValue, traversalOptions, predicate, moving);
-
-    public static int Move(this DirectoryInfo sourceDirectoryInfo,
-      Func<DirectoryInfo, string?>? searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      int maxDepth, FileSystemTraversalOptions traversalOptions,
       Predicate<FileSystemInfo>? predicate, Func<FileSystemInfo, TryOut<MoveOptions>> moving)
     {
       Argument.That.NotNull(sourceDirectoryInfo);
       Argument.That.NonNegative(maxDepth);
       Argument.That.NotNull(moving);
 
-      return ProcessFileSystemInfoCore(sourceDirectoryInfo, traversalOptions.IsFlagsSet(FileSystemTraversalOptions.Refresh),
-        directoryInfo => EnumerateFileSystemInfosCore(directoryInfo, searchPatternSelector ?? (_ => DefaultSearchPattern), maxDepth, traversalOptions, predicate,
-          new SelectComparer<FileSystemInfo, bool>(fileSystemInfo => fileSystemInfo is FileInfo).Compare),
-        fileSystemInfo => MoveCore(fileSystemInfo, moving));
+      return MoveCore(sourceDirectoryInfo, DefaultSearchPatternSelector, maxDepth, traversalOptions, predicate, moving);
+    }
+
+    public static int Move(this DirectoryInfo sourceDirectoryInfo,
+      string searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      Predicate<FileSystemInfo>? predicate, Func<FileSystemInfo, TryOut<MoveOptions>> moving)
+    {
+      Argument.That.NotNull(sourceDirectoryInfo);
+      Argument.That.NotNull(searchPattern);
+      Argument.That.NotNull(moving);
+
+      return MoveCore(sourceDirectoryInfo, _ => searchPattern, searchOption == SearchOption.TopDirectoryOnly ? 1 : int.MaxValue, traversalOptions, predicate, moving);
+    }
+
+    public static int Move(this DirectoryInfo sourceDirectoryInfo,
+      string searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Predicate<FileSystemInfo>? predicate, Func<FileSystemInfo, TryOut<MoveOptions>> moving)
+    {
+      Argument.That.NotNull(sourceDirectoryInfo);
+      Argument.That.NotNull(searchPattern);
+      Argument.That.NonNegative(maxDepth);
+      Argument.That.NotNull(moving);
+
+      return MoveCore(sourceDirectoryInfo, _ => searchPattern, maxDepth, traversalOptions, predicate, moving);
+    }
+
+    public static int Move(this DirectoryInfo sourceDirectoryInfo,
+      Func<DirectoryInfo, string?> searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      Predicate<FileSystemInfo>? predicate, Func<FileSystemInfo, TryOut<MoveOptions>> moving)
+    {
+      Argument.That.NotNull(sourceDirectoryInfo);
+      Argument.That.NotNull(searchPatternSelector);
+      Argument.That.NotNull(moving);
+
+      return MoveCore(sourceDirectoryInfo, searchPatternSelector, searchOption == SearchOption.TopDirectoryOnly ? 1 : int.MaxValue, traversalOptions, predicate, moving);
+    }
+
+    public static int Move(this DirectoryInfo sourceDirectoryInfo,
+      Func<DirectoryInfo, string?> searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Predicate<FileSystemInfo>? predicate, Func<FileSystemInfo, TryOut<MoveOptions>> moving)
+    {
+      Argument.That.NotNull(sourceDirectoryInfo);
+      Argument.That.NotNull(searchPatternSelector);
+      Argument.That.NonNegative(maxDepth);
+      Argument.That.NotNull(moving);
+
+      return MoveCore(sourceDirectoryInfo, searchPatternSelector, maxDepth, traversalOptions, predicate, moving);
     }
 
     public static int Move(this DirectoryInfo sourceDirectoryInfo,
@@ -2258,22 +3359,32 @@ namespace PowerLib.System.IO
       => sourceDirectoryInfo.Move(traversalOptions, predicate?.AsPredicate(), moving);
 
     public static int Move(this DirectoryInfo sourceDirectoryInfo,
-      string? searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      IPredicate<FileSystemInfo>? predicate, Func<FileSystemInfo, TryOut<MoveOptions>> moving)
+      => sourceDirectoryInfo.Move(searchOption, traversalOptions, predicate?.AsPredicate(), moving);
+
+    public static int Move(this DirectoryInfo sourceDirectoryInfo,
+      int maxDepth, FileSystemTraversalOptions traversalOptions,
+      IPredicate<FileSystemInfo>? predicate, Func<FileSystemInfo, TryOut<MoveOptions>> moving)
+      => sourceDirectoryInfo.Move(maxDepth, traversalOptions, predicate?.AsPredicate(), moving);
+
+    public static int Move(this DirectoryInfo sourceDirectoryInfo,
+      string searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
       IPredicate<FileSystemInfo>? predicate, Func<FileSystemInfo, TryOut<MoveOptions>> moving)
       => sourceDirectoryInfo.Move(searchPattern, searchOption, traversalOptions, predicate?.AsPredicate(), moving);
 
     public static int Move(this DirectoryInfo sourceDirectoryInfo,
-      string? searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      string searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
       IPredicate<FileSystemInfo>? predicate, Func<FileSystemInfo, TryOut<MoveOptions>> moving)
       => sourceDirectoryInfo.Move(searchPattern, maxDepth, traversalOptions, predicate?.AsPredicate(), moving);
 
     public static int Move(this DirectoryInfo sourceDirectoryInfo,
-      Func<DirectoryInfo, string?>? searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      Func<DirectoryInfo, string?> searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
       IPredicate<FileSystemInfo>? predicate, Func<FileSystemInfo, TryOut<MoveOptions>> moving)
       => sourceDirectoryInfo.Move(searchPatternSelector, searchOption, traversalOptions, predicate?.AsPredicate(), moving);
 
     public static int Move(this DirectoryInfo sourceDirectoryInfo,
-      Func<DirectoryInfo, string?>? searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Func<DirectoryInfo, string?> searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
       IPredicate<FileSystemInfo>? predicate, Func<FileSystemInfo, TryOut<MoveOptions>> moving)
       => sourceDirectoryInfo.Move(searchPatternSelector, maxDepth, traversalOptions, predicate?.AsPredicate(), moving);
 
@@ -2283,35 +3394,78 @@ namespace PowerLib.System.IO
     public static int MoveEx(this DirectoryInfo sourceDirectoryInfo,
       FileSystemTraversalOptions traversalOptions,
       Predicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Func<FileSystemInfo, TryOut<MoveOptions>> moving)
-      => sourceDirectoryInfo.MoveEx(default(Func<IReadOnlyList<DirectoryInfo>, string?>), int.MaxValue, traversalOptions, predicate, moving);
+    {
+      Argument.That.NotNull(sourceDirectoryInfo);
+      Argument.That.NotNull(moving);
+
+      return MoveCore(sourceDirectoryInfo, DefaultSearchPatternSelector, int.MaxValue, traversalOptions, predicate, moving);
+    }
 
     public static int MoveEx(this DirectoryInfo sourceDirectoryInfo,
-      string? searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
       Predicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Func<FileSystemInfo, TryOut<MoveOptions>> moving)
-      => sourceDirectoryInfo.MoveEx(searchPattern is not null ? _ => searchPattern : null, searchOption == SearchOption.TopDirectoryOnly ? 1 : int.MaxValue, traversalOptions, predicate, moving);
+    {
+      Argument.That.NotNull(sourceDirectoryInfo);
+      Argument.That.NotNull(moving);
+
+      return MoveCore(sourceDirectoryInfo, DefaultSearchPatternSelector, searchOption == SearchOption.TopDirectoryOnly ? 1 : int.MaxValue, traversalOptions, predicate, moving);
+    }
 
     public static int MoveEx(this DirectoryInfo sourceDirectoryInfo,
-      string? searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
-      Predicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Func<FileSystemInfo, TryOut<MoveOptions>> moving)
-      => sourceDirectoryInfo.MoveEx(searchPattern is not null ? _ => searchPattern : null, maxDepth, traversalOptions, predicate, moving);
-
-    public static int MoveEx(this DirectoryInfo sourceDirectoryInfo,
-      Func<IReadOnlyList<DirectoryInfo>, string?>? searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
-      Predicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Func<FileSystemInfo, TryOut<MoveOptions>> moving)
-      => sourceDirectoryInfo.MoveEx(searchPatternSelector, searchOption == SearchOption.TopDirectoryOnly ? 1 : int.MaxValue, traversalOptions, predicate, moving);
-
-    public static int MoveEx(this DirectoryInfo sourceDirectoryInfo,
-      Func<IReadOnlyList<DirectoryInfo>, string?>? searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      int maxDepth, FileSystemTraversalOptions traversalOptions,
       Predicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Func<FileSystemInfo, TryOut<MoveOptions>> moving)
     {
       Argument.That.NotNull(sourceDirectoryInfo);
       Argument.That.NonNegative(maxDepth);
       Argument.That.NotNull(moving);
 
-      return ProcessFileSystemInfoCore(sourceDirectoryInfo, traversalOptions.IsFlagsSet(FileSystemTraversalOptions.Refresh),
-        directoryInfo => EnumerateFileSystemInfosCore(directoryInfo, searchPatternSelector ?? (_ => DefaultSearchPattern), maxDepth, traversalOptions, predicate,
-          new SelectComparer<FileSystemInfo, bool>(fileSystemInfo => fileSystemInfo is FileInfo).Compare),
-        fileSystemInfo => MoveCore(fileSystemInfo, moving));
+      return MoveCore(sourceDirectoryInfo, DefaultSearchPatternSelector, maxDepth, traversalOptions, predicate, moving);
+    }
+
+    public static int MoveEx(this DirectoryInfo sourceDirectoryInfo,
+      string searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      Predicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Func<FileSystemInfo, TryOut<MoveOptions>> moving)
+    {
+      Argument.That.NotNull(sourceDirectoryInfo);
+      Argument.That.NotNull(searchPattern);
+      Argument.That.NotNull(moving);
+
+      return MoveCore(sourceDirectoryInfo, _ => searchPattern, searchOption == SearchOption.TopDirectoryOnly ? 1 : int.MaxValue, traversalOptions, predicate, moving);
+    }
+
+    public static int MoveEx(this DirectoryInfo sourceDirectoryInfo,
+      string searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Predicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Func<FileSystemInfo, TryOut<MoveOptions>> moving)
+    {
+      Argument.That.NotNull(sourceDirectoryInfo);
+      Argument.That.NotNull(searchPattern);
+      Argument.That.NonNegative(maxDepth);
+      Argument.That.NotNull(moving);
+
+      return MoveCore(sourceDirectoryInfo, _ => searchPattern, maxDepth, traversalOptions, predicate, moving);
+    }
+
+    public static int MoveEx(this DirectoryInfo sourceDirectoryInfo,
+      Func<IReadOnlyList<DirectoryInfo>, string?> searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      Predicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Func<FileSystemInfo, TryOut<MoveOptions>> moving)
+    {
+      Argument.That.NotNull(sourceDirectoryInfo);
+      Argument.That.NotNull(searchPatternSelector);
+      Argument.That.NotNull(moving);
+
+      return MoveCore(sourceDirectoryInfo, searchPatternSelector, searchOption == SearchOption.TopDirectoryOnly ? 1 : int.MaxValue, traversalOptions, predicate, moving);
+    }
+
+    public static int MoveEx(this DirectoryInfo sourceDirectoryInfo,
+      Func<IReadOnlyList<DirectoryInfo>, string?> searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Predicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Func<FileSystemInfo, TryOut<MoveOptions>> moving)
+    {
+      Argument.That.NotNull(sourceDirectoryInfo);
+      Argument.That.NotNull(searchPatternSelector);
+      Argument.That.NonNegative(maxDepth);
+      Argument.That.NotNull(moving);
+
+      return MoveCore(sourceDirectoryInfo, searchPatternSelector, maxDepth, traversalOptions, predicate, moving);
     }
 
     public static int MoveEx(this DirectoryInfo sourceDirectoryInfo,
@@ -2320,22 +3474,32 @@ namespace PowerLib.System.IO
       => sourceDirectoryInfo.MoveEx(traversalOptions, predicate?.AsPredicate(), moving);
 
     public static int MoveEx(this DirectoryInfo sourceDirectoryInfo,
-      string? searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      IPredicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Func<FileSystemInfo, TryOut<MoveOptions>> moving)
+      => sourceDirectoryInfo.MoveEx(searchOption, traversalOptions, predicate?.AsPredicate(), moving);
+
+    public static int MoveEx(this DirectoryInfo sourceDirectoryInfo,
+      int maxDepth, FileSystemTraversalOptions traversalOptions,
+      IPredicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Func<FileSystemInfo, TryOut<MoveOptions>> moving)
+      => sourceDirectoryInfo.MoveEx(maxDepth, traversalOptions, predicate?.AsPredicate(), moving);
+
+    public static int MoveEx(this DirectoryInfo sourceDirectoryInfo,
+      string searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
       IPredicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Func<FileSystemInfo, TryOut<MoveOptions>> moving)
       => sourceDirectoryInfo.MoveEx(searchPattern, searchOption, traversalOptions, predicate?.AsPredicate(), moving);
 
     public static int MoveEx(this DirectoryInfo sourceDirectoryInfo,
-      string? searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      string searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
       IPredicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Func<FileSystemInfo, TryOut<MoveOptions>> moving)
       => sourceDirectoryInfo.MoveEx(searchPattern, maxDepth, traversalOptions, predicate?.AsPredicate(), moving);
 
     public static int MoveEx(this DirectoryInfo sourceDirectoryInfo,
-      Func<IReadOnlyList<DirectoryInfo>, string?>? searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      Func<IReadOnlyList<DirectoryInfo>, string?> searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
       IPredicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Func<FileSystemInfo, TryOut<MoveOptions>> moving)
       => sourceDirectoryInfo.MoveEx(searchPatternSelector, searchOption, traversalOptions, predicate?.AsPredicate(), moving);
 
     public static int MoveEx(this DirectoryInfo sourceDirectoryInfo,
-      Func<IReadOnlyList<DirectoryInfo>, string?>? searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Func<IReadOnlyList<DirectoryInfo>, string?> searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
       IPredicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Func<FileSystemInfo, TryOut<MoveOptions>> moving)
       => sourceDirectoryInfo.MoveEx(searchPatternSelector, maxDepth, traversalOptions, predicate?.AsPredicate(), moving);
 
@@ -2345,35 +3509,78 @@ namespace PowerLib.System.IO
     public static int Delete(this DirectoryInfo sourceDirectoryInfo,
       FileSystemTraversalOptions traversalOptions,
       Predicate<FileSystemInfo>? predicate, Func<FileSystemInfo, TryOut<DeleteOptions>> deleting)
-      => sourceDirectoryInfo.Delete(default(Func<DirectoryInfo, string?>), int.MaxValue, traversalOptions, predicate, deleting);
+    {
+      Argument.That.NotNull(sourceDirectoryInfo);
+      Argument.That.NotNull(deleting);
+
+      return DeleteCore(sourceDirectoryInfo, DefaultSearchPatternSelector, int.MaxValue, traversalOptions, predicate, deleting);
+    }
 
     public static int Delete(this DirectoryInfo sourceDirectoryInfo,
-      string? searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
       Predicate<FileSystemInfo>? predicate, Func<FileSystemInfo, TryOut<DeleteOptions>> deleting)
-      => sourceDirectoryInfo.Delete(searchPattern is not null ? _ => searchPattern : null, searchOption == SearchOption.TopDirectoryOnly ? 1 : int.MaxValue, traversalOptions, predicate, deleting);
+    {
+      Argument.That.NotNull(sourceDirectoryInfo);
+      Argument.That.NotNull(deleting);
+
+      return DeleteCore(sourceDirectoryInfo, DefaultSearchPatternSelector, searchOption == SearchOption.TopDirectoryOnly ? 1 : int.MaxValue, traversalOptions, predicate, deleting);
+    }
 
     public static int Delete(this DirectoryInfo sourceDirectoryInfo,
-      string? searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
-      Predicate<FileSystemInfo>? predicate, Func<FileSystemInfo, TryOut<DeleteOptions>> deleting)
-      => sourceDirectoryInfo.Delete(searchPattern is not null ? _ => searchPattern : null, maxDepth, traversalOptions, predicate, deleting);
-
-    public static int Delete(this DirectoryInfo sourceDirectoryInfo,
-      Func<DirectoryInfo, string?>? searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
-      Predicate<FileSystemInfo>? predicate, Func<FileSystemInfo, TryOut<DeleteOptions>> deleting)
-      => sourceDirectoryInfo.Delete(searchPatternSelector, searchOption == SearchOption.TopDirectoryOnly ? 1 : int.MaxValue, traversalOptions, predicate, deleting);
-
-    public static int Delete(this DirectoryInfo sourceDirectoryInfo,
-      Func<DirectoryInfo, string?>? searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      int maxDepth, FileSystemTraversalOptions traversalOptions,
       Predicate<FileSystemInfo>? predicate, Func<FileSystemInfo, TryOut<DeleteOptions>> deleting)
     {
       Argument.That.NotNull(sourceDirectoryInfo);
       Argument.That.NonNegative(maxDepth);
       Argument.That.NotNull(deleting);
 
-      return ProcessFileSystemInfoCore(sourceDirectoryInfo, traversalOptions.IsFlagsSet(FileSystemTraversalOptions.Refresh),
-        directoryInfo => EnumerateFileSystemInfosCore(directoryInfo, searchPatternSelector ?? (_ => DefaultSearchPattern), maxDepth, traversalOptions, predicate,
-          new SelectComparer<FileSystemInfo, bool>(fileSystemInfo => fileSystemInfo is FileInfo).Compare),
-        fileSystemInfo => DeleteCore(fileSystemInfo, deleting));
+      return DeleteCore(sourceDirectoryInfo, DefaultSearchPatternSelector, maxDepth, traversalOptions, predicate, deleting);
+    }
+
+    public static int Delete(this DirectoryInfo sourceDirectoryInfo,
+      string searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      Predicate<FileSystemInfo>? predicate, Func<FileSystemInfo, TryOut<DeleteOptions>> deleting)
+    {
+      Argument.That.NotNull(sourceDirectoryInfo);
+      Argument.That.NotNull(searchPattern);
+      Argument.That.NotNull(deleting);
+
+      return DeleteCore(sourceDirectoryInfo, _ => searchPattern, searchOption == SearchOption.TopDirectoryOnly ? 1 : int.MaxValue, traversalOptions, predicate, deleting);
+    }
+
+    public static int Delete(this DirectoryInfo sourceDirectoryInfo,
+      string searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Predicate<FileSystemInfo>? predicate, Func<FileSystemInfo, TryOut<DeleteOptions>> deleting)
+    {
+      Argument.That.NotNull(sourceDirectoryInfo);
+      Argument.That.NotNull(searchPattern);
+      Argument.That.NonNegative(maxDepth);
+      Argument.That.NotNull(deleting);
+
+      return DeleteCore(sourceDirectoryInfo, _ => searchPattern, maxDepth, traversalOptions, predicate, deleting);
+    }
+
+    public static int Delete(this DirectoryInfo sourceDirectoryInfo,
+      Func<DirectoryInfo, string?> searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      Predicate<FileSystemInfo>? predicate, Func<FileSystemInfo, TryOut<DeleteOptions>> deleting)
+    {
+      Argument.That.NotNull(sourceDirectoryInfo);
+      Argument.That.NotNull(searchPatternSelector);
+      Argument.That.NotNull(deleting);
+
+      return DeleteCore(sourceDirectoryInfo, searchPatternSelector, searchOption == SearchOption.TopDirectoryOnly ? 1 : int.MaxValue, traversalOptions, predicate, deleting);
+    }
+
+    public static int Delete(this DirectoryInfo sourceDirectoryInfo,
+      Func<DirectoryInfo, string?> searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Predicate<FileSystemInfo>? predicate, Func<FileSystemInfo, TryOut<DeleteOptions>> deleting)
+    {
+      Argument.That.NotNull(sourceDirectoryInfo);
+      Argument.That.NotNull(searchPatternSelector);
+      Argument.That.NonNegative(maxDepth);
+      Argument.That.NotNull(deleting);
+
+      return DeleteCore(sourceDirectoryInfo, searchPatternSelector, maxDepth, traversalOptions, predicate, deleting);
     }
 
     public static int Delete(this DirectoryInfo sourceDirectoryInfo,
@@ -2382,22 +3589,32 @@ namespace PowerLib.System.IO
       => sourceDirectoryInfo.Delete(traversalOptions, predicate?.AsPredicate(), deleting);
 
     public static int Delete(this DirectoryInfo sourceDirectoryInfo,
-      string? searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      IPredicate<FileSystemInfo>? predicate, Func<FileSystemInfo, TryOut<DeleteOptions>> deleting)
+      => sourceDirectoryInfo.Delete(searchOption, traversalOptions, predicate?.AsPredicate(), deleting);
+
+    public static int Delete(this DirectoryInfo sourceDirectoryInfo,
+      int maxDepth, FileSystemTraversalOptions traversalOptions,
+      IPredicate<FileSystemInfo>? predicate, Func<FileSystemInfo, TryOut<DeleteOptions>> deleting)
+      => sourceDirectoryInfo.Delete(maxDepth, traversalOptions, predicate?.AsPredicate(), deleting);
+
+    public static int Delete(this DirectoryInfo sourceDirectoryInfo,
+      string searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
       IPredicate<FileSystemInfo>? predicate, Func<FileSystemInfo, TryOut<DeleteOptions>> deleting)
       => sourceDirectoryInfo.Delete(searchPattern, searchOption, traversalOptions, predicate?.AsPredicate(), deleting);
 
     public static int Delete(this DirectoryInfo sourceDirectoryInfo,
-      string? searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      string searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
       IPredicate<FileSystemInfo>? predicate, Func<FileSystemInfo, TryOut<DeleteOptions>> deleting)
       => sourceDirectoryInfo.Delete(searchPattern, maxDepth, traversalOptions, predicate?.AsPredicate(), deleting);
 
     public static int Delete(this DirectoryInfo sourceDirectoryInfo,
-      Func<DirectoryInfo, string?>? searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      Func<DirectoryInfo, string?> searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
       IPredicate<FileSystemInfo>? predicate, Func<FileSystemInfo, TryOut<DeleteOptions>> deleting)
       => sourceDirectoryInfo.Delete(searchPatternSelector, searchOption, traversalOptions, predicate?.AsPredicate(), deleting);
 
     public static int Delete(this DirectoryInfo sourceDirectoryInfo,
-      Func<DirectoryInfo, string?>? searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Func<DirectoryInfo, string?> searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
       IPredicate<FileSystemInfo>? predicate, Func<FileSystemInfo, TryOut<DeleteOptions>> deleting)
       => sourceDirectoryInfo.Delete(searchPatternSelector, maxDepth, traversalOptions, predicate?.AsPredicate(), deleting);
 
@@ -2407,35 +3624,78 @@ namespace PowerLib.System.IO
     public static int DeleteEx(this DirectoryInfo sourceDirectoryInfo,
       FileSystemTraversalOptions traversalOptions,
       Predicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Func<FileSystemInfo, TryOut<DeleteOptions>> deleting)
-      => sourceDirectoryInfo.DeleteEx(default(Func<IReadOnlyList<DirectoryInfo>, string?>), int.MaxValue, traversalOptions, predicate, deleting);
+    {
+      Argument.That.NotNull(sourceDirectoryInfo);
+      Argument.That.NotNull(deleting);
+
+      return DeleteCore(sourceDirectoryInfo, DefaultSearchPatternSelector, int.MaxValue, traversalOptions, predicate, deleting);
+    }
 
     public static int DeleteEx(this DirectoryInfo sourceDirectoryInfo,
-      string? searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
       Predicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Func<FileSystemInfo, TryOut<DeleteOptions>> deleting)
-      => sourceDirectoryInfo.DeleteEx(searchPattern is not null ? _ => searchPattern : null, searchOption == SearchOption.TopDirectoryOnly ? 1 : int.MaxValue, traversalOptions, predicate, deleting);
+    {
+      Argument.That.NotNull(sourceDirectoryInfo);
+      Argument.That.NotNull(deleting);
+
+      return DeleteCore(sourceDirectoryInfo, DefaultSearchPatternSelector, searchOption == SearchOption.TopDirectoryOnly ? 1 : int.MaxValue, traversalOptions, predicate, deleting);
+    }
 
     public static int DeleteEx(this DirectoryInfo sourceDirectoryInfo,
-      string? searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
-      Predicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Func<FileSystemInfo, TryOut<DeleteOptions>> deleting)
-      => sourceDirectoryInfo.DeleteEx(searchPattern is not null ? _ => searchPattern : null, maxDepth, traversalOptions, predicate, deleting);
-
-    public static int DeleteEx(this DirectoryInfo sourceDirectoryInfo,
-      Func<IReadOnlyList<DirectoryInfo>, string?>? searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
-      Predicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Func<FileSystemInfo, TryOut<DeleteOptions>> deleting)
-      => sourceDirectoryInfo.DeleteEx(searchPatternSelector, searchOption == SearchOption.TopDirectoryOnly ? 1 : int.MaxValue, traversalOptions, predicate, deleting);
-
-    public static int DeleteEx(this DirectoryInfo sourceDirectoryInfo,
-      Func<IReadOnlyList<DirectoryInfo>, string?>? searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      int maxDepth, FileSystemTraversalOptions traversalOptions,
       Predicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Func<FileSystemInfo, TryOut<DeleteOptions>> deleting)
     {
       Argument.That.NotNull(sourceDirectoryInfo);
       Argument.That.NonNegative(maxDepth);
       Argument.That.NotNull(deleting);
 
-      return ProcessFileSystemInfoCore(sourceDirectoryInfo, traversalOptions.IsFlagsSet(FileSystemTraversalOptions.Refresh),
-        directoryInfo => EnumerateFileSystemInfosCore(directoryInfo, searchPatternSelector ?? (_ => DefaultSearchPattern), maxDepth, traversalOptions, predicate,
-          new SelectComparer<FileSystemInfo, bool>(fileSystemInfo => fileSystemInfo is FileInfo).Compare),
-        fileSystemInfo => DeleteCore(fileSystemInfo, deleting));
+      return DeleteCore(sourceDirectoryInfo, DefaultSearchPatternSelector, maxDepth, traversalOptions, predicate, deleting);
+    }
+
+    public static int DeleteEx(this DirectoryInfo sourceDirectoryInfo,
+      string searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      Predicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Func<FileSystemInfo, TryOut<DeleteOptions>> deleting)
+    {
+      Argument.That.NotNull(sourceDirectoryInfo);
+      Argument.That.NotNull(searchPattern);
+      Argument.That.NotNull(deleting);
+
+      return DeleteCore(sourceDirectoryInfo, _ => searchPattern, searchOption == SearchOption.TopDirectoryOnly ? 1 : int.MaxValue, traversalOptions, predicate, deleting);
+    }
+
+    public static int DeleteEx(this DirectoryInfo sourceDirectoryInfo,
+      string searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Predicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Func<FileSystemInfo, TryOut<DeleteOptions>> deleting)
+    {
+      Argument.That.NotNull(sourceDirectoryInfo);
+      Argument.That.NotNull(searchPattern);
+      Argument.That.NonNegative(maxDepth);
+      Argument.That.NotNull(deleting);
+
+      return DeleteCore(sourceDirectoryInfo, _ => searchPattern, maxDepth, traversalOptions, predicate, deleting);
+    }
+
+    public static int DeleteEx(this DirectoryInfo sourceDirectoryInfo,
+      Func<IReadOnlyList<DirectoryInfo>, string?> searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      Predicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Func<FileSystemInfo, TryOut<DeleteOptions>> deleting)
+    {
+      Argument.That.NotNull(sourceDirectoryInfo);
+      Argument.That.NotNull(searchPatternSelector);
+      Argument.That.NotNull(deleting);
+
+      return DeleteCore(sourceDirectoryInfo, searchPatternSelector, searchOption == SearchOption.TopDirectoryOnly ? 1 : int.MaxValue, traversalOptions, predicate, deleting);
+    }
+
+    public static int DeleteEx(this DirectoryInfo sourceDirectoryInfo,
+      Func<IReadOnlyList<DirectoryInfo>, string?> searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Predicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Func<FileSystemInfo, TryOut<DeleteOptions>> deleting)
+    {
+      Argument.That.NotNull(sourceDirectoryInfo);
+      Argument.That.NotNull(searchPatternSelector);
+      Argument.That.NonNegative(maxDepth);
+      Argument.That.NotNull(deleting);
+
+      return DeleteCore(sourceDirectoryInfo, searchPatternSelector, maxDepth, traversalOptions, predicate, deleting);
     }
 
     public static int DeleteEx(this DirectoryInfo sourceDirectoryInfo,
@@ -2444,22 +3704,32 @@ namespace PowerLib.System.IO
       => sourceDirectoryInfo.DeleteEx(traversalOptions, predicate?.AsPredicate(), deleting);
 
     public static int DeleteEx(this DirectoryInfo sourceDirectoryInfo,
-      string? searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      IPredicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Func<FileSystemInfo, TryOut<DeleteOptions>> deleting)
+      => sourceDirectoryInfo.DeleteEx(searchOption, traversalOptions, predicate?.AsPredicate(), deleting);
+
+    public static int DeleteEx(this DirectoryInfo sourceDirectoryInfo,
+      int maxDepth, FileSystemTraversalOptions traversalOptions,
+      IPredicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Func<FileSystemInfo, TryOut<DeleteOptions>> deleting)
+      => sourceDirectoryInfo.DeleteEx(maxDepth, traversalOptions, predicate?.AsPredicate(), deleting);
+
+    public static int DeleteEx(this DirectoryInfo sourceDirectoryInfo,
+      string searchPattern, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
       IPredicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Func<FileSystemInfo, TryOut<DeleteOptions>> deleting)
       => sourceDirectoryInfo.DeleteEx(searchPattern, searchOption, traversalOptions, predicate?.AsPredicate(), deleting);
 
     public static int DeleteEx(this DirectoryInfo sourceDirectoryInfo,
-      string? searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      string searchPattern, int maxDepth, FileSystemTraversalOptions traversalOptions,
       IPredicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Func<FileSystemInfo, TryOut<DeleteOptions>> deleting)
       => sourceDirectoryInfo.DeleteEx(searchPattern, maxDepth, traversalOptions, predicate?.AsPredicate(), deleting);
 
     public static int DeleteEx(this DirectoryInfo sourceDirectoryInfo,
-      Func<IReadOnlyList<DirectoryInfo>, string?>? searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
+      Func<IReadOnlyList<DirectoryInfo>, string?> searchPatternSelector, SearchOption searchOption, FileSystemTraversalOptions traversalOptions,
       IPredicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Func<FileSystemInfo, TryOut<DeleteOptions>> deleting)
       => sourceDirectoryInfo.DeleteEx(searchPatternSelector, searchOption, traversalOptions, predicate?.AsPredicate(), deleting);
 
     public static int DeleteEx(this DirectoryInfo sourceDirectoryInfo,
-      Func<IReadOnlyList<DirectoryInfo>, string?>? searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
+      Func<IReadOnlyList<DirectoryInfo>, string?> searchPatternSelector, int maxDepth, FileSystemTraversalOptions traversalOptions,
       IPredicate<(FileSystemInfo fileSystemInfo, IReadOnlyList<DirectoryInfo> parentalDirectoryInfos)>? predicate, Func<FileSystemInfo, TryOut<DeleteOptions>> deleting)
       => sourceDirectoryInfo.DeleteEx(searchPatternSelector, maxDepth, traversalOptions, predicate?.AsPredicate(), deleting);
 
