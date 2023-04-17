@@ -1,5 +1,6 @@
 ﻿using PowerLib.System.Validation;
 using System;
+using System.Threading;
 
 namespace PowerLib.System;
 
@@ -30,6 +31,13 @@ public static class Disposable
   public static void Dispose<TDisposable>(ref TDisposable? disposable)
     where TDisposable : IDisposable
     => Variable.Take(ref disposable)?.Dispose();
+
+  public static void Dispose<TDisposable>(TDisposable? disposable, ref int disposed)
+    where TDisposable : IDisposable
+  {
+    if (Interlocked.CompareExchange(ref disposed, 1, 0) == 1)
+      disposable?.Dispose();
+  }
 
   public static void BlindDispose<TSource>(ref TSource? source)
     => (Variable.Take(ref source) as IDisposable)?.Dispose();

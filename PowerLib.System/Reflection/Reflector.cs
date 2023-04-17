@@ -244,8 +244,7 @@ public static class Reflector
 
   private static async Task<object?> InvokeAwaitableMethod(object? source, MethodInfo method, object?[]? parameters)
   {
-    var result = method.Invoke(source, parameters);
-    dynamic awaitable = result;
+    dynamic awaitable = method.Invoke(source, parameters)!;
     await awaitable;
     return GetAwaitableResult(awaitable.GetAwaiter());
   }
@@ -1453,7 +1452,7 @@ public static class Reflector
     IList<Type?>? typeArguments, IReadOnlyList<object?>? positionalParameterValues, IReadOnlyDictionary<string, object?>? namedParameterValues, Type? valueType, object? value)
   {
     var propertyInfo = MatchProperty(sourceType, source is null, name, memberAccessibility, false, true, typeArguments?.AsReadOnly(),
-      positionalParameterValues?.GetTypesOfValues(), namedParameterValues?.GetTypesOfValues(memberAccessibility.IsFlagsSet(MemberAccessibility.IgnoreCase)), TypedValue.GetType(value), TypeVariance.Contravariant);
+      positionalParameterValues?.GetTypesOfValues(), namedParameterValues?.GetTypesOfValues(memberAccessibility.IsFlagsSet(MemberAccessibility.IgnoreCase)), valueType, TypeVariance.Contravariant);
     if (propertyInfo is null)
       return false;
     var indices = GetParameterValues(propertyInfo.GetIndexParameters(), positionalParameterValues, namedParameterValues);
@@ -2857,7 +2856,7 @@ public static class Reflector
     Argument.That.NotNull(sourceType);
     Argument.That.NotNullOrWhitespace(name);
 
-    value = (TValue?)ReplacePropertyValueCore(sourceType, null, name, memberAccessibility, null, null, null, typeof(TValue), value);
+    value = (TValue?)ReplacePropertyValueCore(sourceType, null, name, memberAccessibility, typeArguments, null, null, typeof(TValue), value);
   }
 
   public static void ExchangePropertyValue<TSource>(string name, MemberAccessibility memberAccessibility, ref object? value)
@@ -3810,7 +3809,7 @@ public static class Reflector
     Argument.That.NotNull(sourceObject);
     var sourceType = TypedValue.GetType(source)!;
 
-    return TryCallMethodCore(sourceType, sourceObject, name, memberAccessibility, null, methodArguments, positionalParameterValues, namedParameterValues, typeof(void), out var returnValue);
+    return TryCallMethodCore(sourceType, sourceObject, name, memberAccessibility, null, methodArguments, positionalParameterValues, namedParameterValues, typeof(void), out var _);
   }
 
   public static bool TryCallMethod(object source, string name, MemberAccessibility memberAccessibility,
@@ -3833,7 +3832,7 @@ public static class Reflector
     Argument.That.NotNull(source);
     Argument.That.NotNullOrWhitespace(name);
 
-    return TryCallMethodCore(typeof(TSource), source, name, memberAccessibility, null, methodArguments, positionalParameterValues, namedParameterValues, typeof(void), out var returnValue);
+    return TryCallMethodCore(typeof(TSource), source, name, memberAccessibility, null, methodArguments, positionalParameterValues, namedParameterValues, typeof(void), out var _);
   }
 
   public static bool TryCallMethod<TSource>(TSource source, string name, MemberAccessibility memberAccessibility,
@@ -4091,7 +4090,7 @@ public static class Reflector
     Argument.That.NotNull(sourceType);
     Argument.That.NotNullOrWhitespace(name);
 
-    return TryCallMethodCore(sourceType, null, name, memberAccessibility, typeArguments, methodArguments, positionalParameterValues, namedParameterValues, typeof(void), out var returnValue);
+    return TryCallMethodCore(sourceType, null, name, memberAccessibility, typeArguments, methodArguments, positionalParameterValues, namedParameterValues, typeof(void), out var _);
   }
 
   public static bool TryCallMethod(Type sourceType, string name, MemberAccessibility memberAccessibility,
@@ -4110,7 +4109,7 @@ public static class Reflector
   {
     Argument.That.NotNullOrWhitespace(name);
 
-    return TryCallMethodCore(typeof(TSource), null, name, memberAccessibility, null, methodArguments, positionalParameterValues, namedParameterValues, typeof(void), out var returnValue);
+    return TryCallMethodCore(typeof(TSource), null, name, memberAccessibility, null, methodArguments, positionalParameterValues, namedParameterValues, typeof(void), out var _);
   }
 
   public static bool TryCallMethod<TSource>(string name, MemberAccessibility memberAccessibility,
@@ -4600,7 +4599,7 @@ public static class Reflector
     var methodInfo = eventInfo.EventHandlerType.GetMethod(Invoke);
     if (methodInfo is null)
       return false;
-    var eventHandler = default(Delegate);
+    Delegate? eventHandler;
     if (eventHandlerResolver is not null)
     {
       eventHandler = eventHandlerResolver(eventInfo, source);
@@ -4637,7 +4636,7 @@ public static class Reflector
     Operation.That.IsValid(eventInfo.EventHandlerType is not null && eventInfo.RemoveMethod is not null);
     var methodInfo = eventInfo.EventHandlerType.GetMethod(Invoke);
     Operation.That.IsValid(methodInfo is not null, FormatMessage(ReflectionMessage.MethodNotFound));
-    var eventHandler = default(Delegate?);
+    Delegate? eventHandler;
     if (eventHandlerResolver is not null)
     {
       eventHandler = eventHandlerResolver(eventInfo, source);
@@ -4674,7 +4673,7 @@ public static class Reflector
       var methodInfo = eventInfo.EventHandlerType?.GetMethod(Invoke);
       if (methodInfo is not null)
       {
-        var eventHandler = default(Delegate);
+        Delegate? eventHandler;
         if (eventHandlerResolver is not null)
         {
           eventHandler = eventHandlerResolver(eventInfo, source);
@@ -4719,7 +4718,7 @@ public static class Reflector
     Operation.That.IsValid(eventInfo.EventHandlerType is not null && eventInfo.RemoveMethod is not null);
     var methodInfo = eventInfo.EventHandlerType.GetMethod(Invoke);
     Operation.That.IsValid(methodInfo is not null, FormatMessage(ReflectionMessage.MethodNotFound));
-    var eventHandler = default(Delegate?);
+    Delegate? eventHandler;
     if (eventHandlerResolver is not null)
     {
       eventHandler = eventHandlerResolver(eventInfo, source);
@@ -4753,7 +4752,7 @@ public static class Reflector
       var methodInfo = eventInfo.EventHandlerType?.GetMethod(Invoke);
       if (methodInfo is not null)
       {
-        var eventHandler = default(Delegate);
+        Delegate? eventHandler;
         if (eventHandlerResolver is not null)
         {
           eventHandler = eventHandlerResolver(eventInfo, source);
@@ -4794,7 +4793,7 @@ public static class Reflector
     Operation.That.IsValid(eventInfo.EventHandlerType is not null && eventInfo.RemoveMethod is not null);
     var methodInfo = eventInfo.EventHandlerType.GetMethod(Invoke);
     Operation.That.IsValid(methodInfo is not null, FormatMessage(ReflectionMessage.MethodNotFound));
-    var eventHandler = default(Delegate?);
+    Delegate? eventHandler;
     if (eventHandlerResolver is not null)
     {
       eventHandler = eventHandlerResolver(eventInfo, source);
@@ -4828,7 +4827,7 @@ public static class Reflector
       var methodInfo = eventInfo.EventHandlerType?.GetMethod(Invoke);
       if (methodInfo is not null)
       {
-        var eventHandler = default(Delegate);
+        Delegate? eventHandler;
         if (eventHandlerResolver is not null)
         {
           eventHandler = eventHandlerResolver(eventInfo, source);
@@ -4868,7 +4867,7 @@ public static class Reflector
     Operation.That.IsValid(eventInfo.EventHandlerType is not null && eventInfo.RemoveMethod is not null);
     var methodInfo = eventInfo.EventHandlerType.GetMethod(Invoke);
     Operation.That.IsValid(methodInfo is not null, FormatMessage(ReflectionMessage.MethodNotFound));
-    var eventHandler = default(Delegate?);
+    Delegate? eventHandler;
     if (eventHandlerResolver is not null)
     {
       eventHandler = eventHandlerResolver(eventInfo, source);

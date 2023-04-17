@@ -9,6 +9,8 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "PowerLib.System.Test", "Pow
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "PowerLib.System.xTest", "PowerLib.System.xTest\PowerLib.System.xTest.csproj", "{46B8FE07-8CBF-447A-AB86-E36C17E6FFFA}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PowerLib.Examples", "PowerLib.Examples\PowerLib.Examples.csproj", "{16F5F5D7-98FF-4921-A715-81DD72FD3FB2}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -27,6 +29,10 @@ Global
 		{46B8FE07-8CBF-447A-AB86-E36C17E6FFFA}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{46B8FE07-8CBF-447A-AB86-E36C17E6FFFA}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{46B8FE07-8CBF-447A-AB86-E36C17E6FFFA}.Release|Any CPU.Build.0 = Release|Any CPU
+		{16F5F5D7-98FF-4921-A715-81DD72FD3FB2}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{16F5F5D7-98FF-4921-A715-81DD72FD3FB2}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{16F5F5D7-98FF-4921-A715-81DD72FD3FB2}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{16F5F5D7-98FF-4921-A715-81DD72FD3FB2}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

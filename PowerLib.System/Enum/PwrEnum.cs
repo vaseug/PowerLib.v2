@@ -317,7 +317,7 @@ public static class PwrEnum
       case TypeCode.Byte or TypeCode.UInt16 or TypeCode.UInt32 or TypeCode.UInt64:
         var uValue = value.ToUInt64(null);
         var uFlags = flags.ToUInt64(null);
-        return (uValue & uFlags) != 0;
+        return (uValue & uFlags) != 0U;
       case TypeCode.SByte or TypeCode.Int16 or TypeCode.Int32 or TypeCode.Int64:
         var sValue = value.ToInt64(null);
         var sFlags = flags.ToInt64(null);

@@ -24,6 +24,8 @@ public delegate TResult ElementDimConverter<in TSource, out TResult>(TSource v, 
 
 public delegate bool Equality<in T>(T x, T y);
 
+public delegate bool Match<in T>(T x, T y);
+
 public delegate int Comparator<in T>(T v);
 
 public delegate int Hasher<in T>([DisallowNull] T v);

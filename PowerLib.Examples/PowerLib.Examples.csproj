@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFrameworks>net48;net6.0;net7.0</TargetFrameworks>
@@ -15,15 +15,15 @@
     <Title></Title>
     <RepositoryType>git</RepositoryType>
     <PackageProjectUrl></PackageProjectUrl>
-    <PackageTags>Helper;Extension;DataStructure;Algorithm;Collection;Reflection</PackageTags>
-    <Description>This library contains a lot of helper classes and extension methods to make it easier to work with collections of objects, data structures, algorithms, and existing .NET framework functionality.</Description>
-    <PackageReleaseNotes>Changed file system object enumeration methods and added methods for manipulating these objects.</PackageReleaseNotes>
+    <PackageTags></PackageTags>
+    <Description></Description>
+    <PackageReleaseNotes></PackageReleaseNotes>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <RepositoryUrl>https://github.com/vaseug/PowerLib.v2</RepositoryUrl>
     <PackageLicenseFile>LICENSE</PackageLicenseFile>
     <PackageRequireLicenseAcceptance>True</PackageRequireLicenseAcceptance>
     <PackageId>VasEug.$(AssemblyName)</PackageId>
-  </PropertyGroup> 
+  </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
     <WarningLevel>9999</WarningLevel>
@@ -34,22 +34,27 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <None Remove="LICENSE" />
+    <None Remove="README.md" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Content Include="LICENSE">
-      <Pack>True</Pack>
       <PackagePath>\</PackagePath>
+      <Pack>True</Pack>
     </Content>
     <Content Include="README.md">
-      <Pack>True</Pack>
       <PackagePath>\</PackagePath>
+      <Pack>True</Pack>
     </Content>
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="System.Linq.Async" Version="6.0.1" />
+    <Folder Include="IO\" />
   </ItemGroup>
 
-  <ItemGroup Condition="$(TargetFramework.Contains(net48))">
-    <Reference Include="Microsoft.CSharp" />
+  <ItemGroup>
+    <ProjectReference Include="..\PowerLib.System\PowerLib.System.csproj" />
   </ItemGroup>
 
 </Project>

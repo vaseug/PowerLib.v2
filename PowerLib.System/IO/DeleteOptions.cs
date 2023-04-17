@@ -1,8 +1,8 @@
 ﻿namespace PowerLib.System.IO;
 
-public record struct DeleteOptions
+public readonly record struct DeleteOptions : IProcessingOptions
 {
   public bool Recursive { get; init; }
 
-  public bool ClearReadOnly { get; init; }
+  public bool NoProcessing { get; init; }
 }

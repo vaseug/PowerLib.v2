@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Net.NetworkInformation;
 using PowerLib.System.Collections;
 using PowerLib.System.Collections.Generic.Extensions;
 using PowerLib.System.Collections.NonGeneric.Extensions;
@@ -117,6 +118,40 @@ public static class PwrEnumerable
     }
   }
 
+  private static IEnumerable<TSource> ApplyCore<TSource, TState>(IEnumerable<TSource> source, TState state, Func<TState, TSource, int, TState> automation, Action<TState, TSource, int> action)
+  {
+    using var enumerator = source.GetEnumerator();
+    for (var index = 0; enumerator.MoveNext(); state = automation(state, enumerator.Current, index++))
+    {
+      try
+      {
+        action(state, enumerator.Current, index);
+      }
+      catch (Exception ex)
+      {
+        Argument.That.ElementFail(source, index, ex);
+      }
+      yield return enumerator.Current;
+    }
+  }
+
+  private static IEnumerable<TSource> ApplyCore<TSource, TState>(IEnumerable<TSource> source, TState state, Action<TState, TSource, int> automation, Action<TState, TSource, int> action)
+  {
+    using var enumerator = source.GetEnumerator();
+    for (var index = 0; enumerator.MoveNext(); automation(state, enumerator.Current, index++))
+    {
+      try
+      {
+        action(state, enumerator.Current, index);
+      }
+      catch (Exception ex)
+      {
+        Argument.That.ElementFail(source, index, ex);
+      }
+      yield return enumerator.Current;
+    }
+  }
+
   public static IEnumerable<TSource> Apply<TSource>(this IEnumerable<TSource> source, Action<TSource> action)
   {
     Argument.That.NotNull(source);
@@ -131,6 +166,42 @@ public static class PwrEnumerable
     Argument.That.NotNull(action);
 
     return ApplyCore(source, action);
+  }
+
+  public static IEnumerable<TSource> Apply<TSource, TState>(this IEnumerable<TSource> source, TState state, Func<TState, TSource, TState> automation, Action<TState, TSource> action)
+  {
+    Argument.That.NotNull(source);
+    Argument.That.NotNull(automation);
+    Argument.That.NotNull(action);
+
+    return ApplyCore(source, state, (state, item, index) => automation(state, item), (state, item, index) => action(state, item));
+  }
+
+  public static IEnumerable<TSource> Apply<TSource, TState>(this IEnumerable<TSource> source, TState state, Func<TState, TSource, int, TState> automation, Action<TState, TSource, int> action)
+  {
+    Argument.That.NotNull(source);
+    Argument.That.NotNull(automation);
+    Argument.That.NotNull(action);
+
+    return ApplyCore(source, state, automation, action);
+  }
+
+  public static IEnumerable<TSource> Apply<TSource, TState>(this IEnumerable<TSource> source, TState state, Action<TState, TSource> automation, Action<TState, TSource> action)
+  {
+    Argument.That.NotNull(source);
+    Argument.That.NotNull(automation);
+    Argument.That.NotNull(action);
+
+    return ApplyCore(source, state, (state, item, index) => automation(state, item), (state, item, index) => action(state, item));
+  }
+
+  public static IEnumerable<TSource> Apply<TSource, TState>(this IEnumerable<TSource> source, TState state, Action<TState, TSource, int> automation, Action<TState, TSource, int> action)
+  {
+    Argument.That.NotNull(source);
+    Argument.That.NotNull(automation);
+    Argument.That.NotNull(action);
+
+    return ApplyCore(source, state, automation, action);
   }
 
   #endregion
@@ -209,7 +280,6 @@ public static class PwrEnumerable
   }
 
   private static IEnumerable<TSource> SkipWhileCore<TSource, TState>(IEnumerable<TSource> source, TState state, Action<TState, TSource, int> automation, Func<TState, TSource, int, bool> predicate)
-    where TState : class
   {
     using var enumerator = source.GetEnumerator();
     var success = enumerator.MoveNext();
@@ -229,7 +299,6 @@ public static class PwrEnumerable
   }
 
   public static IEnumerable<TSource> SkipWhile<TSource, TState>(this IEnumerable<TSource> source, TState state, Action<TState, TSource> automation, Func<TState, TSource, bool> predicate)
-    where TState : class
   {
     Argument.That.NotNull(source);
     Argument.That.NotNull(automation);
@@ -248,7 +317,6 @@ public static class PwrEnumerable
   }
 
   public static IEnumerable<TSource> SkipWhile<TSource, TState>(this IEnumerable<TSource> source, TState state, Action<TState, TSource, int> automation, Func<TState, TSource, int, bool> predicate)
-    where TState : class
   {
     Argument.That.NotNull(source);
     Argument.That.NotNull(automation);
@@ -268,7 +336,6 @@ public static class PwrEnumerable
   }
 
   private static IEnumerable<TSource> TakeWhileCore<TSource, TState>(IEnumerable<TSource> source, TState state, Action<TState, TSource, int> automation, Func<TState, TSource, int, bool> predicate)
-    where TState : class
   {
     using var enumerator = source.GetEnumerator();
     for (var index = 0; enumerator.MoveNext() && predicate(state, enumerator.Current, index); automation(state, enumerator.Current, index++))
@@ -285,7 +352,6 @@ public static class PwrEnumerable
   }
 
   public static IEnumerable<TSource> TakeWhile<TSource, TState>(this IEnumerable<TSource> source, TState state, Action<TState, TSource> automation, Func<TState, TSource, bool> predicate)
-    where TState : class
   {
     Argument.That.NotNull(source);
     Argument.That.NotNull(automation);
@@ -304,7 +370,6 @@ public static class PwrEnumerable
   }
 
   public static IEnumerable<TSource> TakeWhile<TSource, TState>(this IEnumerable<TSource> source, TState state, Action<TState, TSource, int> automation, Func<TState, TSource, int, bool> predicate)
-    where TState : class
   {
     Argument.That.NotNull(source);
     Argument.That.NotNull(automation);

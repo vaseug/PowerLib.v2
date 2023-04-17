@@ -1,9 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using PowerLib.System.Collections;
-using PowerLib.System.Collections.Matching;
+﻿using System.Linq;
 using PowerLib.System.Validation;
 
 namespace PowerLib.System;
@@ -59,7 +54,7 @@ public static class StringExtension
     Argument.That.NotNull(str);
     Argument.That.NotEmptyArray(exceptOf);
 
-    return LastIndexExceptOfCore(str, exceptOf, 0, str.Length);
+    return LastIndexExceptOfCore(str, exceptOf, str.Length == 0 ? 0 : str.Length - 1, str.Length);
   }
 
   public static int LastIndexExceptOf(this string str, char[] exceptOf, int startIndex)

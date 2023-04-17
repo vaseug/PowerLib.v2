@@ -66,7 +66,7 @@ public static class Safe
     }
   }
 
-  public static T? Invoke<T>(Func<T?> functor, Predicate<Exception>? suppressPredicate = default, Func<Exception, T?>? suppressFunctor = default)
+  public static T? Invoke<T>(Func<T?> functor, Predicate<Exception>? suppressPredicate = null, Func<Exception, T?>? suppressFunctor = null)
   {
     Argument.That.NotNull(functor);
     Argument.That.NotNull(suppressFunctor);
